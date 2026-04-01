@@ -1263,14 +1263,28 @@ export function buildInquiryTransaction(wif, question, answers, gates = {}, endB
                    .replace(/,"end":0/g, '').replace(/,"any":0/g, '');
 
   const jsonBytes = Buffer.from(jsonStr, 'utf-8');
+  const d3 = randomDelimiter();
+  const d4 = randomDelimiter();
+  const inqPayloadPart = `INQ${d3}${jsonBytes.length}${d4}${jsonStr}`;
+
+  // C# DiscoBall flow:
+  //   transMessage = messageText + "<<salt>>"
+  //   OBJP2FK = delimiter + msgBytes.Length + delimiter + transMessage + txtINQJson.Text
+  //   Then signed: "SIG" + d + "88" + d + signature + OBJP2FK
+  //
+  // The INQ JSON is APPENDED to the message payload, not encoded separately.
+  const salt = -Math.abs(Math.floor(Math.random() * 99999));
+  const messageText = `<<${salt}>>`;
+  const msgBytes = Buffer.from(messageText, 'utf-8');
   const d1 = randomDelimiter();
   const d2 = randomDelimiter();
-  const p2fkPayload = `INQ${d1}${jsonBytes.length}${d2}${jsonStr}`;
+  const messagePayload = `${d1}${msgBytes.length}${d2}${messageText}${inqPayloadPart}`;
 
-  // Encode payload into P2FK addresses
-  const encodedAddresses = encodePayloadToAddresses(p2fkPayload, versionByte);
+  // Sign and encode the combined payload
+  const fullPayload = buildSignedPayload(messagePayload, cleanedWif, network);
+  const encodedAddresses = encodePayloadToAddresses(fullPayload, versionByte);
 
-  // Add the question address as a keyword (P2FK requires it)
+  // Question address goes AFTER payload, BEFORE sender (matches C# txtINQAddress)
   if (!encodedAddresses.includes(questionAddress)) {
     encodedAddresses.push(questionAddress);
   }
@@ -1304,20 +1318,55 @@ export function buildInquiryTransaction(wif, question, answers, gates = {}, endB
  * @returns {object} { addresses, senderAddress, network, taxInsertIndex }
  */
 export function buildVoteTransaction(wif, answerAddress, networkName = 'btc-testnet', pollTxId = null) {
-  // Per SUP FoundINQControl.cs:
+  // Matches C# DiscoBall vote flow EXACTLY:
   //   string INQToKey = Root.GetPublicAddressByKeyword(transactionId);
   //   string voteDust = INQToKey + "," + answerAddress;
   //   DiscoBall disco = new DiscoBall(activeprofile, "", voteDust, ...);
   //
-  // A vote is a P2FK Root with:
-  //   - EMPTY content (not "vote")
-  //   - Sent to INQToKey (keyword addr of poll txid) AND answerAddress
-  // GetRootsByAddress(answerAddress) counts signed Roots as votes.
+  // DiscoBall reverses the comma-split destinations, so output order is:
+  //   [payload_addrs..., answerAddress, INQToKey, senderAddress]
+  //
+  // A vote is a SIGNED P2FK Root with EMPTY content, destinations are
+  // the answer address and the INQ keyword address (not hashtags).
 
-  // Build with empty content, the poll txid as hashtag (→ INQToKey address),
-  // and answerAddress as the toAddress
-  const hashtags = pollTxId ? [pollTxId] : [];
-  return buildPostTransaction(wif, '', hashtags, answerAddress, networkName);
+  const isMainnet = networkName.includes('mainnet');
+  const network = isMainnet ? bitcoin.networks.bitcoin : bitcoin.networks.testnet;
+  const versionByte = isMainnet ? 0 : 111;
+
+  const keyPair = parseWIF(wif, network);
+  const { address: senderAddress } = bitcoin.payments.p2pkh({ pubkey: keyPair.publicKey, network });
+
+  // Empty message with salt (matches C#: supMessage.Text = "")
+  const salt = -Math.abs(Math.floor(Math.random() * 99999));
+  const saltedMessage = `<<${salt}>>`;
+  const msgBytes = Buffer.from(saltedMessage, 'utf-8');
+  const d1 = randomDelimiter();
+  const d2 = randomDelimiter();
+  const payload = `${d1}${msgBytes.length}${d2}${saltedMessage}`;
+
+  const fullPayload = buildSignedPayload(payload, wif, network);
+  const encodedAddresses = encodePayloadToAddresses(fullPayload, versionByte);
+
+  // Destinations: answerAddress first, then INQToKey (matches C# reverse iteration)
+  if (answerAddress && answerAddress !== senderAddress && !encodedAddresses.includes(answerAddress)) {
+    encodedAddresses.push(answerAddress);
+  }
+  if (pollTxId) {
+    const inqToKey = getKeywordAddress(pollTxId, versionByte);
+    if (!encodedAddresses.includes(inqToKey)) {
+      encodedAddresses.push(inqToKey);
+    }
+  }
+
+  // Tax position (after destinations, before sender)
+  const taxInsertIndex = encodedAddresses.length;
+
+  // Sender MUST be LAST
+  const idx = encodedAddresses.indexOf(senderAddress);
+  if (idx !== -1) encodedAddresses.splice(idx, 1);
+  encodedAddresses.push(senderAddress);
+
+  return { addresses: encodedAddresses, senderAddress, network: networkName, taxInsertIndex };
 }
 
 /**
