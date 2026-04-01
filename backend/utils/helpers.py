@@ -13,6 +13,14 @@ from config import P2FK_API_BASE, SEED_ADDRESSES
 from utils.stats_tracker import track_api_call, track_cache
 from utils.http_pool import get_client
 
+# Local P2FK decoder imports (fallback when p2fk.io is down)
+from p2fk_decoder import decode_root_from_raw_tx, keyword_to_address
+from blockchain_api import (
+    fetch_transaction as local_fetch_tx,
+    fetch_address_transactions as local_fetch_addr_txs,
+    get_version_byte,
+)
+
 logger = logging.getLogger(__name__)
 
 # TTL for API cache: roots are immutable (1yr), profiles=1hr, default=10min
@@ -73,6 +81,64 @@ async def _set_api_cache(cache_key: str, data):
 
 
 # --- p2fk.io API helpers ---
+
+def _root_to_p2fk_format(root_dict: dict) -> dict:
+    """Convert local decoder Root dict to match p2fk.io response format.
+    Main difference: p2fk.io outputs values in BTC (e.g., '0.00000548'),
+    our decoder uses satoshi strings (e.g., '548')."""
+    out = dict(root_dict)
+    # Convert Output values from satoshis to BTC strings
+    if 'Output' in out and isinstance(out['Output'], dict):
+        converted = {}
+        for addr, val in out['Output'].items():
+            try:
+                sats = int(val)
+                converted[addr] = f"{sats / 1e8:.8f}"
+            except (ValueError, TypeError):
+                converted[addr] = val
+        out['Output'] = converted
+    return out
+
+
+async def _local_p2fk_fallback(path: str, mainnet: bool = False):
+    """Try to handle a p2fk.io API path using the local decoder.
+    Returns None if the path is not supported locally."""
+    try:
+        network = 'btc-mainnet' if mainnet else 'btc-testnet'
+        version_byte = get_version_byte(network)
+
+        # GetRootByTransactionID/{txid}
+        if path.startswith('GetRootByTransactionID/'):
+            txid = path.split('/', 1)[1]
+            raw_tx = await local_fetch_tx(txid, network)
+            if not raw_tx:
+                return None
+            root = decode_root_from_raw_tx(txid, raw_tx, version_byte)
+            return _root_to_p2fk_format(root.to_dict()) if root else None
+
+        # GetRootsByAddress/{address}
+        if path.startswith('GetRootsByAddress/'):
+            address = path.split('/', 1)[1]
+            txs = await local_fetch_addr_txs(address, network, max_pages=2)
+            roots = []
+            for tx in txs:
+                txid = tx.get('txid', '')
+                if not txid:
+                    continue
+                root = decode_root_from_raw_tx(txid, tx, version_byte)
+                if root and address in root.outputs:
+                    roots.append(_root_to_p2fk_format(root.to_dict()))
+            return roots
+
+        # GetPublicAddressByKeyword/{keyword}
+        if path.startswith('GetPublicAddressByKeyword/'):
+            keyword = path.split('/', 1)[1]
+            return keyword_to_address(keyword, version_byte)
+
+    except Exception as e:
+        logger.debug(f"Local fallback error [{path}]: {e}")
+    return None
+
 
 async def p2fk_get(path: str, mainnet: bool = False, extra_params: dict = None):
     """Fetch from p2fk.io with MongoDB cache (serve fresh cache, fallback stale).
@@ -175,6 +241,13 @@ async def p2fk_get(path: str, mainnet: bool = False, extra_params: dict = None):
     if cached is not None:
         logger.info(f"Serving stale cache for [{path}]")
         return cached
+
+    # Last resort: try local P2FK decoder for supported paths
+    local_result = await _local_p2fk_fallback(path, mainnet)
+    if local_result is not None:
+        logger.info(f"Local decoder fallback succeeded for [{path}]")
+        asyncio.create_task(_set_api_cache(cache_key, local_result))
+        return local_result
     return None
 
 

@@ -110,7 +110,244 @@ function IpfsNodeStatus() {
   );
 }
 
-/** Notifications settings tab */
+/** Connect Your Node — Bitcoin Core RPC configuration */
+function ConnectNodeSection({ network }) {
+  const [status, setStatus] = useState(null); // { connected, configured, chain, blocks, ... }
+  const [detecting, setDetecting] = useState(false);
+  const [detected, setDetected] = useState(null);
+  const [configuring, setConfiguring] = useState(false);
+  const [showForm, setShowForm] = useState(false);
+  const [rpcHost, setRpcHost] = useState('127.0.0.1');
+  const [rpcPort, setRpcPort] = useState(network?.includes('mainnet') ? '8332' : '18332');
+  const [rpcUser, setRpcUser] = useState('');
+  const [rpcPass, setRpcPass] = useState('');
+  const [error, setError] = useState('');
+
+  const checkStatus = useCallback(async () => {
+    try {
+      const res = await fetch(`${SETTINGS_API}/api/p2fk-local/node/status`);
+      const data = await res.json();
+      setStatus(data);
+    } catch { setStatus({ connected: false, configured: false }); }
+  }, []);
+
+  useEffect(() => { checkStatus(); }, [checkStatus]);
+
+  const handleDetect = async () => {
+    setDetecting(true);
+    setError('');
+    try {
+      const res = await fetch(`${SETTINGS_API}/api/p2fk-local/node/detect`);
+      const data = await res.json();
+      setDetected(data.detected || []);
+      if (data.count === 0) setError('No local Bitcoin Core node detected on standard ports');
+    } catch { setError('Detection failed'); }
+    setDetecting(false);
+  };
+
+  const handleConnect = async (url) => {
+    setConfiguring(true);
+    setError('');
+    try {
+      const res = await fetch(`${SETTINGS_API}/api/p2fk-local/node/configure`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rpc_url: url }),
+      });
+      const data = await res.json();
+      if (data.connected) {
+        setStatus(data);
+        setShowForm(false);
+      } else {
+        setError(data.error || 'Connection failed — check credentials');
+      }
+    } catch { setError('Connection failed'); }
+    setConfiguring(false);
+  };
+
+  const handleDisconnect = async () => {
+    try {
+      await fetch(`${SETTINGS_API}/api/p2fk-local/node/configure`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rpc_url: null }),
+      });
+      setStatus({ connected: false, configured: false });
+    } catch {}
+  };
+
+  const handleFormSubmit = () => {
+    if (!rpcUser || !rpcPass) { setError('Username and password required'); return; }
+    const url = `http://${rpcUser}:${rpcPass}@${rpcHost}:${rpcPort}`;
+    handleConnect(url);
+  };
+
+  return (
+    <div className="bg-gray-950 border border-gray-800 rounded-xl p-4" data-testid="connect-node-section">
+      <div className="flex items-center justify-between mb-2">
+        <p className="text-xs text-gray-500">Connect Your Node</p>
+        {status?.connected && (
+          <span className="text-[10px] font-mono text-emerald-400 bg-emerald-400/10 px-2 py-0.5 rounded-full">CONNECTED</span>
+        )}
+      </div>
+
+      {status?.connected ? (
+        <div className="space-y-2">
+          <div className="flex items-center gap-2">
+            <div className="w-2 h-2 rounded-full bg-emerald-400" />
+            <span className="text-sm text-gray-300">
+              Bitcoin Core ({status.chain || 'unknown'})
+            </span>
+          </div>
+          <div className="grid grid-cols-2 gap-2 text-xs">
+            <div className="bg-gray-900/50 rounded px-2 py-1.5">
+              <span className="text-gray-500">Blocks:</span>{' '}
+              <span className="text-gray-300 font-mono">{status.blocks?.toLocaleString()}</span>
+            </div>
+            <div className="bg-gray-900/50 rounded px-2 py-1.5">
+              <span className="text-gray-500">Sync:</span>{' '}
+              <span className="text-gray-300 font-mono">{((status.verification_progress || 0) * 100).toFixed(1)}%</span>
+            </div>
+          </div>
+          <p className="text-[10px] text-gray-600 leading-relaxed">
+            Transactions are fetched directly from your node instead of public explorers. Your node acts as the source of truth.
+          </p>
+          <button
+            onClick={handleDisconnect}
+            className="w-full text-xs text-red-400 hover:text-red-300 border border-red-800/30 rounded-lg py-1.5 transition-colors"
+            data-testid="disconnect-node-btn"
+          >
+            Disconnect Node
+          </button>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          <p className="text-xs text-gray-400 leading-relaxed">
+            Connect a local Bitcoin Core node for maximum sovereignty. Your node becomes the primary data source instead of public APIs.
+          </p>
+
+          <div className="flex gap-2">
+            <button
+              onClick={handleDetect}
+              disabled={detecting}
+              className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg bg-gray-900 hover:bg-gray-800 border border-gray-700/50 text-xs text-gray-300 transition-colors disabled:opacity-40"
+              data-testid="detect-node-btn"
+            >
+              <FiRefreshCw size={12} className={detecting ? 'animate-spin' : ''} />
+              {detecting ? 'Scanning...' : 'Auto-Detect'}
+            </button>
+            <button
+              onClick={() => setShowForm(!showForm)}
+              className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg bg-gray-900 hover:bg-gray-800 border border-gray-700/50 text-xs text-gray-300 transition-colors"
+              data-testid="manual-connect-btn"
+            >
+              <FiServer size={12} />
+              Manual Setup
+            </button>
+          </div>
+
+          {/* Auto-detected nodes */}
+          {detected && detected.length > 0 && (
+            <div className="space-y-1.5">
+              <p className="text-[10px] text-gray-500 font-medium">Detected nodes:</p>
+              {detected.map((node, i) => (
+                <div key={i} className="flex items-center gap-2 bg-gray-900/50 rounded-lg p-2">
+                  <div className={`w-1.5 h-1.5 rounded-full ${node.accessible ? 'bg-emerald-400' : 'bg-amber-400'}`} />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs text-gray-300 truncate">{node.label}</p>
+                    <p className="text-[10px] text-gray-500 font-mono">{node.url}</p>
+                  </div>
+                  {node.auth_required && !node.accessible ? (
+                    <button
+                      onClick={() => { setShowForm(true); setRpcPort(node.url.split(':').pop()); }}
+                      className="text-[10px] text-amber-400 border border-amber-700/30 px-2 py-0.5 rounded"
+                    >
+                      Add Credentials
+                    </button>
+                  ) : node.accessible ? (
+                    <button
+                      onClick={() => handleConnect(node.url)}
+                      disabled={configuring}
+                      className="text-[10px] text-emerald-400 border border-emerald-700/30 px-2 py-0.5 rounded"
+                      data-testid={`connect-detected-${i}`}
+                    >
+                      Connect
+                    </button>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Manual form */}
+          {showForm && (
+            <div className="bg-gray-900/50 border border-gray-700/30 rounded-lg p-3 space-y-2">
+              <p className="text-[10px] text-gray-500 font-medium">Bitcoin Core RPC Connection</p>
+              <div className="grid grid-cols-3 gap-2">
+                <div className="col-span-2">
+                  <label className="text-[10px] text-gray-600 block mb-0.5">Host</label>
+                  <input
+                    value={rpcHost} onChange={e => setRpcHost(e.target.value)}
+                    className="w-full bg-gray-900 border border-gray-700 rounded px-2 py-1.5 text-xs text-gray-200 font-mono focus:outline-none focus:border-purple-500"
+                    placeholder="127.0.0.1"
+                    data-testid="node-rpc-host"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] text-gray-600 block mb-0.5">Port</label>
+                  <input
+                    value={rpcPort} onChange={e => setRpcPort(e.target.value)}
+                    className="w-full bg-gray-900 border border-gray-700 rounded px-2 py-1.5 text-xs text-gray-200 font-mono focus:outline-none focus:border-purple-500"
+                    placeholder="18332"
+                    data-testid="node-rpc-port"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-[10px] text-gray-600 block mb-0.5">RPC User</label>
+                  <input
+                    value={rpcUser} onChange={e => setRpcUser(e.target.value)}
+                    className="w-full bg-gray-900 border border-gray-700 rounded px-2 py-1.5 text-xs text-gray-200 font-mono focus:outline-none focus:border-purple-500"
+                    placeholder="rpcuser"
+                    data-testid="node-rpc-user"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] text-gray-600 block mb-0.5">RPC Password</label>
+                  <input
+                    type="password"
+                    value={rpcPass} onChange={e => setRpcPass(e.target.value)}
+                    className="w-full bg-gray-900 border border-gray-700 rounded px-2 py-1.5 text-xs text-gray-200 font-mono focus:outline-none focus:border-purple-500"
+                    placeholder="rpcpassword"
+                    data-testid="node-rpc-pass"
+                  />
+                </div>
+              </div>
+              <p className="text-[10px] text-gray-600 leading-relaxed">
+                Find these in your <span className="font-mono text-gray-500">bitcoin.conf</span> file. Usually at <span className="font-mono text-gray-500">~/.bitcoin/bitcoin.conf</span> (Linux) or <span className="font-mono text-gray-500">%APPDATA%\Bitcoin\bitcoin.conf</span> (Windows).
+              </p>
+              <button
+                onClick={handleFormSubmit}
+                disabled={configuring || !rpcUser || !rpcPass}
+                className="w-full py-2 rounded-lg bg-purple-600 hover:bg-purple-500 disabled:opacity-40 text-xs text-white font-medium transition-colors"
+                data-testid="connect-node-submit"
+              >
+                {configuring ? 'Connecting...' : 'Connect to Node'}
+              </button>
+            </div>
+          )}
+
+          {error && (
+            <p className="text-[10px] text-red-400">{error}</p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+
 function NotificationsTab() {
   const [muted, setMutedState] = useState(isMuted());
 
@@ -193,7 +430,7 @@ const VERSION = 'v5.5.4-beta';
 const MENU_ITEMS = [
   { id: 'notifications', label: 'Notifications', subtitle: 'Sounds, Mute, Alerts', icon: FiBell, color: '#F43F5E' },
   { id: 'appearance', label: 'Chat Settings', subtitle: 'Wallpaper, Theme, Brightness', icon: FiDroplet, color: '#F97316' },
-  { id: 'network', label: 'Network', subtitle: 'Switch Networks, IPFS Node', icon: FiGlobe, color: '#22C55E' },
+  { id: 'network', label: 'Network', subtitle: 'Switch Networks, Connect Node', icon: FiGlobe, color: '#22C55E' },
   { id: 'walkie', label: 'Walkie Talkie', subtitle: 'On-chain Voice Broadcast', icon: FiRadio, color: '#EF4444' },
   { id: 'phone', label: 'Phone Settings', subtitle: 'Incoming Calls, Answering Machine', icon: FiPhone, color: '#10B981' },
   { id: 'treasury', label: 'Treasury', subtitle: 'Platform Fees, Address', icon: FiDollarSign, color: '#14B8A6' },
@@ -1909,6 +2146,9 @@ export default function SettingsModal({ fullPage, onClose, profileImage, network
 
               {/* IPFS Node Status — live polling */}
               <IpfsNodeStatus />
+
+              {/* Connect Your Node */}
+              <ConnectNodeSection network={network} />
 
               {/* Warning */}
               <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-4 flex items-start gap-3">

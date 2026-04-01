@@ -6,6 +6,10 @@ Endpoints:
   GET /api/p2fk-local/roots/{address}      — All Roots at an address
   GET /api/p2fk-local/profile/{address}    — Profile data at address
   GET /api/p2fk-local/objects/{address}    — Object data at address
+  GET /api/p2fk-local/keyword/{keyword}    — Keyword → address conversion
+  GET /api/p2fk-local/decode-address/{addr} — Address → keyword reverse
+  GET /api/p2fk-local/search               — Search roots by keyword
+  GET /api/p2fk-local/node/status          — Custom node connection status
 """
 
 import json
@@ -25,6 +29,7 @@ from blockchain_api import (
     fetch_transaction,
     fetch_address_transactions,
     get_version_byte,
+    test_custom_node,
 )
 from db_sqlite import get_conn
 
@@ -36,7 +41,12 @@ CACHE_TTL = 300  # 5 minutes
 
 # ─── SQLite Cache ────────────────────────────────────────────────────────────
 
+_cache_table_ready = False
+
 async def _ensure_cache_table():
+    global _cache_table_ready
+    if _cache_table_ready:
+        return
     conn = await get_conn()
     await conn.execute("""
         CREATE TABLE IF NOT EXISTS p2fk_root_cache (
@@ -46,6 +56,7 @@ async def _ensure_cache_table():
         )
     """)
     await conn.commit()
+    _cache_table_ready = True
 
 
 async def _cache_get(key: str) -> Optional[dict]:
@@ -68,7 +79,7 @@ async def _cache_set(key: str, data):
     conn = await get_conn()
     await conn.execute(
         "INSERT OR REPLACE INTO p2fk_root_cache (key, data, timestamp) VALUES (?, ?, ?)",
-        (key, json.dumps(data), time.time()),
+        (key, json.dumps(data, default=str), time.time()),
     )
     await conn.commit()
 
@@ -82,7 +93,7 @@ async def _decode_and_cache(txid: str, network: str) -> Optional[dict]:
     if cached:
         return cached
 
-    raw_tx = fetch_transaction(txid, network)
+    raw_tx = await fetch_transaction(txid, network)
     if not raw_tx:
         return None
 
@@ -104,7 +115,7 @@ async def _get_roots_at_address(address: str, network: str) -> list:
         return cached
 
     version_byte = get_version_byte(network)
-    txs = fetch_address_transactions(address, network)
+    txs = await fetch_address_transactions(address, network)
     roots = []
 
     for tx in txs:
@@ -114,7 +125,6 @@ async def _get_roots_at_address(address: str, network: str) -> list:
 
         root = decode_root_from_raw_tx(txid, tx, version_byte)
         if root:
-            # Only include if this address is in the outputs
             if address in root.outputs:
                 roots.append(root.to_dict())
 
@@ -128,12 +138,9 @@ def _extract_profile_from_roots(roots: list) -> Optional[dict]:
     """Extract profile data from the first PRO-type Root at an address."""
     for root in roots:
         files = root.get('File', {})
-        # Profile Roots have a "PRO" file or contain profile JSON
         if 'PRO' in files:
-            # Find the message that contains the profile JSON
             for msg in root.get('Message', []):
                 try:
-                    # Try to parse as JSON (profile data)
                     data = json.loads(msg)
                     return {
                         'TransactionId': root.get('TransactionId', ''),
@@ -144,9 +151,7 @@ def _extract_profile_from_roots(roots: list) -> Optional[dict]:
                     }
                 except json.JSONDecodeError:
                     continue
-        # Also check if message contains profile-like data
         for msg in root.get('Message', []):
-            # Profile messages typically contain URN, Name, Image fields
             if any(k in msg for k in ['"urn"', '"URN"', '"Name"', '"name"']):
                 try:
                     data = json.loads(msg)
@@ -253,3 +258,69 @@ async def decode_keyword_address(address: str):
         return {"address": address, "keyword": kw}
     except Exception as e:
         return {"error": str(e), "address": address}
+
+
+@router.get("/search")
+async def search_roots(
+    keyword: str = Query(..., description="Keyword to search for"),
+    network: str = Query("btc-testnet"),
+):
+    """Search for P2FK Roots by keyword (converts keyword to address, fetches roots)."""
+    vb = get_version_byte(network)
+    addr = keyword_to_address(keyword, vb)
+    roots = await _get_roots_at_address(addr, network)
+    return {"keyword": keyword, "address": addr, "roots": roots, "total": len(roots)}
+
+
+@router.get("/node/status")
+async def node_status():
+    """Check custom Bitcoin Core node connection status."""
+    from blockchain_api import _custom_node_url
+    status = await test_custom_node()
+    status["configured"] = bool(_custom_node_url)
+    return status
+
+
+@router.post("/node/configure")
+async def configure_node(body: dict):
+    """Configure a custom Bitcoin Core RPC endpoint.
+    Body: { "rpc_url": "http://user:pass@host:port" } or { "rpc_url": null } to disconnect."""
+    from blockchain_api import configure_custom_node
+    rpc_url = body.get("rpc_url")
+    configure_custom_node(rpc_url if rpc_url else None)
+
+    # Test the connection
+    if rpc_url:
+        status = await test_custom_node()
+        return {"success": status.get("connected", False), **status}
+    return {"success": True, "connected": False, "message": "Custom node disconnected"}
+
+
+@router.get("/node/detect")
+async def detect_local_node():
+    """Try to detect a locally running Bitcoin Core node on common ports."""
+    import httpx
+    common_endpoints = [
+        ("http://127.0.0.1:8332", "Bitcoin Core (mainnet)"),
+        ("http://127.0.0.1:18332", "Bitcoin Core (testnet)"),
+        ("http://127.0.0.1:18443", "Bitcoin Core (regtest)"),
+        ("http://127.0.0.1:38332", "Bitcoin Core (signet)"),
+    ]
+    detected = []
+    async with httpx.AsyncClient(timeout=2.0) as client:
+        for url, label in common_endpoints:
+            try:
+                resp = await client.post(url, json={
+                    "jsonrpc": "1.0", "id": "detect", "method": "getblockchaininfo", "params": []
+                })
+                if resp.status_code in (200, 401, 403):
+                    detected.append({
+                        "url": url,
+                        "label": label,
+                        "auth_required": resp.status_code in (401, 403),
+                        "accessible": resp.status_code == 200,
+                    })
+            except Exception:
+                pass
+    return {"detected": detected, "count": len(detected)}
+

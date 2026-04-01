@@ -1,0 +1,574 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="10" skipped="0" tests="10" time="177.066" timestamp="2026-04-01T21:09:04.871027+00:00" hostname="agent-env-ae3e0cd5-ad72-4b84-93b6-e8db8b514a93"><testcase classname="backend.tests.test_p2fk_local_decoder_iter219.TestP2FKLocalDecoder" name="test_health_check" time="10.104"><failure message="requests.exceptions.ReadTimeout: HTTPSConnectionPool(host='dark-telegram-ui.preview.emergentagent.com', port=443): Read timed out. (read timeout=10)">/root/.venv/lib/python3.11/site-packages/urllib3/connectionpool.py:534: in _make_request
+    response = conn.getresponse()
+               ^^^^^^^^^^^^^^^^^^
+/root/.venv/lib/python3.11/site-packages/urllib3/connection.py:571: in getresponse
+    httplib_response = super().getresponse()
+                       ^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.11/http/client.py:1415: in getresponse
+    response.begin()
+/usr/local/lib/python3.11/http/client.py:330: in begin
+    version, status, reason = self._read_status()
+                              ^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.11/http/client.py:291: in _read_status
+    line = str(self.fp.readline(_MAXLINE + 1), "iso-8859-1")
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.11/socket.py:718: in readinto
+    return self._sock.recv_into(b)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.11/ssl.py:1314: in recv_into
+    return self.read(nbytes, buffer)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.11/ssl.py:1166: in read
+    return self._sslobj.read(len, buffer)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   TimeoutError: The read operation timed out
+
+The above exception was the direct cause of the following exception:
+/root/.venv/lib/python3.11/site-packages/requests/adapters.py:644: in send
+    resp = conn.urlopen(
+/root/.venv/lib/python3.11/site-packages/urllib3/connectionpool.py:841: in urlopen
+    retries = retries.increment(
+/root/.venv/lib/python3.11/site-packages/urllib3/util/retry.py:490: in increment
+    raise reraise(type(error), error, _stacktrace)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/root/.venv/lib/python3.11/site-packages/urllib3/util/util.py:39: in reraise
+    raise value
+/root/.venv/lib/python3.11/site-packages/urllib3/connectionpool.py:787: in urlopen
+    response = self._make_request(
+/root/.venv/lib/python3.11/site-packages/urllib3/connectionpool.py:536: in _make_request
+    self._raise_timeout(err=e, url=url, timeout_value=read_timeout)
+/root/.venv/lib/python3.11/site-packages/urllib3/connectionpool.py:367: in _raise_timeout
+    raise ReadTimeoutError(
+E   urllib3.exceptions.ReadTimeoutError: HTTPSConnectionPool(host='dark-telegram-ui.preview.emergentagent.com', port=443): Read timed out. (read timeout=10)
+
+During handling of the above exception, another exception occurred:
+backend/tests/test_p2fk_local_decoder_iter219.py:43: in test_health_check
+    response = self.session.get(f"{BASE_URL}/api/p2fk-local/node/status", timeout=10)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/root/.venv/lib/python3.11/site-packages/requests/sessions.py:602: in get
+    return self.request("GET", url, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/root/.venv/lib/python3.11/site-packages/requests/sessions.py:589: in request
+    resp = self.send(prep, **send_kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/root/.venv/lib/python3.11/site-packages/requests/sessions.py:703: in send
+    r = adapter.send(request, **kwargs)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/root/.venv/lib/python3.11/site-packages/requests/adapters.py:690: in send
+    raise ReadTimeout(e, request=request)
+E   requests.exceptions.ReadTimeout: HTTPSConnectionPool(host='dark-telegram-ui.preview.emergentagent.com', port=443): Read timed out. (read timeout=10)</failure></testcase><testcase classname="backend.tests.test_p2fk_local_decoder_iter219.TestP2FKLocalDecoder" name="test_keyword_to_address_conversion" time="10.079"><failure message="requests.exceptions.ReadTimeout: HTTPSConnectionPool(host='dark-telegram-ui.preview.emergentagent.com', port=443): Read timed out. (read timeout=10)">/root/.venv/lib/python3.11/site-packages/urllib3/connectionpool.py:534: in _make_request
+    response = conn.getresponse()
+               ^^^^^^^^^^^^^^^^^^
+/root/.venv/lib/python3.11/site-packages/urllib3/connection.py:571: in getresponse
+    httplib_response = super().getresponse()
+                       ^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.11/http/client.py:1415: in getresponse
+    response.begin()
+/usr/local/lib/python3.11/http/client.py:330: in begin
+    version, status, reason = self._read_status()
+                              ^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.11/http/client.py:291: in _read_status
+    line = str(self.fp.readline(_MAXLINE + 1), "iso-8859-1")
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.11/socket.py:718: in readinto
+    return self._sock.recv_into(b)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.11/ssl.py:1314: in recv_into
+    return self.read(nbytes, buffer)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.11/ssl.py:1166: in read
+    return self._sslobj.read(len, buffer)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   TimeoutError: The read operation timed out
+
+The above exception was the direct cause of the following exception:
+/root/.venv/lib/python3.11/site-packages/requests/adapters.py:644: in send
+    resp = conn.urlopen(
+/root/.venv/lib/python3.11/site-packages/urllib3/connectionpool.py:841: in urlopen
+    retries = retries.increment(
+/root/.venv/lib/python3.11/site-packages/urllib3/util/retry.py:490: in increment
+    raise reraise(type(error), error, _stacktrace)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/root/.venv/lib/python3.11/site-packages/urllib3/util/util.py:39: in reraise
+    raise value
+/root/.venv/lib/python3.11/site-packages/urllib3/connectionpool.py:787: in urlopen
+    response = self._make_request(
+/root/.venv/lib/python3.11/site-packages/urllib3/connectionpool.py:536: in _make_request
+    self._raise_timeout(err=e, url=url, timeout_value=read_timeout)
+/root/.venv/lib/python3.11/site-packages/urllib3/connectionpool.py:367: in _raise_timeout
+    raise ReadTimeoutError(
+E   urllib3.exceptions.ReadTimeoutError: HTTPSConnectionPool(host='dark-telegram-ui.preview.emergentagent.com', port=443): Read timed out. (read timeout=10)
+
+During handling of the above exception, another exception occurred:
+backend/tests/test_p2fk_local_decoder_iter219.py:49: in test_keyword_to_address_conversion
+    response = self.session.get(
+/root/.venv/lib/python3.11/site-packages/requests/sessions.py:602: in get
+    return self.request("GET", url, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/root/.venv/lib/python3.11/site-packages/requests/sessions.py:589: in request
+    resp = self.send(prep, **send_kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/root/.venv/lib/python3.11/site-packages/requests/sessions.py:703: in send
+    r = adapter.send(request, **kwargs)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/root/.venv/lib/python3.11/site-packages/requests/adapters.py:690: in send
+    raise ReadTimeout(e, request=request)
+E   requests.exceptions.ReadTimeout: HTTPSConnectionPool(host='dark-telegram-ui.preview.emergentagent.com', port=443): Read timed out. (read timeout=10)</failure></testcase><testcase classname="backend.tests.test_p2fk_local_decoder_iter219.TestP2FKLocalDecoder" name="test_decode_address_to_keyword" time="10.071"><failure message="requests.exceptions.ReadTimeout: HTTPSConnectionPool(host='dark-telegram-ui.preview.emergentagent.com', port=443): Read timed out. (read timeout=10)">/root/.venv/lib/python3.11/site-packages/urllib3/connectionpool.py:534: in _make_request
+    response = conn.getresponse()
+               ^^^^^^^^^^^^^^^^^^
+/root/.venv/lib/python3.11/site-packages/urllib3/connection.py:571: in getresponse
+    httplib_response = super().getresponse()
+                       ^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.11/http/client.py:1415: in getresponse
+    response.begin()
+/usr/local/lib/python3.11/http/client.py:330: in begin
+    version, status, reason = self._read_status()
+                              ^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.11/http/client.py:291: in _read_status
+    line = str(self.fp.readline(_MAXLINE + 1), "iso-8859-1")
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.11/socket.py:718: in readinto
+    return self._sock.recv_into(b)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.11/ssl.py:1314: in recv_into
+    return self.read(nbytes, buffer)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.11/ssl.py:1166: in read
+    return self._sslobj.read(len, buffer)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   TimeoutError: The read operation timed out
+
+The above exception was the direct cause of the following exception:
+/root/.venv/lib/python3.11/site-packages/requests/adapters.py:644: in send
+    resp = conn.urlopen(
+/root/.venv/lib/python3.11/site-packages/urllib3/connectionpool.py:841: in urlopen
+    retries = retries.increment(
+/root/.venv/lib/python3.11/site-packages/urllib3/util/retry.py:490: in increment
+    raise reraise(type(error), error, _stacktrace)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/root/.venv/lib/python3.11/site-packages/urllib3/util/util.py:39: in reraise
+    raise value
+/root/.venv/lib/python3.11/site-packages/urllib3/connectionpool.py:787: in urlopen
+    response = self._make_request(
+/root/.venv/lib/python3.11/site-packages/urllib3/connectionpool.py:536: in _make_request
+    self._raise_timeout(err=e, url=url, timeout_value=read_timeout)
+/root/.venv/lib/python3.11/site-packages/urllib3/connectionpool.py:367: in _raise_timeout
+    raise ReadTimeoutError(
+E   urllib3.exceptions.ReadTimeoutError: HTTPSConnectionPool(host='dark-telegram-ui.preview.emergentagent.com', port=443): Read timed out. (read timeout=10)
+
+During handling of the above exception, another exception occurred:
+backend/tests/test_p2fk_local_decoder_iter219.py:69: in test_decode_address_to_keyword
+    response = self.session.get(
+/root/.venv/lib/python3.11/site-packages/requests/sessions.py:602: in get
+    return self.request("GET", url, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/root/.venv/lib/python3.11/site-packages/requests/sessions.py:589: in request
+    resp = self.send(prep, **send_kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/root/.venv/lib/python3.11/site-packages/requests/sessions.py:703: in send
+    r = adapter.send(request, **kwargs)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/root/.venv/lib/python3.11/site-packages/requests/adapters.py:690: in send
+    raise ReadTimeout(e, request=request)
+E   requests.exceptions.ReadTimeout: HTTPSConnectionPool(host='dark-telegram-ui.preview.emergentagent.com', port=443): Read timed out. (read timeout=10)</failure></testcase><testcase classname="backend.tests.test_p2fk_local_decoder_iter219.TestP2FKLocalDecoder" name="test_node_status" time="10.134"><failure message="requests.exceptions.ReadTimeout: HTTPSConnectionPool(host='dark-telegram-ui.preview.emergentagent.com', port=443): Read timed out. (read timeout=10)">/root/.venv/lib/python3.11/site-packages/urllib3/connectionpool.py:534: in _make_request
+    response = conn.getresponse()
+               ^^^^^^^^^^^^^^^^^^
+/root/.venv/lib/python3.11/site-packages/urllib3/connection.py:571: in getresponse
+    httplib_response = super().getresponse()
+                       ^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.11/http/client.py:1415: in getresponse
+    response.begin()
+/usr/local/lib/python3.11/http/client.py:330: in begin
+    version, status, reason = self._read_status()
+                              ^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.11/http/client.py:291: in _read_status
+    line = str(self.fp.readline(_MAXLINE + 1), "iso-8859-1")
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.11/socket.py:718: in readinto
+    return self._sock.recv_into(b)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.11/ssl.py:1314: in recv_into
+    return self.read(nbytes, buffer)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.11/ssl.py:1166: in read
+    return self._sslobj.read(len, buffer)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   TimeoutError: The read operation timed out
+
+The above exception was the direct cause of the following exception:
+/root/.venv/lib/python3.11/site-packages/requests/adapters.py:644: in send
+    resp = conn.urlopen(
+/root/.venv/lib/python3.11/site-packages/urllib3/connectionpool.py:841: in urlopen
+    retries = retries.increment(
+/root/.venv/lib/python3.11/site-packages/urllib3/util/retry.py:490: in increment
+    raise reraise(type(error), error, _stacktrace)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/root/.venv/lib/python3.11/site-packages/urllib3/util/util.py:39: in reraise
+    raise value
+/root/.venv/lib/python3.11/site-packages/urllib3/connectionpool.py:787: in urlopen
+    response = self._make_request(
+/root/.venv/lib/python3.11/site-packages/urllib3/connectionpool.py:536: in _make_request
+    self._raise_timeout(err=e, url=url, timeout_value=read_timeout)
+/root/.venv/lib/python3.11/site-packages/urllib3/connectionpool.py:367: in _raise_timeout
+    raise ReadTimeoutError(
+E   urllib3.exceptions.ReadTimeoutError: HTTPSConnectionPool(host='dark-telegram-ui.preview.emergentagent.com', port=443): Read timed out. (read timeout=10)
+
+During handling of the above exception, another exception occurred:
+backend/tests/test_p2fk_local_decoder_iter219.py:87: in test_node_status
+    response = self.session.get(f"{BASE_URL}/api/p2fk-local/node/status", timeout=10)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/root/.venv/lib/python3.11/site-packages/requests/sessions.py:602: in get
+    return self.request("GET", url, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/root/.venv/lib/python3.11/site-packages/requests/sessions.py:589: in request
+    resp = self.send(prep, **send_kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/root/.venv/lib/python3.11/site-packages/requests/sessions.py:703: in send
+    r = adapter.send(request, **kwargs)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/root/.venv/lib/python3.11/site-packages/requests/adapters.py:690: in send
+    raise ReadTimeout(e, request=request)
+E   requests.exceptions.ReadTimeout: HTTPSConnectionPool(host='dark-telegram-ui.preview.emergentagent.com', port=443): Read timed out. (read timeout=10)</failure></testcase><testcase classname="backend.tests.test_p2fk_local_decoder_iter219.TestP2FKLocalDecoder" name="test_node_detect" time="15.083"><failure message="requests.exceptions.ReadTimeout: HTTPSConnectionPool(host='dark-telegram-ui.preview.emergentagent.com', port=443): Read timed out. (read timeout=15)">/root/.venv/lib/python3.11/site-packages/urllib3/connectionpool.py:534: in _make_request
+    response = conn.getresponse()
+               ^^^^^^^^^^^^^^^^^^
+/root/.venv/lib/python3.11/site-packages/urllib3/connection.py:571: in getresponse
+    httplib_response = super().getresponse()
+                       ^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.11/http/client.py:1415: in getresponse
+    response.begin()
+/usr/local/lib/python3.11/http/client.py:330: in begin
+    version, status, reason = self._read_status()
+                              ^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.11/http/client.py:291: in _read_status
+    line = str(self.fp.readline(_MAXLINE + 1), "iso-8859-1")
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.11/socket.py:718: in readinto
+    return self._sock.recv_into(b)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.11/ssl.py:1314: in recv_into
+    return self.read(nbytes, buffer)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.11/ssl.py:1166: in read
+    return self._sslobj.read(len, buffer)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   TimeoutError: The read operation timed out
+
+The above exception was the direct cause of the following exception:
+/root/.venv/lib/python3.11/site-packages/requests/adapters.py:644: in send
+    resp = conn.urlopen(
+/root/.venv/lib/python3.11/site-packages/urllib3/connectionpool.py:841: in urlopen
+    retries = retries.increment(
+/root/.venv/lib/python3.11/site-packages/urllib3/util/retry.py:490: in increment
+    raise reraise(type(error), error, _stacktrace)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/root/.venv/lib/python3.11/site-packages/urllib3/util/util.py:39: in reraise
+    raise value
+/root/.venv/lib/python3.11/site-packages/urllib3/connectionpool.py:787: in urlopen
+    response = self._make_request(
+/root/.venv/lib/python3.11/site-packages/urllib3/connectionpool.py:536: in _make_request
+    self._raise_timeout(err=e, url=url, timeout_value=read_timeout)
+/root/.venv/lib/python3.11/site-packages/urllib3/connectionpool.py:367: in _raise_timeout
+    raise ReadTimeoutError(
+E   urllib3.exceptions.ReadTimeoutError: HTTPSConnectionPool(host='dark-telegram-ui.preview.emergentagent.com', port=443): Read timed out. (read timeout=15)
+
+During handling of the above exception, another exception occurred:
+backend/tests/test_p2fk_local_decoder_iter219.py:102: in test_node_detect
+    response = self.session.get(f"{BASE_URL}/api/p2fk-local/node/detect", timeout=15)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/root/.venv/lib/python3.11/site-packages/requests/sessions.py:602: in get
+    return self.request("GET", url, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/root/.venv/lib/python3.11/site-packages/requests/sessions.py:589: in request
+    resp = self.send(prep, **send_kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/root/.venv/lib/python3.11/site-packages/requests/sessions.py:703: in send
+    r = adapter.send(request, **kwargs)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/root/.venv/lib/python3.11/site-packages/requests/adapters.py:690: in send
+    raise ReadTimeout(e, request=request)
+E   requests.exceptions.ReadTimeout: HTTPSConnectionPool(host='dark-telegram-ui.preview.emergentagent.com', port=443): Read timed out. (read timeout=15)</failure></testcase><testcase classname="backend.tests.test_p2fk_local_decoder_iter219.TestP2FKLocalDecoder" name="test_node_configure_and_disconnect" time="10.075"><failure message="requests.exceptions.ReadTimeout: HTTPSConnectionPool(host='dark-telegram-ui.preview.emergentagent.com', port=443): Read timed out. (read timeout=10)">/root/.venv/lib/python3.11/site-packages/urllib3/connectionpool.py:534: in _make_request
+    response = conn.getresponse()
+               ^^^^^^^^^^^^^^^^^^
+/root/.venv/lib/python3.11/site-packages/urllib3/connection.py:571: in getresponse
+    httplib_response = super().getresponse()
+                       ^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.11/http/client.py:1415: in getresponse
+    response.begin()
+/usr/local/lib/python3.11/http/client.py:330: in begin
+    version, status, reason = self._read_status()
+                              ^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.11/http/client.py:291: in _read_status
+    line = str(self.fp.readline(_MAXLINE + 1), "iso-8859-1")
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.11/socket.py:718: in readinto
+    return self._sock.recv_into(b)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.11/ssl.py:1314: in recv_into
+    return self.read(nbytes, buffer)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.11/ssl.py:1166: in read
+    return self._sslobj.read(len, buffer)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   TimeoutError: The read operation timed out
+
+The above exception was the direct cause of the following exception:
+/root/.venv/lib/python3.11/site-packages/requests/adapters.py:644: in send
+    resp = conn.urlopen(
+/root/.venv/lib/python3.11/site-packages/urllib3/connectionpool.py:841: in urlopen
+    retries = retries.increment(
+/root/.venv/lib/python3.11/site-packages/urllib3/util/retry.py:490: in increment
+    raise reraise(type(error), error, _stacktrace)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/root/.venv/lib/python3.11/site-packages/urllib3/util/util.py:39: in reraise
+    raise value
+/root/.venv/lib/python3.11/site-packages/urllib3/connectionpool.py:787: in urlopen
+    response = self._make_request(
+/root/.venv/lib/python3.11/site-packages/urllib3/connectionpool.py:536: in _make_request
+    self._raise_timeout(err=e, url=url, timeout_value=read_timeout)
+/root/.venv/lib/python3.11/site-packages/urllib3/connectionpool.py:367: in _raise_timeout
+    raise ReadTimeoutError(
+E   urllib3.exceptions.ReadTimeoutError: HTTPSConnectionPool(host='dark-telegram-ui.preview.emergentagent.com', port=443): Read timed out. (read timeout=10)
+
+During handling of the above exception, another exception occurred:
+backend/tests/test_p2fk_local_decoder_iter219.py:119: in test_node_configure_and_disconnect
+    response = self.session.post(
+/root/.venv/lib/python3.11/site-packages/requests/sessions.py:637: in post
+    return self.request("POST", url, data=data, json=json, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/root/.venv/lib/python3.11/site-packages/requests/sessions.py:589: in request
+    resp = self.send(prep, **send_kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/root/.venv/lib/python3.11/site-packages/requests/sessions.py:703: in send
+    r = adapter.send(request, **kwargs)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/root/.venv/lib/python3.11/site-packages/requests/adapters.py:690: in send
+    raise ReadTimeout(e, request=request)
+E   requests.exceptions.ReadTimeout: HTTPSConnectionPool(host='dark-telegram-ui.preview.emergentagent.com', port=443): Read timed out. (read timeout=10)</failure></testcase><testcase classname="backend.tests.test_p2fk_local_decoder_iter219.TestP2FKLocalDecoder" name="test_decode_root_transaction" time="30.133"><failure message="requests.exceptions.ReadTimeout: HTTPSConnectionPool(host='dark-telegram-ui.preview.emergentagent.com', port=443): Read timed out. (read timeout=30)">/root/.venv/lib/python3.11/site-packages/urllib3/connectionpool.py:534: in _make_request
+    response = conn.getresponse()
+               ^^^^^^^^^^^^^^^^^^
+/root/.venv/lib/python3.11/site-packages/urllib3/connection.py:571: in getresponse
+    httplib_response = super().getresponse()
+                       ^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.11/http/client.py:1415: in getresponse
+    response.begin()
+/usr/local/lib/python3.11/http/client.py:330: in begin
+    version, status, reason = self._read_status()
+                              ^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.11/http/client.py:291: in _read_status
+    line = str(self.fp.readline(_MAXLINE + 1), "iso-8859-1")
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.11/socket.py:718: in readinto
+    return self._sock.recv_into(b)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.11/ssl.py:1314: in recv_into
+    return self.read(nbytes, buffer)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.11/ssl.py:1166: in read
+    return self._sslobj.read(len, buffer)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   TimeoutError: The read operation timed out
+
+The above exception was the direct cause of the following exception:
+/root/.venv/lib/python3.11/site-packages/requests/adapters.py:644: in send
+    resp = conn.urlopen(
+/root/.venv/lib/python3.11/site-packages/urllib3/connectionpool.py:841: in urlopen
+    retries = retries.increment(
+/root/.venv/lib/python3.11/site-packages/urllib3/util/retry.py:490: in increment
+    raise reraise(type(error), error, _stacktrace)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/root/.venv/lib/python3.11/site-packages/urllib3/util/util.py:39: in reraise
+    raise value
+/root/.venv/lib/python3.11/site-packages/urllib3/connectionpool.py:787: in urlopen
+    response = self._make_request(
+/root/.venv/lib/python3.11/site-packages/urllib3/connectionpool.py:536: in _make_request
+    self._raise_timeout(err=e, url=url, timeout_value=read_timeout)
+/root/.venv/lib/python3.11/site-packages/urllib3/connectionpool.py:367: in _raise_timeout
+    raise ReadTimeoutError(
+E   urllib3.exceptions.ReadTimeoutError: HTTPSConnectionPool(host='dark-telegram-ui.preview.emergentagent.com', port=443): Read timed out. (read timeout=30)
+
+During handling of the above exception, another exception occurred:
+backend/tests/test_p2fk_local_decoder_iter219.py:157: in test_decode_root_transaction
+    response = self.session.get(
+/root/.venv/lib/python3.11/site-packages/requests/sessions.py:602: in get
+    return self.request("GET", url, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/root/.venv/lib/python3.11/site-packages/requests/sessions.py:589: in request
+    resp = self.send(prep, **send_kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/root/.venv/lib/python3.11/site-packages/requests/sessions.py:703: in send
+    r = adapter.send(request, **kwargs)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/root/.venv/lib/python3.11/site-packages/requests/adapters.py:690: in send
+    raise ReadTimeout(e, request=request)
+E   requests.exceptions.ReadTimeout: HTTPSConnectionPool(host='dark-telegram-ui.preview.emergentagent.com', port=443): Read timed out. (read timeout=30)</failure></testcase><testcase classname="backend.tests.test_p2fk_local_decoder_iter219.TestP2FKLocalDecoder" name="test_search_roots_by_keyword" time="60.156"><failure message="requests.exceptions.ReadTimeout: HTTPSConnectionPool(host='dark-telegram-ui.preview.emergentagent.com', port=443): Read timed out. (read timeout=60)">/root/.venv/lib/python3.11/site-packages/urllib3/connectionpool.py:534: in _make_request
+    response = conn.getresponse()
+               ^^^^^^^^^^^^^^^^^^
+/root/.venv/lib/python3.11/site-packages/urllib3/connection.py:571: in getresponse
+    httplib_response = super().getresponse()
+                       ^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.11/http/client.py:1415: in getresponse
+    response.begin()
+/usr/local/lib/python3.11/http/client.py:330: in begin
+    version, status, reason = self._read_status()
+                              ^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.11/http/client.py:291: in _read_status
+    line = str(self.fp.readline(_MAXLINE + 1), "iso-8859-1")
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.11/socket.py:718: in readinto
+    return self._sock.recv_into(b)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.11/ssl.py:1314: in recv_into
+    return self.read(nbytes, buffer)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.11/ssl.py:1166: in read
+    return self._sslobj.read(len, buffer)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   TimeoutError: The read operation timed out
+
+The above exception was the direct cause of the following exception:
+/root/.venv/lib/python3.11/site-packages/requests/adapters.py:644: in send
+    resp = conn.urlopen(
+/root/.venv/lib/python3.11/site-packages/urllib3/connectionpool.py:841: in urlopen
+    retries = retries.increment(
+/root/.venv/lib/python3.11/site-packages/urllib3/util/retry.py:490: in increment
+    raise reraise(type(error), error, _stacktrace)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/root/.venv/lib/python3.11/site-packages/urllib3/util/util.py:39: in reraise
+    raise value
+/root/.venv/lib/python3.11/site-packages/urllib3/connectionpool.py:787: in urlopen
+    response = self._make_request(
+/root/.venv/lib/python3.11/site-packages/urllib3/connectionpool.py:536: in _make_request
+    self._raise_timeout(err=e, url=url, timeout_value=read_timeout)
+/root/.venv/lib/python3.11/site-packages/urllib3/connectionpool.py:367: in _raise_timeout
+    raise ReadTimeoutError(
+E   urllib3.exceptions.ReadTimeoutError: HTTPSConnectionPool(host='dark-telegram-ui.preview.emergentagent.com', port=443): Read timed out. (read timeout=60)
+
+During handling of the above exception, another exception occurred:
+backend/tests/test_p2fk_local_decoder_iter219.py:192: in test_search_roots_by_keyword
+    response = self.session.get(
+/root/.venv/lib/python3.11/site-packages/requests/sessions.py:602: in get
+    return self.request("GET", url, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/root/.venv/lib/python3.11/site-packages/requests/sessions.py:589: in request
+    resp = self.send(prep, **send_kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/root/.venv/lib/python3.11/site-packages/requests/sessions.py:703: in send
+    r = adapter.send(request, **kwargs)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/root/.venv/lib/python3.11/site-packages/requests/adapters.py:690: in send
+    raise ReadTimeout(e, request=request)
+E   requests.exceptions.ReadTimeout: HTTPSConnectionPool(host='dark-telegram-ui.preview.emergentagent.com', port=443): Read timed out. (read timeout=60)</failure></testcase><testcase classname="backend.tests.test_p2fk_local_decoder_iter219.TestP2FKKeywordAddressRoundtrip" name="test_roundtrip_conversion" time="10.127"><failure message="requests.exceptions.ReadTimeout: HTTPSConnectionPool(host='dark-telegram-ui.preview.emergentagent.com', port=443): Read timed out. (read timeout=10)">/root/.venv/lib/python3.11/site-packages/urllib3/connectionpool.py:534: in _make_request
+    response = conn.getresponse()
+               ^^^^^^^^^^^^^^^^^^
+/root/.venv/lib/python3.11/site-packages/urllib3/connection.py:571: in getresponse
+    httplib_response = super().getresponse()
+                       ^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.11/http/client.py:1415: in getresponse
+    response.begin()
+/usr/local/lib/python3.11/http/client.py:330: in begin
+    version, status, reason = self._read_status()
+                              ^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.11/http/client.py:291: in _read_status
+    line = str(self.fp.readline(_MAXLINE + 1), "iso-8859-1")
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.11/socket.py:718: in readinto
+    return self._sock.recv_into(b)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.11/ssl.py:1314: in recv_into
+    return self.read(nbytes, buffer)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.11/ssl.py:1166: in read
+    return self._sslobj.read(len, buffer)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   TimeoutError: The read operation timed out
+
+The above exception was the direct cause of the following exception:
+/root/.venv/lib/python3.11/site-packages/requests/adapters.py:644: in send
+    resp = conn.urlopen(
+/root/.venv/lib/python3.11/site-packages/urllib3/connectionpool.py:841: in urlopen
+    retries = retries.increment(
+/root/.venv/lib/python3.11/site-packages/urllib3/util/retry.py:490: in increment
+    raise reraise(type(error), error, _stacktrace)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/root/.venv/lib/python3.11/site-packages/urllib3/util/util.py:39: in reraise
+    raise value
+/root/.venv/lib/python3.11/site-packages/urllib3/connectionpool.py:787: in urlopen
+    response = self._make_request(
+/root/.venv/lib/python3.11/site-packages/urllib3/connectionpool.py:536: in _make_request
+    self._raise_timeout(err=e, url=url, timeout_value=read_timeout)
+/root/.venv/lib/python3.11/site-packages/urllib3/connectionpool.py:367: in _raise_timeout
+    raise ReadTimeoutError(
+E   urllib3.exceptions.ReadTimeoutError: HTTPSConnectionPool(host='dark-telegram-ui.preview.emergentagent.com', port=443): Read timed out. (read timeout=10)
+
+During handling of the above exception, another exception occurred:
+backend/tests/test_p2fk_local_decoder_iter219.py:233: in test_roundtrip_conversion
+    resp1 = self.session.get(
+/root/.venv/lib/python3.11/site-packages/requests/sessions.py:602: in get
+    return self.request("GET", url, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/root/.venv/lib/python3.11/site-packages/requests/sessions.py:589: in request
+    resp = self.send(prep, **send_kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/root/.venv/lib/python3.11/site-packages/requests/sessions.py:703: in send
+    r = adapter.send(request, **kwargs)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/root/.venv/lib/python3.11/site-packages/requests/adapters.py:690: in send
+    raise ReadTimeout(e, request=request)
+E   requests.exceptions.ReadTimeout: HTTPSConnectionPool(host='dark-telegram-ui.preview.emergentagent.com', port=443): Read timed out. (read timeout=10)</failure></testcase><testcase classname="backend.tests.test_p2fk_local_decoder_iter219.TestP2FKNetworkVariants" name="test_keyword_mainnet_vs_testnet" time="10.068"><failure message="requests.exceptions.ReadTimeout: HTTPSConnectionPool(host='dark-telegram-ui.preview.emergentagent.com', port=443): Read timed out. (read timeout=10)">/root/.venv/lib/python3.11/site-packages/urllib3/connectionpool.py:534: in _make_request
+    response = conn.getresponse()
+               ^^^^^^^^^^^^^^^^^^
+/root/.venv/lib/python3.11/site-packages/urllib3/connection.py:571: in getresponse
+    httplib_response = super().getresponse()
+                       ^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.11/http/client.py:1415: in getresponse
+    response.begin()
+/usr/local/lib/python3.11/http/client.py:330: in begin
+    version, status, reason = self._read_status()
+                              ^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.11/http/client.py:291: in _read_status
+    line = str(self.fp.readline(_MAXLINE + 1), "iso-8859-1")
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.11/socket.py:718: in readinto
+    return self._sock.recv_into(b)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.11/ssl.py:1314: in recv_into
+    return self.read(nbytes, buffer)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.11/ssl.py:1166: in read
+    return self._sslobj.read(len, buffer)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   TimeoutError: The read operation timed out
+
+The above exception was the direct cause of the following exception:
+/root/.venv/lib/python3.11/site-packages/requests/adapters.py:644: in send
+    resp = conn.urlopen(
+/root/.venv/lib/python3.11/site-packages/urllib3/connectionpool.py:841: in urlopen
+    retries = retries.increment(
+/root/.venv/lib/python3.11/site-packages/urllib3/util/retry.py:490: in increment
+    raise reraise(type(error), error, _stacktrace)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/root/.venv/lib/python3.11/site-packages/urllib3/util/util.py:39: in reraise
+    raise value
+/root/.venv/lib/python3.11/site-packages/urllib3/connectionpool.py:787: in urlopen
+    response = self._make_request(
+/root/.venv/lib/python3.11/site-packages/urllib3/connectionpool.py:536: in _make_request
+    self._raise_timeout(err=e, url=url, timeout_value=read_timeout)
+/root/.venv/lib/python3.11/site-packages/urllib3/connectionpool.py:367: in _raise_timeout
+    raise ReadTimeoutError(
+E   urllib3.exceptions.ReadTimeoutError: HTTPSConnectionPool(host='dark-telegram-ui.preview.emergentagent.com', port=443): Read timed out. (read timeout=10)
+
+During handling of the above exception, another exception occurred:
+backend/tests/test_p2fk_local_decoder_iter219.py:265: in test_keyword_mainnet_vs_testnet
+    resp_testnet = self.session.get(
+/root/.venv/lib/python3.11/site-packages/requests/sessions.py:602: in get
+    return self.request("GET", url, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/root/.venv/lib/python3.11/site-packages/requests/sessions.py:589: in request
+    resp = self.send(prep, **send_kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/root/.venv/lib/python3.11/site-packages/requests/sessions.py:703: in send
+    r = adapter.send(request, **kwargs)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/root/.venv/lib/python3.11/site-packages/requests/adapters.py:690: in send
+    raise ReadTimeout(e, request=request)
+E   requests.exceptions.ReadTimeout: HTTPSConnectionPool(host='dark-telegram-ui.preview.emergentagent.com', port=443): Read timed out. (read timeout=10)</failure></testcase></testsuite></testsuites>
