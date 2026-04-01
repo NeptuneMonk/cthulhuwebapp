@@ -21,7 +21,7 @@ from pydantic import BaseModel
 
 from config import SEED_ADDRESSES
 from db_sqlite import get_conn
-from utils.helpers import p2fk_get
+from utils.helpers import p2fk_get, register_known_user
 from utils.http_pool import get_client
 
 logger = logging.getLogger(__name__)
@@ -192,7 +192,16 @@ async def _run_vacuum(network: str = "btc-testnet"):
             _vlog(f"Profiles: {i}/{len(disc_list)}")
 
         try:
-            await p2fk_get(f"GetProfileByAddress/{addr}", mainnet)
+            profile = await p2fk_get(f"GetProfileByAddress/{addr}", mainnet)
+            # Auto-register discovered addresses as known users (populates feed)
+            if isinstance(profile, dict):
+                urn = profile.get("URN") or profile.get("urn")
+                image = profile.get("Image") or profile.get("image")
+                display = profile.get("DisplayName") or profile.get("Name")
+                await register_known_user(addr, network, urn, image, display)
+            else:
+                # Register even without profile data (they still have posts)
+                await register_known_user(addr, network, None, None, None)
         except Exception:
             _vacuum_state["errors"] += 1
 
@@ -429,9 +438,29 @@ async def _consume_snapshot(cid: str, network: str = "btc-testnet") -> dict:
 
         await conn.commit()
 
+        # Auto-register discovered signers as known users (populates feed)
+        registered = 0
+        seen_signers = set()
+        for root in snapshot.get("roots", []):
+            signer = root.get("SignedBy", "")
+            if signer and signer not in seen_signers:
+                seen_signers.add(signer)
+                await register_known_user(signer, network, None, None, None)
+                registered += 1
+        for profile in snapshot.get("profiles", []):
+            addr = profile.get("Address", profile.get("address", ""))
+            urn = profile.get("URN") or profile.get("urn")
+            image = profile.get("Image") or profile.get("image")
+            display = profile.get("DisplayName") or profile.get("Name")
+            if addr and addr not in seen_signers:
+                seen_signers.add(addr)
+                await register_known_user(addr, network, urn, image, display)
+                registered += 1
+
         return {
             "success": True,
             "imported": imported,
+            "users_registered": registered,
             "snapshot_stats": snapshot.get("stats", {}),
             "chain": snapshot.get("chain"),
             "timestamp": snapshot.get("timestamp"),
@@ -527,3 +556,80 @@ async def get_snapshot_chain(network: str = Query("btc-testnet")):
             for r in await cursor.fetchall()
         ]
     return {"chain": chain, "length": len(chain), "network": network}
+
+
+@router.post("/hydrate-feed")
+async def hydrate_feed_from_cache(network: str = Query("btc-testnet")):
+    """Extract all unique signers from cached P2FK roots and register them as known users.
+    This populates the feed with ALL discovered users, not just manually registered ones."""
+    mainnet = "mainnet" in network
+    conn = await get_conn()
+
+    # Scan all cached roots for unique signers
+    prefix = "p2fk:"
+    async with conn.execute(
+        "SELECT data FROM api_cache WHERE _id LIKE ?", (f"{prefix}%",)
+    ) as cursor:
+        rows = await cursor.fetchall()
+
+    signers = {}  # address → { urn, image, display_name }
+    for row in rows:
+        try:
+            d = json.loads(row[0])
+            cached = d.get("data", d) if isinstance(d, dict) and "data" in d else d
+            items = cached if isinstance(cached, list) else [cached]
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                signer = item.get("SignedBy", "")
+                if signer and signer not in signers:
+                    signers[signer] = {"urn": None, "image": None, "display": None}
+                # Extract profile info if present
+                urn = item.get("URN") or item.get("urn")
+                addr = item.get("Address") or item.get("address") or signer
+                if urn and addr:
+                    signers[addr] = {
+                        "urn": urn,
+                        "image": item.get("Image") or item.get("image"),
+                        "display": item.get("DisplayName") or item.get("Name"),
+                    }
+        except Exception:
+            continue
+
+    # Register all discovered signers
+    registered = 0
+    for addr, info in signers.items():
+        if addr:
+            await register_known_user(addr, network, info["urn"], info["image"], info["display"])
+            registered += 1
+
+    return {
+        "registered": registered,
+        "network": network,
+        "message": f"Registered {registered} users from cached data. Feed will include their posts on next refresh.",
+    }
+
+
+@router.get("/latest-cid")
+async def get_latest_snapshot_cid(network: str = Query("btc-testnet")):
+    """Get the latest snapshot CID for bootstrapping. This is the public discovery endpoint."""
+    await _ensure_snapshot_table()
+    conn = await get_conn()
+    async with conn.execute(
+        "SELECT cid, root_count, size_bytes, created_at FROM snapshots WHERE chain = ? ORDER BY id DESC LIMIT 1",
+        (network,),
+    ) as cursor:
+        row = await cursor.fetchone()
+
+    if not row:
+        return {"cid": None, "message": "No snapshots available"}
+
+    return {
+        "cid": row[0],
+        "root_count": row[1],
+        "size_bytes": row[2],
+        "created_at": row[3],
+        "network": network,
+        "ipfs_url": f"https://ipfs.io/ipfs/{row[0]}",
+    }
+

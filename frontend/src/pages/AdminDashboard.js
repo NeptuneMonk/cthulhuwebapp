@@ -1021,6 +1021,98 @@ function StatCard({ label, value, sub, color = 'text-gray-200', bg = 'bg-gray-80
 
 
 // ─── Chain Snapshots Panel ───
+
+function HydrateFeedSection({ network, onComplete }) {
+  const [hydrating, setHydrating] = useState(false);
+  const [result, setResult] = useState(null);
+
+  const hydrate = async () => {
+    setHydrating(true);
+    setResult(null);
+    try {
+      const res = await fetch(`${ROOT_API}/snapshot/hydrate-feed?network=${network}`, { method: 'POST' });
+      if (res.ok) {
+        const data = await safeJson(res);
+        setResult(data);
+        if (onComplete) onComplete();
+      }
+    } catch (e) { setResult({ error: e.message }); }
+    setHydrating(false);
+  };
+
+  return (
+    <div className="bg-gray-900/60 border border-gray-800 rounded-xl p-4" data-testid="hydrate-feed-section">
+      <h3 className="text-sm font-bold text-gray-200 mb-1">Hydrate Feed</h3>
+      <p className="text-[10px] text-gray-500 mb-3">
+        Extract all signers from cached data and register as known users. The feed will include all their posts.
+      </p>
+      <button
+        onClick={hydrate}
+        disabled={hydrating}
+        className="flex items-center gap-2 px-3 py-2 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg text-xs font-medium disabled:opacity-40 transition-colors"
+        data-testid="hydrate-feed-btn"
+      >
+        <FiPlay size={12} />
+        {hydrating ? 'Hydrating...' : 'Hydrate Now'}
+      </button>
+      {result && (
+        <div className={`mt-2 p-2 rounded-lg text-xs ${result.error ? 'bg-red-900/20 text-red-400' : 'bg-emerald-900/20 text-emerald-400'}`}>
+          {result.error ? `Error: ${result.error}` : result.message}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function OnChainDiscoverySection({ network, latestCid }) {
+  const [copied, setCopied] = useState(false);
+  const keywordAddr = network === 'btc-mainnet'
+    ? { keyword: 'CTHULHU-SNAPSHOT', addr: '1791Euc6FVvzdX6oVAQ3WC5NBePsK4tbZe' }
+    : { keyword: 'CTHULHU-SNAPSHOT', addr: 'mmexXxh54XNFQdaRCjNRL7Hh3dzaEqS3MB' };
+
+  const copyAddr = () => {
+    navigator.clipboard.writeText(keywordAddr.addr);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <div className="bg-gray-900/60 border border-gray-800 rounded-xl p-4" data-testid="onchain-discovery-section">
+      <h3 className="text-sm font-bold text-gray-200 mb-1">On-Chain Discovery</h3>
+      <p className="text-[10px] text-gray-500 mb-3">
+        Publish your snapshot CID to a well-known keyword address. Any Cthulhu node can look up this address to bootstrap.
+      </p>
+
+      <div className="bg-gray-950 rounded-lg p-3 space-y-2">
+        <div className="flex items-center justify-between">
+          <span className="text-[10px] text-gray-600">Keyword:</span>
+          <span className="text-xs font-mono text-purple-400">{keywordAddr.keyword}</span>
+        </div>
+        <div className="flex items-center justify-between">
+          <span className="text-[10px] text-gray-600">Address:</span>
+          <div className="flex items-center gap-1">
+            <span className="text-[10px] font-mono text-gray-400 truncate max-w-[180px]">{keywordAddr.addr}</span>
+            <button onClick={copyAddr} className="text-gray-600 hover:text-gray-300 p-0.5" title="Copy">
+              {copied ? <FiCheck size={10} className="text-emerald-400" /> : <FiCopy size={10} />}
+            </button>
+          </div>
+        </div>
+        {latestCid && (
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] text-gray-600">Latest CID:</span>
+            <span className="text-[10px] font-mono text-emerald-400 truncate max-w-[180px]" title={latestCid}>{latestCid}</span>
+          </div>
+        )}
+      </div>
+
+      <p className="text-[9px] text-gray-600 mt-2 leading-relaxed">
+        To publish: compose a post to keyword <span className="font-mono text-purple-400/80">{keywordAddr.keyword}</span> with the snapshot CID as the message body. New nodes look up this keyword to find the latest snapshot and bootstrap instantly.
+      </p>
+    </div>
+  );
+}
+
+
 function SnapshotPanel({ network }) {
   const [status, setStatus] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -1218,6 +1310,15 @@ function SnapshotPanel({ network }) {
             }
           </div>
         )}
+      </div>
+
+      {/* Hydrate Feed + On-Chain Discovery */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* Hydrate Feed */}
+        <HydrateFeedSection network={network} onComplete={fetchStatus} />
+
+        {/* On-Chain Discovery */}
+        <OnChainDiscoverySection network={network} latestCid={snapshots[0]?.cid} />
       </div>
 
       {/* Snapshot History (Daisy Chain) */}
