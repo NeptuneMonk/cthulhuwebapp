@@ -1,0 +1,72 @@
+{
+  "summary": "Iteration 207: Verified Smart Composite Explorer Fallback implementation. All chainExplorer.js functions work correctly - getBlockHeight, getBalance, getFees, getUTXOs, getTxHistory all return expected data from mempool.space/blockstream.info. Frontend loads without chainExplorer import errors. All file integrations verified: txBuilder.js, useWallet.js, usePendingMint.js, WalletSend.js, WalletOverview.js, ProfileSetupPage.js, useWalletNotifications.js all correctly import from chainExplorer.js. No axios imports in WalletSend.js. No /api/wallet/utxos calls in ObjectActionModals.js.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/health", "issue": "Timeout on health check (15s) - may be slow or not implemented"},
+      {"endpoint": "/api/treasury/info", "issue": "Timeout on treasury info (15s) - may be slow"}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_chain_explorer.py",
+    "/app/test_reports/pytest/pytest_results_iter207.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "VERIFIED: chainExplorer.js exports all required functions: getUTXOs, getRawTx, broadcast, getBalance, getFees, getTxStatus, getBlockHeight, getTxHistory, getSourceStatus, resetCircuitBreakers, getSupportedNetworks",
+    "VERIFIED: getBlockHeight('btc-testnet') returns number > 2M from mempool.space",
+    "VERIFIED: getBlockHeight('btc-mainnet') returns number > 800K from mempool.space",
+    "VERIFIED: getBalance returns {confirmed, unconfirmed, total} format from mempool.space/blockstream.info",
+    "VERIFIED: getSupportedNetworks() returns array containing btc-testnet, btc-mainnet, doge-mainnet, ltc-mainnet, mzc-mainnet",
+    "VERIFIED: txBuilder.js line 18 imports getUTXOs, getRawTx, broadcast from chainExplorer",
+    "VERIFIED: useWallet.js line 4 imports getBalance from chainExplorer",
+    "VERIFIED: usePendingMint.js line 46 uses dynamic import of getTxStatus from chainExplorer",
+    "VERIFIED: WalletSend.js lines 32-33 uses getFees from chainExplorer via dynamic import",
+    "VERIFIED: WalletSend.js has NO axios import (removed as expected)",
+    "VERIFIED: ObjectActionModals.js has NO direct /api/wallet/utxos calls (uses fetchUtxos from txBuilder)",
+    "VERIFIED: useWalletNotifications.js lines 55-56 uses getBalance from chainExplorer",
+    "VERIFIED: WalletOverview.js lines 73-75 uses getBalance from chainExplorer",
+    "VERIFIED: ProfileSetupPage.js lines 119-133 uses getBalance from chainExplorer",
+    "VERIFIED: getSourceStatus('btc-testnet') returns status objects for mempool and blockstream providers",
+    "VERIFIED: Circuit breaker mechanism tracks failures per provider with 3-failure threshold and 60s cooldown",
+    "VERIFIED: Frontend loads at main URL without console errors related to chainExplorer imports",
+    "VERIFIED: Auth page renders correctly with Import Key and New Wallet tabs"
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_chain_explorer.py"
+  ],
+  "success_rate": {
+    "backend": "89% (16/18 tests passed - 2 backend API timeouts not critical for this feature)",
+    "frontend": "100% (all chainExplorer integrations verified, UI loads correctly)"
+  },
+  "seed_data_creation": "",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Smart Composite Explorer Fallback fully implemented and tested. Frontend now queries public blockchain explorers (mempool.space, blockstream.info, blockcypher, litecoinspace.org, mazacha.in) directly instead of routing through backend proxy. chainExplorer.js handles automatic fallback between multiple explorer sources with circuit breaker protection (3 failures = 60s cooldown). Backend wallet proxy endpoints still exist but are no longer called by frontend code. Treasury endpoints (/api/treasury/*) still use backend.",
+  "features_verified": {
+    "chainExplorer_exports": "PASS - All 12 functions exported correctly",
+    "getBlockHeight_btc_testnet": "PASS - Returns number > 2M",
+    "getBlockHeight_btc_mainnet": "PASS - Returns number > 800K",
+    "getBalance_format": "PASS - Returns {confirmed, unconfirmed, total}",
+    "getFees_format": "PASS - Returns {fastestFee, halfHourFee, hourFee, minimumFee}",
+    "getUTXOs_format": "PASS - Returns array with {txid, vout, value, confirmed}",
+    "getSupportedNetworks": "PASS - Returns btc-testnet, btc-mainnet, doge-mainnet, ltc-mainnet, mzc-mainnet",
+    "getSourceStatus": "PASS - Returns provider status with available, failures, cooldownUntil",
+    "txBuilder_integration": "PASS - Imports getUTXOs, getRawTx, broadcast from chainExplorer",
+    "useWallet_integration": "PASS - Uses getBalance from chainExplorer",
+    "usePendingMint_integration": "PASS - Uses getTxStatus from chainExplorer",
+    "WalletSend_integration": "PASS - Uses getFees from chainExplorer, no axios import",
+    "ObjectActionModals_integration": "PASS - No direct /api/wallet/utxos calls",
+    "useWalletNotifications_integration": "PASS - Uses getBalance from chainExplorer",
+    "WalletOverview_integration": "PASS - Uses getBalance from chainExplorer",
+    "ProfileSetupPage_integration": "PASS - Uses getBalance from chainExplorer",
+    "frontend_loads": "PASS - No chainExplorer import errors",
+    "auth_page_renders": "PASS - Import Key and New Wallet tabs visible",
+    "circuit_breaker": "PASS - 3-failure threshold, 60s cooldown implemented"
+  }
+}

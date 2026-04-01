@@ -1,0 +1,63 @@
+{
+  "summary": "Iteration 208: Verified On-Chain Vault rewrite and Smart Composite Explorer integration. All 18 tests passed. VaultPage correctly shows pattern setup screen when wallet connected, pattern lock stored in localStorage with key format cthulhu_vault_pattern_{address}, hidden items stored with cthulhu_vault_hidden_{address}. estimateOnChainCost(100) returns correct shape with numAddresses=17, totalSats=12816. Cost dialog has Cancel and 'Etch On-Chain' buttons. Vault items loaded from DM endpoint (self-messages) not /api/vault/items. No remaining backend proxy calls in active frontend code. chainExplorer.js properly integrated into txBuilder.js. Frontend compiles without errors.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/test_reports/iteration_208.json"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "VERIFIED: VaultPage shows 'Sign in and unlock your wallet' when wallet not connected (line 394)",
+    "VERIFIED: VaultPage shows 'Set Up Vault Pattern' when pattern not set (line 411)",
+    "VERIFIED: VaultPage shows 'Unlock Vault' when pattern is set but locked (line 439)",
+    "VERIFIED: Pattern lock stored in localStorage with key: cthulhu_vault_pattern_{address} (line 20, 134, 220)",
+    "VERIFIED: Hidden items stored in localStorage with key: cthulhu_vault_hidden_{address} (line 21, 145, 374)",
+    "VERIFIED: p2fk.js exports buildEncryptedMsgTransaction (line 1226) and estimateOnChainCost (line 1267)",
+    "VERIFIED: estimateOnChainCost returns correct shape: { numAddresses, numOutputs, dustCost, txFee, totalSats, encryptedEstimate }",
+    "VERIFIED: estimateOnChainCost(100) returns numAddresses=17, totalSats=12816 (within expected range)",
+    "VERIFIED: Cost dialog has data-testid='vault-cost-dialog' with Cancel and 'Etch On-Chain' buttons",
+    "VERIFIED: Vault items loaded from /api/dm/messages/{address}?partner={address} (line 179)",
+    "VERIFIED: No /api/vault/items calls in VaultPage",
+    "VERIFIED: No /api/wallet/utxos, /api/wallet/broadcast, /api/wallet/balance, /api/wallet/fees calls in active frontend code (only in standalone.js)",
+    "VERIFIED: txBuilder.js imports getUTXOs, getRawTx, broadcast from chainExplorer (line 18)",
+    "VERIFIED: Frontend compiles without errors (only deprecation warnings)",
+    "VERIFIED: VaultPage note composer shows live cost estimate while typing (line 618)",
+    "VERIFIED: VaultPage file upload shows compression warning for images (lines 458-465)"
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "N/A (frontend-only testing)",
+    "frontend": "100% (18/18 tests passed)"
+  },
+  "seed_data_creation": "",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "On-Chain Vault rewrite fully verified. VaultPage now stores encrypted vault items as P2FK self-messages on the blockchain instead of backend database. Pattern lock moved from backend API to localStorage. Cost estimation UI shows sats before broadcast. Smart Composite Explorer (chainExplorer.js) properly integrated - frontend queries public blockchain explorers directly instead of backend proxy. All features working as expected.",
+  "features_verified": {
+    "vault_pattern_setup_screen": "PASS - Shows when wallet connected but no pattern set",
+    "vault_unlock_screen": "PASS - Shows when pattern is set but locked",
+    "vault_not_connected_screen": "PASS - Shows 'Sign in and unlock your wallet' when no wallet",
+    "pattern_localStorage_key_format": "PASS - cthulhu_vault_pattern_{address}",
+    "hidden_localStorage_key_format": "PASS - cthulhu_vault_hidden_{address}",
+    "estimateOnChainCost_shape": "PASS - Returns { numAddresses, numOutputs, dustCost, txFee, totalSats, encryptedEstimate }",
+    "estimateOnChainCost_100_bytes": "PASS - numAddresses=17, totalSats=12816",
+    "cost_dialog_buttons": "PASS - Cancel and 'Etch On-Chain' buttons present",
+    "vault_items_from_dm_endpoint": "PASS - Uses /api/dm/messages/{address}?partner={address}",
+    "no_api_vault_items_calls": "PASS - No /api/vault/items in VaultPage",
+    "no_backend_wallet_proxy_calls": "PASS - No /api/wallet/* calls in active code",
+    "chainExplorer_integration": "PASS - txBuilder.js uses chainExplorer for UTXOs/broadcasts",
+    "frontend_compiles": "PASS - No compilation errors",
+    "live_cost_estimate_in_composer": "PASS - Shows estimated sats while typing",
+    "file_compression_warning": "PASS - Shows compression warning for images",
+    "buildEncryptedMsgTransaction_export": "PASS - Exported from p2fk.js",
+    "estimateOnChainCost_export": "PASS - Exported from p2fk.js",
+    "data_testids_present": "PASS - vault-setup-title, vault-unlock-title, vault-locked-title, vault-cost-dialog, vault-cost-cancel, vault-cost-confirm"
+  }
+}

@@ -1,0 +1,52 @@
+{
+  "summary": "Auth recovery bug fix verified. Backend auth endpoints (signup, login, /auth/me) all working correctly. Frontend auth state (token, user, recovery key) persists in localStorage after page refresh. The key fix: useAuth.js now only clears auth state on HTTP 401/403 (actual auth rejection), not on network errors or 5xx responses. Recovery key mechanism added to survive auth wipes.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_auth_recovery_iter198.py",
+    "/app/test_reports/pytest/pytest_results_iter198.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "VERIFIED: useAuth.js lines 76-80 - Only clears auth on 401/403, keeps state on 5xx/network errors",
+    "VERIFIED: useAuth.js lines 107-124 - catch block differentiates authFailure:true (clear) vs authFailure:false (keep state)",
+    "VERIFIED: useAuth.js lines 19-25 - RECOVERY_KEY 'cthulhu_auth_recovery' with saveRecovery/getRecovery helpers",
+    "VERIFIED: useAuth.js lines 47-67 - Recovery useEffect restores user shell from recovery data + encrypted wallet",
+    "VERIFIED: useAuth.js lines 294-345 - unlockWallet with auto re-login when in recovered state (no token)",
+    "VERIFIED: Backend /api/auth/me returns 401 for invalid tokens (not 500)",
+    "VERIFIED: Backend /api/auth/signup creates user and returns token with addresses map",
+    "VERIFIED: Backend /api/auth/login returns valid JWT with user data",
+    "VERIFIED: UnlockWalletPrompt.js has data-testid attributes for testing",
+    "VERIFIED: walletCrypto.js properly encrypts/decrypts WIF with AES-GCM",
+    "VERIFIED: Frontend compiles with warnings only (eslint react-hooks/exhaustive-deps), no errors"
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_auth_recovery_iter198.py"
+  ],
+  "success_rate": {
+    "backend": "100% (8/8 tests passed)",
+    "frontend": "100% (signup flow, localStorage persistence verified)"
+  },
+  "seed_data_creation": "Test users created via API: TEST_user_*, TEST_login_*, TEST_persist_*",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Auth recovery bug fix verified. The fix ensures that network errors during deploys don't wipe auth state - only actual 401/403 responses clear localStorage. Recovery key (cthulhu_auth_recovery) persists urn+address+network even if main auth keys get wiped. On mount, if recovery data + encrypted wallet exist but no token, user shell is restored and unlock prompt shown. After successful unlock in recovery mode, auto re-login gets fresh JWT.",
+  "features_verified": {
+    "backend_signup": "PASS - POST /api/auth/signup creates user, returns token",
+    "backend_login": "PASS - POST /api/auth/login returns valid JWT",
+    "backend_auth_me_valid": "PASS - GET /api/auth/me validates token, returns user data",
+    "backend_auth_me_invalid": "PASS - GET /api/auth/me returns 401 for invalid tokens",
+    "frontend_compiles": "PASS - webpack compiled with warnings only",
+    "localStorage_persistence": "PASS - cthulhu_auth_token, cthulhu_auth_user persist after refresh",
+    "recovery_key_saved": "PASS - cthulhu_auth_recovery saved on signup/login",
+    "encrypted_wallet_stored": "PASS - cthulhu_wallets_{urn}_{network} stored in localStorage",
+    "auth_state_not_wiped_on_5xx": "PASS - Code review verified catch block only clears on 401/403"
+  }
+}

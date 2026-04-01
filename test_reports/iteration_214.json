@@ -1,0 +1,74 @@
+{
+  "summary": "P0 BRN (Burn) fix verified. All unit tests pass (9 test suites). The buildBurnTransaction function correctly uses position 0 for self-burn (objectAddress === senderAddress) and position 1 for non-self-burn. BRN JSON payload uses integer types (not strings) as required by C# List<List<long>>. Frontend loads correctly. BurnModal component renders with proper UI elements.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/frontend/src/utils/__tests__/p2fk.test.js",
+    "/tmp/test_burn_address_list.js"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "P0 FIX VERIFIED: Line 796 in p2fk.js correctly implements burnPosition = (objectAddress === senderAddress) ? 0 : 1",
+    "BRN JSON uses integer types (not strings) - matches C# List<List<long>> requirement",
+    "Address list ordering correct: [...encoded_data_addrs, objectAddress, senderAddress] for non-self-burn, [...encoded_data_addrs, senderAddress] for self-burn"
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "N/A (no backend changes for this fix)",
+    "frontend": "100%"
+  },
+  "test_credentials": {
+    "testnet_wif": "cRfM5MwjKFvQgkN5Z36Uj1qnRiLWfWXjcjgrP2pLXqAq7SV7qKEm"
+  },
+  "seed_data_creation": "None",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "P0 BRN fix verified. Unit tests at /app/frontend/src/utils/__tests__/p2fk.test.js cover Tests 3a (non-self-burn position=1), 3b (self-burn position=0), 3c (keyword index validation). Run with: cd /app/frontend && node src/utils/__tests__/p2fk.test.js",
+  "p0_fix_verification": {
+    "fix_location": "/app/frontend/src/utils/p2fk.js line 796",
+    "fix_code": "const burnPosition = (objectAddress === senderAddress) ? 0 : 1;",
+    "previous_bug": "Hardcoded position 1 caused self-burn to fail (index out of bounds in Keyword.Reverse())",
+    "unit_tests_passed": [
+      "Test 1: formatD5 padding",
+      "Test 2: GIV JSON structure",
+      "Test 3a: BRN JSON structure (non-self-burn, position=1)",
+      "Test 3b: BRN JSON structure (self-burn, position=0)",
+      "Test 3c: BRN keyword index validation",
+      "Test 4: BUY JSON structure",
+      "Test 5: LST JSON structure",
+      "Test 6: Salt generation range",
+      "Test 7: GIV special position cases",
+      "Test 8: BUY royalty distribution",
+      "Test 9: OBJ creator ordering"
+    ],
+    "brn_json_format": "[[position, quantity], [0, salt]] - all integers (matches C# List<List<long>>)",
+    "address_list_verification": {
+      "non_self_burn": "[...encoded_data_addrs, objectAddress, senderAddress]",
+      "self_burn": "[...encoded_data_addrs, senderAddress] (no duplicate since objectAddress === senderAddress)"
+    }
+  },
+  "burn_modal_ui_verification": {
+    "component_location": "/app/frontend/src/components/ObjectActionModals.js lines 222-385",
+    "test_ids_present": [
+      "burn-quantity-input",
+      "burn-confirm-checkbox",
+      "burn-error",
+      "burn-balance-check",
+      "burn-confirm-btn"
+    ],
+    "ui_elements": [
+      "Quantity input field",
+      "Irreversible action warning",
+      "Confirmation checkbox",
+      "Balance check indicator",
+      "Burn button with proper disabled states"
+    ]
+  }
+}

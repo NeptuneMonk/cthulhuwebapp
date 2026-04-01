@@ -1,0 +1,184 @@
+<analysis>**original_problem_statement:**
+The user wants to build a modern, responsive frontend for a blockchain-based social media platform, Cthulhu. The platform includes a tokenized object storefront and a data vault. The new UI should be inspired by Telegram, use a dark theme, and be mobile-friendly. All blockchain data is fetched from the  API, with a local MongoDB cache for performance.
+
+**PRODUCT REQUIREMENTS:**
+1.  **Core Functionality**: Build a frontend that displays data from the user's  API, handling profiles, posts, and objects.
+2.  **UI/UX**: Dark theme, inspired by Telegram, mobile-friendly.
+3.  **Branding**: Use the Cthulhu brand and logo. Include an About page crediting the original SUP protocol.
+4.  **Blockchain Support**: Support multiple blockchains with a network selector.
+5.  **Posting & Replying**: Integrate a wallet to allow users to create SUP-compatible posts and replies. (COMPLETED)
+6.  **Profile Enhancements**:
+    *   Auto-claim profiles on wallet connect, guide users through profile setup. (COMPLETED)
+    *   Add a Verified Owner badge for users who own their profile picture as an object. (COMPLETED)
+7.  **Object Storefront & Management**:
+    *   A storefront to browse, view, buy, give, and burn objects. (COMPLETED)
+    *   An enhanced object creation UI with support for royalties and IPFS file uploads. (COMPLETED)
+    *   A redesigned profile page to view objects with filters for Owned, Created, and Collections. (COMPLETED)
+    *   Display object files (images, videos, zips, web apps, and on-chain content). (COMPLETED)
+    *   Correctly display data for self-owned and collection objects. (COMPLETED)
+8.  **Decentralized Content:**
+    *   Render interactive web applications contained in  files on IPFS. (COMPLETED)
+    *   Reconstruct and display files stored directly on-chain using the P2FK protocol. (COMPLETED)
+    *   Support cross-chain content. (COMPLETED)
+9.  **Performance & UX:**
+    *   Implement lazy loading for images. (COMPLETED)
+    *   Ensure strict network isolation between  and . (COMPLETED)
+    *   Implement a fast, cached feed with background updates. (COMPLETED)
+10. **Conversation Threading**: Implement the correct, decentralized keyword-based threading model. (COMPLETED)
+11. **Secure Login System**: Implement a secure login system where the user's private key never leaves the client. The wallet should be encrypted with a user-chosen password and stored in the browser's local storage. (COMPLETED)
+12. **Client-Side Signing**: All blockchain write operations (profile minting, posting, object creation) must be performed entirely on the client-side to ensure user private keys are never exposed to the server. (COMPLETED)
+13. **SUP Protocol Compatibility**: All on-chain data structures must be 100% compatible with the reference SUP (Satoshi Universal Protocol) client to ensure interoperability. (COMPLETED)
+14. **IPFS Architecture**: The application's IPFS handling must mirror the SUP client's architecture by running a local IPFS daemon for uploads and providing client-side caching for viewed content. (IN PROGRESS)
+
+**User's preferred language**: English
+
+**what currently exists?**
+A full-stack application (React frontend, FastAPI backend) that is now feature-complete regarding its core blockchain interaction logic. The application implements a secure, 100% client-side signing architecture for all P2FK protocol operations (profile minting, object creation, posting, giving, buying, burning). The user's private key (WIF) is encrypted with their password and stored in , never leaving the browser. The backend has been re-architected to be a dumb provider of blockchain data (UTXOs, raw transactions) and an IPFS node, with no access to user keys. The backend now runs its own local Kubo (go-ipfs) daemon, mirroring the SUP reference client's architecture for file uploads. The frontend post-signup flow guides users through profile creation, wallet funding, and client-side profile minting.
+
+**Last working item**:
+- **Last item agent was working:** Implementing the client-side IPFS caching mechanism and a settings page for users to manage this cache. The agent successfully set up the backend IPFS daemon and created the initial frontend files (, ). The work stopped before building the UI for the settings page and fully integrating the caching logic into the application's media components.
+- **Status:** IN PROGRESS
+- **Agent Testing Done:** N
+- **Which testing method agent to use?** frontend testing agent. The agent should be tasked with verifying the IPFS settings page UI, confirming that it displays cache size, and that the Clear Cache functionality works as expected. It should also verify that images viewed on the site are subsequently cached in IndexedDB.
+- **User Testing Done:** N
+
+**All Pending/In progress Issue list**:
+*   None.
+
+**In progress Task List**:
+*   **Task 1: Complete IPFS Client-Side Caching and Management UI (P0)**
+
+**Task Detail:**
+*   **Task 1: Complete IPFS Client-Side Caching and Management UI (P0)**
+    *   **Where to resume:**
+        1.  Build out the UI in  to display the current IndexedDB cache size and provide a button to clear the cache, using the functions from .
+        2.  Add a link/button to the new  page in the main layout, likely in the sidebar ().
+        3.  Integrate the  hook into components that display IPFS media (e.g., , , ) to first check for a local blob URL before fetching from the public gateway.
+    *   **What will be achieved with this?** The application will act as a local pinning node for viewed content, improving performance and reducing reliance on public IPFS gateways, matching the user's requirement to mirror SUP's architecture. Users will have control over their local data cache.
+    *   **Status:** IN PROGRESS
+    *   **Should Test frontend/backend/both after fix?** Frontend.
+    *   **Blocked on something:** No.
+
+**Upcoming and Future Tasks**
+*   **Future Tasks:**
+    *   (P2) Investigate and fix incorrect object counts for profiles (DEDA, embii4u, kattacomi). User has deferred this task.
+    *   (P2) Research how to identify and implement object-based chat rooms. User has deferred this task.
+    *   (P2) SupFlix Media Gallery: A dedicated gallery for video/audio objects.
+    *   (P3) Evaluate paid blockchain explorer APIs to improve performance and reliability.
+
+**Completed work in this session**
+- **Secure Auth Frontend (DONE):** Implemented the full frontend for user registration and login, including client-side wallet encryption using the Web Crypto API.
+- **Post-Signup Wizard (DONE):** Created a multi-step user flow after registration for profile setup (URN, bio, image), wallet funding (with real-time balance polling), and profile minting.
+- **Client-Side Signing Overhaul (DONE):** Refactored all P2FK blockchain operations (profile minting, object creation, posts, give, buy, burn) to be constructed and signed 100% on the client-side using  and . The user's private key never leaves the browser.
+- **Pure JS Crypto Migration (DONE):** Replaced the  (WASM) library with  (pure JS) to resolve browser compilation issues, creating a custom ECC adapter for .
+- **SUP Protocol Compatibility Verification (DONE):** Conducted an exhaustive, byte-for-byte comparison and test suite () to prove that Cthulhu's on-chain data structures are fully interoperable with the C# SUP reference client.
+- **IPFS Architecture Rework (DONE):** Installed and configured a local Kubo (go-ipfs) daemon on the backend and rewrote the file upload endpoint to use it, exactly mirroring the SUP client architecture.
+
+**Earlier issues found/mentioned but not fixed**
+*   None.
+
+**Known issue recurrence from previous fork**
+*   **API Performance & Reliability:** The reliance on free, rate-limited external blockchain APIs remains an inherent architectural risk. The move to a local IPFS daemon mitigates some external dependency, but blockchain explorers are still a potential bottleneck.
+
+**Code Architecture**
+
+
+**Key Technical Concepts**
+*   **Client-Side Signing (PSBT):** The core security model. Transactions are built as Partially Signed Bitcoin Transactions (PSBTs) on the frontend, signed with the user's key, and the final hex is sent to the backend for broadcast only.
+*   **bitcoinjs-lib:** The primary library used on the frontend for all Bitcoin-related operations, including key management, address generation, and transaction construction (PSBT).
+*   **@noble/secp256k1:** A pure JavaScript cryptographic library used for elliptic curve operations, replacing a WASM-based alternative to ensure browser compatibility.
+*   **Web Crypto API:** Used to encrypt and decrypt the user's wallet private key (WIF) in the browser using a key derived from their password.
+*   **IPFS Kubo Daemon:** A local IPFS node running on the backend server, used for all file uploads to ensure content is pinned within the application's ecosystem, mirroring the SUP architecture.
+*   **IndexedDB:** The chosen technology for the client-side IPFS cache.
+
+**key DB schema**
+*   **users:** .
+*   **feed_cache:** 
+*   **onchain_cache:** 
+*   **onchain_status_cache:** 
+*   **known_users:** 
+*   **object_cache:** 
+
+**changes in tech stack**
+*   **Backend:** Installed  (go-ipfs daemon).  library is now used only for address validation, not signing.
+*   **Frontend:** Added , , , .
+
+**All files of reference**
+*   
+*    (New)
+*    (New)
+*    (New)
+*    (New)
+*    (New)
+*    (New)
+*   
+*   
+*   
+*    (New)
+*    (New)
+
+**Areas that need refactoring**
+*    remains a large monolithic file. Now that its responsibilities are reduced, it could be broken down into routers for , , and .
+*   The client-side signing logic in , , , and  contains some repeated patterns for fetching UTXOs, building, and broadcasting. This could be abstracted into a shared hook (e.g., ).
+
+**key api endpoints**
+*   : **NEW & CRITICAL**. Fetches unspent transaction outputs for a given address.
+*   : **NEW & CRITICAL**. Fetches the full raw transaction hex, required for PSBT construction.
+*   : **NEW & CRITICAL**. Accepts a signed transaction hex and broadcasts it to the network.
+*   : **MODIFIED**. Now uploads files to the local Kubo IPFS daemon.
+*   : **NEW**. A keyless endpoint that registers a profile URN in the database to prevent name-squatting.
+
+**Critical Info for New Agent**
+1.  **Client-Side Security is Law:** The application has been fully refactored to a 100% client-side signing model. The user's private key **must never** be sent to the backend. All new blockchain features must follow this pattern: fetch data from keyless backend endpoints, build/sign the transaction on the frontend, and send only the final transaction hex to the  endpoint.
+2.  **SUP Compatibility is Proven:** An extensive verification test has been created and passed, confirming that the frontend's transaction generation is compatible with the SUP protocol. Refer to  for the exact logic.
+3.  **IPFS Architecture Mirrors SUP:** The backend now runs a local  daemon for uploads. Your immediate task is to complete the client-side part of this architecture by implementing the IndexedDB cache for fetched IPFS content.
+4.  **Crypto Libraries:** The frontend uses  with a custom pure-JS ECC adapter (). Do not introduce new crypto libraries without careful consideration of browser compatibility. Webpack configuration is in .
+
+**documents and test reports created in this job**
+*    (updated)
+*    (New compatibility test script)
+*    to 
+
+**Last 10 User Messages and any pending HUMAN messages**
+1.  **User:** Confirmed they were ready to proceed with a live test of the profile minting flow.
+2.  **Agent:** Provided a detailed testing guide for the user to perform the live mint.
+3.  **User:** Raised a critical point: asked if IPFS uploads were verified and requested local caching so users act as pinning nodes, similar to SUP.
+4.  **Agent:** Acknowledged the IPFS gap and began investigating the current implementation.
+5.  **User:** Instructed the agent to investigate the SUP codebase to understand and replicate its IPFS handling.
+6.  **Agent:** Deep-dived into the SUP C# code, concluding that SUP uses a local IPFS daemon for uploads and local file storage for caching.
+7.  **Agent:** Proposed a plan: install Kubo (go-ipfs) on the backend and use IndexedDB for frontend caching.
+8.  **User:** Approved the plan.
+9.  **Agent:** Successfully installed and configured the Kubo IPFS daemon on the backend.
+10. **Agent:** Rewired the backend upload endpoint and created the initial files for the frontend IPFS cache (, ).
+
+**Project Health Check:**
+*   **Broken:** None.
+*   **Mocked:** None.
+*   **In-Progress:** IPFS client-side caching and its management UI.
+
+**3rd Party Integrations**
+*   **p2fk.io:** Primary API for object and profile metadata.
+*   **IPFS:** Public gateway for media.
+*   **Kubo (go-ipfs):** **NEW**. Local IPFS daemon running on the backend for all file uploads.
+*   **MongoDB:** Local database for caching.
+*   **mempool.space / Blockstream.info:** APIs for BTC blockchain data.
+*   **BlockCypher / Blockchair.com:** APIs for DOGE blockchain data.
+*   **litecoinspace.org:** API for LTC blockchain data.
+*   **python-jose, passlib:** Backend libraries for JWT authentication.
+*   **bitcoinjs-lib:** **NEW**. Frontend library for key/address/transaction management.
+*   **@noble/secp256k1:** **NEW**. Frontend pure JS crypto library.
+*   **bit:** Backend Python library (now used for validation, not signing).
+*   **jszip:** Frontend library for in-browser zip extraction.
+*   **base58:** Backend library for decoding blockchain addresses.
+
+**Testing status**
+*   **Testing agent used after significant changes:** YES. The agent was run multiple times and achieved a 100% pass rate after the full client-side signing migration.
+*   **Troubleshoot agent used after agent stuck in loop:** NO
+*   **Test files created:** []
+*   **Known regressions:** None.
+
+**Credentials to test flow:**
+*   Create a test user through the UI signup flow. No pre-existing credentials are required. To test the minting flow, the user will need to fund the generated testnet address using an external faucet.
+
+**What agent forgot to execute**
+*   The agent did not forget anything but was in the middle of a task. The UI for the IPFS cache management () needs to be built and integrated into the application's main layout/sidebar. The caching logic also needs to be wired into media-displaying components.</analysis>

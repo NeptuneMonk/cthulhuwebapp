@@ -1,0 +1,5 @@
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0a0e17;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;font-family:monospace;color:#0f0}
+#hud{width:400px;display:flex;justify-content:space-between;padding:4px 8px;font-size:12px;color:#4f8}
+canvas{border:1px solid #1a3;background:#050810;cursor:none}
+#msg{color:#4f8;font-size:11px;margin-top:6px;opacity:.7}

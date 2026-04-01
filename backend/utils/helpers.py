@@ -1,0 +1,679 @@
+"""Shared helpers: p2fk API, known users, profile caching, formatters."""
+import logging
+import uuid
+import asyncio
+import re
+import time
+import json
+from cachetools import TTLCache
+from datetime import datetime, timezone
+
+from db import known_users_col, api_cache_col
+from config import P2FK_API_BASE, SEED_ADDRESSES
+from utils.stats_tracker import track_api_call, track_cache
+from utils.http_pool import get_client
+
+logger = logging.getLogger(__name__)
+
+# TTL for API cache: roots are immutable (1yr), profiles=1hr, default=10min
+_CACHE_TTL_ROOT = 31536000  # 1 year — immutable blockchain data (GetRootByTransactionId)
+_CACHE_TTL_PROFILE = 3600
+_CACHE_TTL_DEFAULT = 600    # 10 minutes per embii's recommendation
+
+# Rate-limit guard: sliding window for p2fk.io
+# embii confirmed higher throughput is fine now (bitfossil-level)
+_P2FK_MAX_RETRIES = 2
+_p2fk_lock = asyncio.Lock()
+_p2fk_request_times: list = []  # timestamps of recent requests (sliding window)
+_P2FK_WINDOW = 10.0  # seconds
+_P2FK_MAX_IN_WINDOW = 30  # increased per embii's guidance
+_p2fk_blocked_until = 0.0  # if blocked, don't send until this monotonic time
+
+
+async def _get_api_cache(cache_key: str, ttl: int):
+    """Get cached API response from MongoDB. Returns data or None."""
+    try:
+        doc = await api_cache_col.find_one({"_id": cache_key}, {"_id": 0})
+        if doc and doc.get("ts"):
+            age = datetime.now(timezone.utc).timestamp() - doc["ts"]
+            if age < ttl:
+                return doc.get("data")
+            # Return stale data but mark as expired (caller can decide)
+            return doc.get("data")  # Still return stale for fallback
+    except Exception:
+        pass
+    return None
+
+
+async def _is_cache_fresh(cache_key: str, ttl: int):
+    """Check if cache entry is within TTL."""
+    try:
+        doc = await api_cache_col.find_one({"_id": cache_key}, {"_id": 0, "ts": 1})
+        if doc and doc.get("ts"):
+            return (datetime.now(timezone.utc).timestamp() - doc["ts"]) < ttl
+    except Exception:
+        pass
+    return False
+
+
+async def _set_api_cache(cache_key: str, data):
+    """Store API response in MongoDB cache. Includes datetime for TTL index."""
+    try:
+        await api_cache_col.update_one(
+            {"_id": cache_key},
+            {"$set": {
+                "data": data,
+                "ts": datetime.now(timezone.utc).timestamp(),
+                "updated_at": datetime.now(timezone.utc),
+            }},
+            upsert=True
+        )
+    except Exception as e:
+        logger.debug(f"Cache write error: {e}")
+
+
+# --- p2fk.io API helpers ---
+
+async def p2fk_get(path: str, mainnet: bool = False, extra_params: dict = None):
+    """Fetch from p2fk.io with MongoDB cache (serve fresh cache, fallback stale).
+    Rate-limited to 3 concurrent requests with 429 backoff/retry."""
+    cache_key = f"p2fk:{path}:{mainnet}:{extra_params}"
+    # GetRootByTransactionId is immutable — cache permanently
+    if 'GetRootByTransaction' in path:
+        cache_ttl = _CACHE_TTL_ROOT
+    elif 'Profile' in path:
+        cache_ttl = _CACHE_TTL_PROFILE
+    else:
+        cache_ttl = _CACHE_TTL_DEFAULT
+
+    # Serve fresh cache immediately (skip network call entirely)
+    if await _is_cache_fresh(cache_key, cache_ttl):
+        cached = await _get_api_cache(cache_key, cache_ttl)
+        if cached is not None:
+            track_cache(hit=True)
+            return cached
+
+    track_cache(hit=False)
+
+    params = {"mainnet": str(mainnet).lower()}
+    if extra_params:
+        params.update(extra_params)
+
+    for attempt in range(_P2FK_MAX_RETRIES + 1):
+        try:
+            # Sliding window rate limiter — wait if window is full or if blocked
+            async with _p2fk_lock:
+                global _p2fk_blocked_until
+                now = time.monotonic()
+
+                # If we're in a block period, wait it out
+                if now < _p2fk_blocked_until:
+                    wait_block = _p2fk_blocked_until - now
+                    logger.info(f"p2fk.io blocked — waiting {wait_block:.1f}s [{path}]")
+                    await asyncio.sleep(wait_block)
+                    now = time.monotonic()
+
+                # Prune old timestamps outside the window
+                cutoff = now - _P2FK_WINDOW
+                while _p2fk_request_times and _p2fk_request_times[0] < cutoff:
+                    _p2fk_request_times.pop(0)
+
+                # If window is full, wait until the oldest request exits the window
+                if len(_p2fk_request_times) >= _P2FK_MAX_IN_WINDOW:
+                    wait_window = _p2fk_request_times[0] - cutoff
+                    if wait_window > 0:
+                        await asyncio.sleep(wait_window)
+                    _p2fk_request_times.pop(0)
+
+                _p2fk_request_times.append(time.monotonic())
+
+            t0 = time.time()
+            client = get_client()
+            resp = await client.get(f"{P2FK_API_BASE}/{path}", params=params, timeout=15.0)
+            duration_ms = (time.time() - t0) * 1000
+            endpoint_short = path.split('/')[0] if '/' in path else path
+            track_api_call("p2fk.io", endpoint_short, duration_ms)
+
+            if resp.status_code == 429:
+                # We got blocked — stop all requests for 11 seconds
+                async with _p2fk_lock:
+                    _p2fk_blocked_until = time.monotonic() + 11.0
+                    _p2fk_request_times.clear()
+                if attempt < _P2FK_MAX_RETRIES:
+                    logger.warning(f"p2fk.io 429 [{path}] — IP blocked, pausing 11s (attempt {attempt+1})")
+                    await asyncio.sleep(11.0)
+                    continue
+                else:
+                    logger.warning(f"p2fk.io 429 [{path}] — exhausted retries, serving stale cache")
+                    break
+
+            if resp.status_code == 200:
+                data = resp.json()
+                # Don't cache empty/null profile responses from p2fk.io
+                is_empty_profile = (
+                    isinstance(data, dict)
+                    and 'Profile' in path
+                    and data.get('Id', 0) == 0
+                    and not data.get('URN')
+                )
+                if not is_empty_profile:
+                    asyncio.create_task(_set_api_cache(cache_key, data))
+                else:
+                    # p2fk.io returned garbage — try stale cache instead
+                    cached = await _get_api_cache(cache_key, ttl=86400)
+                    if cached is not None:
+                        logger.info(f"Ignoring empty p2fk.io response, serving stale cache for [{path}]")
+                        return cached
+                return data
+            break  # Non-429 error, fall through to stale cache
+        except Exception as e:
+            logger.error(f"p2fk.io error [{path}]: {e}")
+            break
+
+    # API failed or 429 exhausted — serve stale cache (up to 24hr old on failure)
+    cached = await _get_api_cache(cache_key, ttl=max(cache_ttl, 86400))
+    if cached is not None:
+        logger.info(f"Serving stale cache for [{path}]")
+        return cached
+    return None
+
+
+async def fetch_profile_by_urn(urn: str, mainnet: bool = False):
+    data = await p2fk_get(f"GetProfileByURN/{urn}", mainnet)
+    if data and data.get('Id', 0) > 0 and data.get('URN'):
+        return data
+    return None
+
+
+async def fetch_profile_by_address(address: str, mainnet: bool = False):
+    data = await p2fk_get(f"GetProfileByAddress/{address}", mainnet)
+    if isinstance(data, dict) and data.get('Id', 0) > 0:
+        return data
+    return None
+
+
+async def fetch_public_messages(address: str, mainnet: bool = False, qty: int = 200):
+    """Fetch public messages using GetRootsByAddress (returns ALL posts, not capped at 10).
+    Filters out SEC-encrypted messages and non-message roots.
+    Normalizes root fields to match the format expected by format_message().
+    """
+    data = await p2fk_get(f"GetRootsByAddress/{address}", mainnet, extra_params={"skip": "0", "qty": str(qty)})
+    if not isinstance(data, list):
+        return []
+
+    public_msgs = []
+    for root in data:
+        # Skip roots without a message
+        msg = root.get('Message')
+        if not msg:
+            continue
+
+        # Build content string for SEC check
+        content_str = ' '.join(msg) if isinstance(msg, list) else str(msg)
+
+        # Skip SEC-encrypted messages
+        if content_str.startswith('SEC') and len(content_str) > 4 and content_str[3] in '\\//:*?"<>|':
+            continue
+        file_data = root.get('File') or {}
+        if 'SEC' in file_data:
+            continue
+
+        # Normalize to format expected by _build_feed_from_scratch / format_message
+        root['FromAddress'] = root.get('SignedBy', address)
+        if 'ToAddress' not in root:
+            root['ToAddress'] = address
+        public_msgs.append(root)
+
+    return public_msgs
+
+
+async def fetch_objects_owned(address: str, mainnet: bool = False):
+    data = await p2fk_get(f"GetObjectsOwnedByAddress/{address}", mainnet, {"verbose": "false"})
+    return data if isinstance(data, list) else []
+
+
+async def fetch_messages_by_sender(address: str, mainnet: bool = False, qty: int = 200):
+    """Fetch messages authored BY a given address using GetRootsByAddress.
+    Uses GetRootsByAddress instead of GetPublicMessagesByAddress to include
+    file attachment data (File field)."""
+    data = await p2fk_get(f"GetRootsByAddress/{address}", mainnet, extra_params={"skip": "0", "qty": str(qty)})
+    if not isinstance(data, list):
+        return []
+    public_msgs = []
+    for root in data:
+        msg = root.get('Message')
+        if not msg:
+            continue
+        content_str = ' '.join(msg) if isinstance(msg, list) else str(msg)
+        if content_str.startswith('SEC') and len(content_str) > 4 and content_str[3] in '\\//:*?"<>|':
+            continue
+        file_data = root.get('File') or {}
+        if 'SEC' in file_data:
+            continue
+        root['FromAddress'] = root.get('SignedBy', address)
+        if 'ToAddress' not in root:
+            root['ToAddress'] = address
+        public_msgs.append(root)
+    return public_msgs
+
+
+async def fetch_objects_by_address(address: str, mainnet: bool = False):
+    data = await p2fk_get(f"GetObjectsByAddress/{address}", mainnet, {"verbose": "false"})
+    return data if isinstance(data, list) else []
+
+
+async def fetch_objects_created_by_address(address: str, mainnet: bool = False):
+    data = await p2fk_get(f"GetObjectsCreatedByAddress/{address}", mainnet, {"verbose": "false"})
+    return data if isinstance(data, list) else []
+
+
+async def fetch_object_by_txid(txid: str, mainnet: bool = False):
+    data = await p2fk_get(f"GetObjectByTransactionId/{txid}", mainnet)
+    if isinstance(data, dict) and data.get('Name'):
+        return data
+    return None
+
+
+async def fetch_root_file_bytes(txid: str, filename: str = "SEC", network: str = "btc-testnet"):
+    """Reconstruct file bytes from a P2FK root transaction by decoding output addresses."""
+    from utils.blockchain import fetch_tx_outputs
+    from utils.p2fk import base58_decode_check
+    import re
+
+    try:
+        is_mainnet = 'testnet' not in network
+        chain = 'BTC'
+        if 'doge' in network.lower():
+            chain = 'DOGE'
+        elif 'ltc' in network.lower():
+            chain = 'LTC'
+
+        outputs = await fetch_tx_outputs(txid, chain=chain, mainnet=is_mainnet)
+        if not outputs:
+            return None
+
+        # Decode all output addresses to raw bytes
+        raw = bytearray()
+        for addr in outputs:
+            try:
+                payload = base58_decode_check(addr)
+                raw.extend(payload)
+            except Exception:
+                continue
+        raw = bytes(raw)
+
+        # Find the file pattern: filename + separator + size + separator + content
+        known_seps = rb'[\\/:\*\?"<>\|]'
+        escaped_name = re.escape(filename.encode('ascii'))
+        pattern = re.compile(escaped_name + known_seps + rb'(\d+)' + known_seps)
+        match = pattern.search(raw)
+        if not match:
+            # Also try case-insensitive
+            pattern = re.compile(escaped_name + known_seps + rb'(\d+)' + known_seps, re.IGNORECASE)
+            match = pattern.search(raw)
+        if not match:
+            return None
+
+        size = int(match.group(1))
+        content_start = match.end()
+        # Return the FULL SEC file (header + content) so frontend unwrapSEC works
+        full_file = raw[match.start():content_start + size]
+        return full_file if len(full_file) > 0 else None
+    except Exception as e:
+        logger.error(f"P2FK file reconstruction error [{txid}/{filename}]: {e}")
+        return None
+
+
+
+
+async def search_keyword(keyword: str, mainnet: bool = False):
+    data = await p2fk_get(f"GetPublicAddressByKeyword/{keyword}", mainnet)
+    if isinstance(data, str) and data:
+        return [data]
+    if isinstance(data, list):
+        return data[:10]
+    return []
+
+
+async def get_keyword_address_from_api(keyword: str, mainnet: bool = False):
+    """Get the P2FK keyword address via the API (canonical)."""
+    data = await p2fk_get(f"GetPublicAddressByKeyword/{keyword}", mainnet)
+    if isinstance(data, str) and data:
+        return data
+    return None
+
+
+async def fetch_keyword_messages(keyword: str, mainnet: bool = False, skip: int = 0, qty: int = 50):
+    """Fetch public messages at a keyword address using GetRootsByAddress.
+    Uses GetRootsByAddress instead of GetPublicMessagesByAddress to include
+    file attachment data (File field) in the returned roots."""
+    addr = await get_keyword_address_from_api(keyword, mainnet)
+    if not addr:
+        return []
+    data = await p2fk_get(f"GetRootsByAddress/{addr}", mainnet, extra_params={"skip": str(skip), "qty": str(qty)})
+    if not isinstance(data, list):
+        return []
+    # Filter to only message-bearing roots (same logic as fetch_public_messages_for_feed)
+    public_msgs = []
+    for root in data:
+        msg = root.get('Message')
+        if not msg:
+            continue
+        content_str = ' '.join(msg) if isinstance(msg, list) else str(msg)
+        if content_str.startswith('SEC') and len(content_str) > 4 and content_str[3] in '\\//:*?"<>|':
+            continue
+        file_data = root.get('File') or {}
+        if 'SEC' in file_data:
+            continue
+        root['FromAddress'] = root.get('SignedBy', addr)
+        if 'ToAddress' not in root:
+            root['ToAddress'] = addr
+        public_msgs.append(root)
+    return public_msgs
+
+
+async def get_root_by_txid(txid: str, mainnet: bool = False):
+    return await p2fk_get(f"GetRootByTransactionID/{txid}", mainnet)
+
+
+async def fetch_roots_by_address(address: str, mainnet: bool = False, skip: int = 0, qty: int = 0):
+    extra = {"skip": str(skip), "qty": str(qty)} if qty > 0 else None
+    data = await p2fk_get(f"GetRootsByAddress/{address}", mainnet, extra_params=extra)
+    return data if isinstance(data, list) else []
+
+
+async def fetch_private_messages_by_address(address: str, mainnet: bool = False, skip: int = 0, qty: int = 20):
+    """Fetch private messages using the dedicated GetPrivateMessagesByAddress endpoint.
+    Returns only PM txids/dates — much more efficient than GetRootsByAddress for DMs."""
+    extra = {"skip": str(skip), "qty": str(qty)}
+    data = await p2fk_get(f"GetPrivateMessagesByAddress/{address}", mainnet, extra_params=extra)
+    return data if isinstance(data, list) else []
+
+
+# --- Address validation ---
+
+def address_matches_network(address: str, network: str) -> bool:
+    is_mainnet = 'mainnet' in network.lower()
+    if not address:
+        return False
+    if is_mainnet:
+        return address[0] in ('1', '3') or address.startswith('bc1')
+    else:
+        return address[0] in ('m', 'n', '2') or address.startswith('tb1')
+
+
+# --- Known users DB ---
+
+async def register_known_user(address: str, network: str, urn: str = None, image: str = None, display_name: str = None):
+    if not address_matches_network(address, network):
+        return
+    await known_users_col.update_one(
+        {'address': address, 'network': network},
+        {'$set': {
+            'address': address,
+            'network': network,
+            'urn': urn,
+            'image': image,
+            'display_name': display_name,
+            'updated_at': datetime.now(timezone.utc).isoformat(),
+        }},
+        upsert=True
+    )
+
+
+async def get_known_addresses(network: str):
+    seed = set(SEED_ADDRESSES.get(network, []))
+    cursor = known_users_col.find({'network': network}, {'_id': 0, 'address': 1})
+    async for doc in cursor:
+        seed.add(doc['address'])
+    return list(seed)
+
+
+async def seed_known_users():
+    for network, addresses in SEED_ADDRESSES.items():
+        is_mainnet = 'mainnet' in network
+        for addr in addresses:
+            existing = await known_users_col.find_one({'address': addr, 'network': network})
+            if not existing:
+                profile = await fetch_profile_by_address(addr, is_mainnet)
+                urn = profile.get('URN') if profile else None
+                image = profile.get('Image') if profile else None
+                display_name = profile.get('DisplayName') if profile else None
+                await register_known_user(addr, network, urn, image, display_name)
+
+
+# --- Profile cache (bounded, TTL-evicted) ---
+
+_profile_cache = TTLCache(maxsize=2000, ttl=60)
+
+
+async def get_cached_profile(address: str, is_mainnet: bool):
+    key = f"{address}:{is_mainnet}"
+    cached = _profile_cache.get(key)
+    if cached is not None:
+        return cached
+    result = await fetch_profile_by_address(address, is_mainnet)
+    # If P2FK returned nothing, or URN is just the address itself, fall back to known_users
+    if not result or not result.get('URN') or result.get('URN') == address:
+        try:
+            from db import known_users_col
+            network = 'btc-mainnet' if is_mainnet else 'btc-testnet'
+            known = await known_users_col.find_one(
+                {'address': address, 'network': network},
+                {'_id': 0}
+            )
+            if known and known.get('urn') and known.get('urn') != address:
+                result = {
+                    'URN': known.get('urn'),
+                    'Image': known.get('image'),
+                    'DisplayName': known.get('display_name'),
+                    'Creators': [address],
+                }
+        except Exception:
+            pass
+    # When URN is still the address, prefer DisplayName for display purposes
+    if result and result.get('URN') == address and result.get('DisplayName'):
+        result['URN'] = result['DisplayName']
+    _profile_cache[key] = result
+    return result
+
+
+# --- Formatters ---
+
+def format_profile(raw, network: str):
+    if not raw:
+        return None
+    creators = raw.get('Creators') or []
+    address = creators[0] if creators else ''
+    urn = raw.get('URN')
+    # When URN is just the address, prefer DisplayName for display
+    if urn and address and urn == address and raw.get('DisplayName'):
+        urn = raw.get('DisplayName')
+    return {
+        'address': address,
+        'urn': urn,
+        'display_name': raw.get('DisplayName'),
+        'first_name': raw.get('FirstName'),
+        'middle_name': raw.get('MiddleName'),
+        'last_name': raw.get('LastName'),
+        'suffix': raw.get('Suffix'),
+        'bio': raw.get('Bio'),
+        'image': raw.get('Image'),
+        'url': raw.get('URL'),
+        'location': raw.get('Location'),
+        'pkx': raw.get('PKX', ''),
+        'pky': raw.get('PKY', ''),
+        'network': network,
+        'created_at': raw.get('CreatedDate', ''),
+    }
+
+
+async def format_message(msg, sender_profile, network: str, is_mainnet: bool):
+    from_addr = msg.get('FromAddress', '')
+    to_addr = msg.get('ToAddress', '')
+    is_reply = from_addr != to_addr and to_addr
+    raw_content = msg.get('Message', '')
+    content = ' '.join(raw_content) if isinstance(raw_content, list) else str(raw_content)
+
+    # Strip P2FK protocol noise: salt <<number>> and trailing keyword/address bytes
+    content = re.sub(r'<<-?\d+>>.*', '', content, flags=re.DOTALL).strip()
+    # Strip non-printable / surrogate characters left from address decoding
+    content = ''.join(c for c in content if c.isprintable() or c in '\n\t').strip()
+
+    # Extract real file attachments from the File field (filter out protocol keys)
+    _PROTOCOL_KEYS = {"SIG", "GIV", "SEC", "BRN", "BUY", "LST", "OBJ", "PRO", "INQ", "LNK"}
+    raw_files = msg.get('File') or {}
+    files = {}
+    is_poll = False
+    if isinstance(raw_files, dict):
+        for fname, fsize in raw_files.items():
+            if fname == 'INQ':
+                is_poll = True
+            elif fname not in _PROTOCOL_KEYS:
+                files[fname] = fsize
+
+    result = {
+        'id': msg.get('TransactionId', str(uuid.uuid4())),
+        'from_address': from_addr,
+        'to_address': to_addr,
+        'content': content,
+        'transaction_id': msg.get('TransactionId', ''),
+        'network': network,
+        'created_at': msg.get('BlockDate', ''),
+        'block_time': msg.get('BlockDate', ''),
+        'is_reply': is_reply,
+        'is_poll': is_poll,
+        'sender_urn': sender_profile.get('URN') if sender_profile else None,
+        'sender_display_name': sender_profile.get('DisplayName') if sender_profile else None,
+        'sender_image': sender_profile.get('Image') if sender_profile else None,
+        'recipient_urn': None,
+        'recipient_image': None,
+        'files': files if files else None,
+    }
+
+    if is_reply:
+        recipient = await get_cached_profile(to_addr, is_mainnet)
+        if recipient and recipient.get('URN'):
+            result['recipient_urn'] = recipient.get('URN')
+            result['recipient_image'] = recipient.get('Image')
+            await register_known_user(
+                to_addr, network, recipient.get('URN'),
+                recipient.get('Image'), recipient.get('DisplayName')
+            )
+
+    return result
+
+
+def format_object_for_api(obj: dict) -> dict:
+    owners = obj.get('Owners') or {}
+    owner_list = []
+    for addr, val in owners.items():
+        qty = val.get('Item1', 0) if isinstance(val, dict) else (val if isinstance(val, int) else 0)
+        txid = val.get('Item2') if isinstance(val, dict) else None
+        owner_list.append({'address': addr, 'quantity': qty, 'transfer_txid': txid})
+
+    creators = obj.get('Creators') or {}
+    creator_list = []
+    for addr, date in creators.items():
+        creator_list.append({'address': addr, 'date': date})
+
+    listings = obj.get('Listings') or {}
+    listing_list = []
+    for addr, listing in listings.items():
+        listing_list.append({
+            'address': addr,
+            'requestor': listing.get('Requestor', ''),
+            'owner': listing.get('Owner', ''),
+            'quantity': listing.get('Qty', 0),
+            'price': listing.get('Value', 0),
+            'block_date': listing.get('BlockDate', ''),
+        })
+
+    offers = obj.get('Offers') or []
+    offer_list = []
+    if isinstance(offers, list):
+        for offer in offers:
+            offer_list.append({
+                'requestor': offer.get('Requestor', ''),
+                'owner': offer.get('Owner', ''),
+                'quantity': offer.get('Qty', 0),
+                'price': offer.get('Value', 0),
+                'block_date': offer.get('BlockDate', ''),
+            })
+
+    total_supply = sum(o['quantity'] for o in owner_list)
+    is_listed = len(listing_list) > 0
+    min_price = min((lst['price'] for lst in listing_list), default=0) if is_listed else 0
+
+    image = obj.get('Image') or ''
+    urn = obj.get('URN') or ''
+    image_exts = ('.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg', '.bmp')
+    _ONCHAIN_PREFIXES = ('IPFS:', 'BTC:', 'LTC:', 'DOG:', 'MZC:')
+    if not image and urn:
+        urn_lower = urn.lower()
+        is_image_urn = any(urn_lower.endswith(ext) for ext in image_exts)
+        # Copy URN to image field if it's an IPFS, on-chain chain-prefixed,
+        # or bare txid reference that looks like an image file
+        if is_image_urn and (
+            any(urn.upper().startswith(p) for p in _ONCHAIN_PREFIXES)
+            or re.match(r'^[0-9a-fA-F]{64}', urn)
+        ):
+            image = urn
+
+    maximum = obj.get('Maximum', 0)
+    if maximum == 0:
+        maximum = total_supply
+
+    # Object address = first key in Creators (P2FK protocol)
+    object_address = creator_list[0]['address'] if creator_list else ''
+
+    # Parse ChangeLog if available (from verbose=true fetch)
+    change_log_raw = obj.get('ChangeLog') or []
+    change_log = []
+    for entry_str in change_log_raw:
+        try:
+            entry = json.loads(entry_str) if isinstance(entry_str, str) else entry_str
+            if isinstance(entry, list) and len(entry) >= 6:
+                change_log.append({
+                    'from': entry[0] if len(entry) > 0 else '',
+                    'to': entry[1] if len(entry) > 1 else '',
+                    'action': entry[2] if len(entry) > 2 else '',
+                    'quantity': entry[3] if len(entry) > 3 else '',
+                    'price': entry[4] if len(entry) > 4 else '',
+                    'status': entry[5] if len(entry) > 5 else '',
+                    'date': entry[6] if len(entry) > 6 else '',
+                })
+        except Exception:
+            pass
+
+    # Resolve TransactionId — p2fk.io often returns None for owned/created objects
+    txid = obj.get('TransactionId') or ''
+
+    return {
+        'id': obj.get('Id', 0),
+        'transaction_id': txid,
+        'object_address': object_address,
+        'urn': urn,
+        'uri': obj.get('URI'),
+        'image': image,
+        'name': obj.get('Name', 'Unnamed'),
+        'description': obj.get('Description', ''),
+        'attributes': obj.get('Attributes'),
+        'license': obj.get('License'),
+        'maximum': maximum,
+        'owners': owner_list,
+        'owner_count': len(owner_list),
+        'total_supply': total_supply,
+        'creators': creator_list,
+        'listings': listing_list,
+        'is_listed': is_listed,
+        'min_price': min_price,
+        'offers': offer_list,
+        'offer_count': len(offer_list),
+        'royalties': obj.get('Royalties') or {},
+        'created_date': obj.get('CreatedDate', ''),
+        'change_date': obj.get('ChangeDate', ''),
+        'locked_date': obj.get('LockedDate', ''),
+        'change_log': change_log,
+        'process_height': obj.get('ProcessHeight', 0),
+    }

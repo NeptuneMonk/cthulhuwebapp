@@ -1,0 +1,53 @@
+{
+  "summary": "Iteration 205: Verified two bug fixes - 1) useOptimisticCache.js p2fk.io URL format, PascalCase fields, array response handling, and stale mempool check; 2) useWalletNotifications.js localStorage guard for notification permission. All tests pass.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/test_reports/iteration_205.json"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "VERIFIED: useOptimisticCache.js line 47-49 - Correct testnet/mainnet URL base logic (https://p2fk.io vs https://p2fk.io/testnet)",
+    "VERIFIED: useOptimisticCache.js line 75-77 - Correct URL format: ${p2fkBase}/GetObjectByAddress/${item.objectAddress} (NOT /api/obj/)",
+    "VERIFIED: useOptimisticCache.js line 82 - Handles array response format: Array.isArray(data) ? data[0] : data",
+    "VERIFIED: useOptimisticCache.js line 83 - Handles PascalCase fields: obj.Name || obj.URN || obj.name || obj.urn",
+    "VERIFIED: useOptimisticCache.js line 73 - Checks stale mempool items: item.status === 'mempool' && Date.now() - item.createdAt > 120000 (>2min)",
+    "VERIFIED: useWalletNotifications.js line 27 - Checks localStorage flag before requesting: !localStorage.getItem('cthulhu_notif_asked')",
+    "VERIFIED: useWalletNotifications.js line 28 - Sets flag after first request: localStorage.setItem('cthulhu_notif_asked', '1')",
+    "VERIFIED: useWalletNotifications.js line 29 - Only then calls Notification.requestPermission()",
+    "VERIFIED: Both files pass ESLint with no issues",
+    "VERIFIED: Frontend compiles and loads without errors"
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "N/A (frontend-only testing)",
+    "frontend": "100% (all logic tests pass, build successful, lint clean)"
+  },
+  "seed_data_creation": "",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Two bug fixes verified: 1) useOptimisticCache.js now uses correct p2fk.io URL format ({base}/GetObjectByAddress/{addr}), handles PascalCase response fields (Name, URN), array response format, and checks stale mempool items (>2min old). 2) useWalletNotifications.js now only requests notification permission once using localStorage flag 'cthulhu_notif_asked'. Both fixes are correctly implemented and tested.",
+  "features_verified": {
+    "p2fk_url_mainnet": "PASS - https://p2fk.io/GetObjectByAddress/{addr}",
+    "p2fk_url_testnet": "PASS - https://p2fk.io/testnet/GetObjectByAddress/{addr}",
+    "mempool_url_mainnet": "PASS - https://mempool.space/api",
+    "mempool_url_testnet": "PASS - https://mempool.space/testnet/api",
+    "pascalcase_array_response": "PASS - Handles [{Name, URN}] format",
+    "pascalcase_single_response": "PASS - Handles {Name, URN} format",
+    "lowercase_fallback": "PASS - Also handles {name, urn} format",
+    "stale_mempool_check": "PASS - Checks indexer for mempool items >2min old",
+    "confirmed_items_check": "PASS - Always checks indexer for confirmed items",
+    "notification_first_login": "PASS - Requests permission on first login",
+    "notification_subsequent_login": "PASS - Does NOT request permission on subsequent logins",
+    "localStorage_flag": "PASS - Uses 'cthulhu_notif_asked' key",
+    "frontend_compilation": "PASS - No errors",
+    "eslint_clean": "PASS - Both files pass linting"
+  }
+}

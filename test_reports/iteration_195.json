@@ -1,0 +1,59 @@
+{
+  "summary": "Bug fix verification for object count issue - embii profile shows 186 objects (matching SUP reference client) instead of 177. All backend API tests pass. The fix correctly includes objects where address appears in either Owners OR Creators dict (P2FK implicit ownership).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "/api/objects/created/{address}",
+        "issue": "Returns 177 objects while /api/objects/counts returns created=98. Minor inconsistency - different data sources (GetObjectsByAddress vs GetObjectsCreatedByAddress)",
+        "priority": "LOW"
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_object_counts_fix.py",
+    "/app/test_reports/pytest/pytest_results_iter195.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "VERIFIED: /api/objects/counts/{address} returns owned=186 for embii (16rb9yA7FYQPTUpwZJsWZV77fWUUGsfGpw) on btc-mainnet",
+    "VERIFIED: /api/objects/owned/{address} returns total=186 for embii on btc-mainnet",
+    "VERIFIED: /api/objects/owned/{address}?force=true returns total=186 (cache invalidation works)",
+    "VERIFIED: /api/profile/embii resolves to correct address 16rb9yA7FYQPTUpwZJsWZV77fWUUGsfGpw",
+    "VERIFIED: ProfileDetailPage.js line 137 uses only 'owned' count (not owned+created)",
+    "VERIFIED: Backend objects.py get_owned_objects (line 136) includes objects where address is in Owners OR Creators",
+    "VERIFIED: Backend objects.py get_object_counts_fast (line 239) includes objects where address is in Owners OR Creators",
+    "VERIFIED: Frontend standalone.js handlers for /api/objects/owned/ and /api/objects/counts/ include Creators check"
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_object_counts_fix.py"
+  ],
+  "success_rate": {
+    "backend": "100% (6/6 tests passed)",
+    "frontend": "100% (code review verified)"
+  },
+  "seed_data_creation": "",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Bug fix for object count issue verified. The embii profile (address: 16rb9yA7FYQPTUpwZJsWZV77fWUUGsfGpw) on btc-mainnet now correctly shows 186 objects (matching SUP reference client). The fix was to include objects where the address appears in either Owners OR Creators dict, since in P2FK protocol creators are implicit owners. Test file created at /app/backend/tests/test_object_counts_fix.py for regression testing.",
+  "bug_fix_verification": {
+    "issue": "Profile 'embii' shows 186 objects on SUP but only 177 on Cthulhu",
+    "root_cause": "Backend only counted objects where address appeared in 'Owners' dict, but in P2FK protocol creators are implicit owners",
+    "fix_applied": "Objects from GetObjectsByAddress now include those where address is in either Owners OR Creators",
+    "files_fixed": [
+      "/app/backend/routes/objects.py - get_owned_objects (line 136), get_object_counts_fast (line 234)",
+      "/app/frontend/src/utils/standalone.js - handlers for /api/objects/owned/ and /api/objects/counts/",
+      "/app/frontend/src/pages/ProfileDetailPage.js - line 137 uses only 'owned' count"
+    ],
+    "verification_results": {
+      "owned_count": "186 (PASS - matches SUP)",
+      "created_count": "98 (PASS)",
+      "double_counting_prevented": "true (frontend shows 186, not 284)"
+    }
+  }
+}

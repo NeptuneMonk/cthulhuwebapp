@@ -1,0 +1,48 @@
+{
+  "summary": "ObjectCard UI changes verified - all 3 requested changes implemented correctly: 1) CreatedDate + era labeling added, 2) 'text string' label for text-only URNs, 3) 'On-Chain (Bitcoin)' text removed. Backend API returns created_date field. SingleObjectPage OnChainAgeBadge regression check passed.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_objectcard_ui_changes_iter196.py",
+    "/app/test_reports/pytest/pytest_results_iter196.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "VERIFIED: ObjectCard.js line 8 imports getEraInfo from OnChainAgeBadge",
+    "VERIFIED: ObjectCard.js lines 48-60 compute createdDate, eraInfo, formattedDate, and urnDisplayLabel",
+    "VERIFIED: ObjectCard.js lines 309-318 display date + era info with data-testid='object-card-date'",
+    "VERIFIED: ObjectCard.js line 58 maps 'data.txt' to 'text string' for text-only URNs",
+    "VERIFIED: 'On-Chain (Bitcoin)' text removed from ObjectCard.js (grep confirms no matches)",
+    "VERIFIED: OnChainAgeBadge.js getEraInfo function defines correct era ranges (2009-2014, 2015-2020, 2021-2023)",
+    "VERIFIED: Backend helpers.py line 601 returns created_date field in format_object_for_api",
+    "VERIFIED: SingleObjectPage.js line 1063 still uses OnChainAgeBadge component (regression check)",
+    "VERIFIED: UI test shows 8 object cards with 8 date elements and era labels visible"
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_objectcard_ui_changes_iter196.py"
+  ],
+  "success_rate": {
+    "backend": "100% (9/9 tests passed)",
+    "frontend": "100% (UI verification passed)"
+  },
+  "seed_data_creation": "",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "ObjectCard UI changes verified. The embii profile on btc-mainnet shows object cards with: 1) CreatedDate formatted as 'Aug 18, 2014', 2) Era labels like 'The Primordial Era 2009-2014' and 'The Forging Era 2015-2020', 3) URN labels showing real filenames like 'embii.jpg'. The 'On-Chain (Bitcoin)' text has been removed - chain info now shown as BTC badges in image area. Backend /api/objects/owned returns created_date field correctly.",
+  "features_verified": {
+    "created_date_display": "PASS - ObjectCard shows formatted date like 'Aug 18, 2014'",
+    "era_labeling": "PASS - Shows era info for 2009-2023 objects (Genesis/Forging/Expansion)",
+    "text_string_label": "PASS - Code maps 'data.txt' to 'text string' (line 58)",
+    "onchain_text_removed": "PASS - No 'On-Chain (Bitcoin)' text in ObjectCard.js",
+    "real_filenames_preserved": "PASS - Shows actual filenames like 'embii.jpg'",
+    "backend_created_date": "PASS - API returns created_date field",
+    "single_object_page_badge": "PASS - OnChainAgeBadge still used at line 1063"
+  }
+}

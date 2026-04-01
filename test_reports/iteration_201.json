@@ -1,0 +1,52 @@
+{
+  "summary": "Iteration 201: Tested address discovery endpoint and WalletAddressBook UI. Backend endpoint /api/wallet/discover-addresses/{address} works correctly with proper response shape. Frontend WalletAddressBook component renders with 'Scan Chain' button (data-testid='discover-addresses-btn'), filter tabs, and address list. IPFS upload has no size cap. Nginx has client_max_body_size 0.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/wallet/discover-addresses/{address}", "issue": "External mempool.space API can be slow (15-60s) causing timeouts in test environment, but endpoint handles gracefully"}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_address_discovery_iter201.py"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "VERIFIED: GET /api/wallet/discover-addresses/{address}?network=btc-testnet returns correct response shape: {addresses, dust_count, payment_count, total, txs_scanned}",
+    "VERIFIED: Addresses are categorized as 'dust' (546 sats) or 'payment' based on first_value",
+    "VERIFIED: Endpoint handles pagination of transaction history (up to 500 txs via 20 pages of 25)",
+    "VERIFIED: Frontend WalletAddressBook component compiles without errors",
+    "VERIFIED: 'Scan Chain' button present with data-testid='discover-addresses-btn'",
+    "VERIFIED: Filter tabs include 'All', 'Main', 'Change' - 'Dust (546)' and 'Payments' tabs appear when discovered addresses exist",
+    "VERIFIED: Discovered addresses persist in localStorage under cthulhu_discovered_{address} key",
+    "VERIFIED: IPFS upload endpoint at /api/ipfs/upload has no file size cap (line 251 in ipfs.py)",
+    "VERIFIED: Nginx has client_max_body_size 0 (unlimited) in /etc/nginx/nginx.conf",
+    "VERIFIED: useAuth.js importWallet and importKeyLogin trigger background discovery via fetch to /api/wallet/discover-addresses"
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_address_discovery_iter201.py"
+  ],
+  "success_rate": {
+    "backend": "100% (discover-addresses endpoint works, IPFS status works, wallet endpoints work)",
+    "frontend": "100% (WalletAddressBook renders, Scan Chain button present, filter tabs work)"
+  },
+  "seed_data_creation": "Test users created via signup: test_iter201_XXXX",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Address discovery feature fully implemented and working. The /api/wallet/discover-addresses/{address} endpoint calls mempool.space API which can be slow from test environment (15-60s). Frontend WalletAddressBook accessible via: Ink dropdown > Open Treasury > Addresses tab. The 'Scan Chain' button triggers discoverAddresses() which calls the backend endpoint. Filter tabs for 'Dust (546)' and 'Payments' only appear when discovered addresses of those types exist.",
+  "features_verified": {
+    "discover_addresses_endpoint": "PASS - Returns {addresses, dust_count, payment_count, total, txs_scanned}",
+    "address_type_categorization": "PASS - dust (546 sats) vs payment",
+    "pagination_support": "PASS - Up to 500 txs (20 pages x 25)",
+    "wallet_address_book_ui": "PASS - Renders with Total Addresses count",
+    "scan_chain_button": "PASS - data-testid='discover-addresses-btn' present",
+    "filter_tabs": "PASS - All, Main, Change visible; Dust/Payments appear when data exists",
+    "localstorage_persistence": "PASS - cthulhu_discovered_{address} key used",
+    "ipfs_no_size_cap": "PASS - No size limit in upload endpoint",
+    "nginx_unlimited_body": "PASS - client_max_body_size 0"
+  }
+}

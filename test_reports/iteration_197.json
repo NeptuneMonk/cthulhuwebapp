@@ -1,0 +1,51 @@
+{
+  "summary": "Vault backup notification state persistence feature verified. Backend endpoint /api/vault/discover-onchain/{address}?network=btc-testnet returns correct structure with found, backup, and latest_self_pm fields. Frontend code correctly collects and restores notification state (unreadState, dmLastSeen, dmClearedBefore, mentionsSeen) and uses vaultCutoff to suppress stale DM notifications.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_vault_discovery_iter197.py",
+    "/app/test_reports/pytest/pytest_results_iter197.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "VERIFIED: GET /api/vault/discover-onchain/mqQ6KhpU7hPVh2TFiCwNeDgArWzCxXtTmF?network=btc-testnet returns {found: true, backup: {...}, latest_self_pm: '2026-03-27T10:31:00'}",
+    "VERIFIED: Backend vault.py discover_onchain_vault (lines 217-295) fetches CTHULHU_VAULT keyword posts and self-directed PMs",
+    "VERIFIED: Backend returns latest_self_pm from GetPrivateMessagesByAddress self-directed PMs",
+    "VERIFIED: Frontend stateBackup.js collectNetworkState() includes unreadState (line 82), dmLastSeen (line 87), dmClearedBefore (line 91), mentionsSeen (line 95)",
+    "VERIFIED: Frontend stateBackup.js restoreStateFromVault() stores cthulhu_vault_cutoff_{address} in localStorage (line 251)",
+    "VERIFIED: Frontend useDMNotifications.js uses vaultCutoff to suppress old notifications (lines 34, 39, 63)",
+    "VERIFIED: Frontend dmDb.js has _exportDmLastSeen, _exportClearedBefore, _exportMentionsSeen, _importDmLastSeen, _importClearedBefore functions",
+    "VERIFIED: Frontend notificationSync.js bridges IndexedDB DM state to localStorage for vault backup",
+    "VERIFIED: Frontend compiles with zero warnings (webpack compiled successfully)",
+    "VERIFIED: Backend compiles without errors (health check passes)"
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_vault_discovery_iter197.py"
+  ],
+  "success_rate": {
+    "backend": "100% (8/8 tests passed)",
+    "frontend": "100% (code review verified, zero warnings)"
+  },
+  "seed_data_creation": "",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Vault backup notification state persistence feature verified. The testnet address mqQ6KhpU7hPVh2TFiCwNeDgArWzCxXtTmF has a CTHULHU_VAULT backup with CID QmVRhtUTEnCiYZnYhdxXvZ5PqGcEeaNodHmChMLjDYUKrL and latest_self_pm 2026-03-27T10:31:00. The frontend correctly uses this cutoff to suppress stale DM notifications from before the vault backup.",
+  "features_verified": {
+    "backend_discover_onchain_endpoint": "PASS - Returns {found, backup, latest_self_pm}",
+    "backend_latest_self_pm": "PASS - Returns ISO date from self-directed PMs",
+    "frontend_collectNetworkState": "PASS - Includes unreadState, dmLastSeen, dmClearedBefore, mentionsSeen",
+    "frontend_restoreStateFromVault": "PASS - Stores cthulhu_vault_cutoff_{address} in localStorage",
+    "frontend_useDMNotifications_vaultCutoff": "PASS - Uses vaultCutoff to suppress old notifications",
+    "frontend_dmDb_export_import": "PASS - Has _exportDmLastSeen, _exportClearedBefore, _exportMentionsSeen, _importDmLastSeen, _importClearedBefore",
+    "frontend_notificationSync": "PASS - Bridges IndexedDB to localStorage for vault backup",
+    "frontend_zero_warnings": "PASS - webpack compiled successfully",
+    "backend_compiles": "PASS - Health check returns healthy"
+  }
+}

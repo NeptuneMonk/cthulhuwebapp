@@ -1,0 +1,23 @@
+{
+  "wif": "cN7iY6rTVMSiPqbGYN2tJDtFuinZcPQR74P23J2shRk4ffXNx9YW",
+  "address": "mpc9CiViQxPvLkkWuvmHtKw9LvtCXN7GAi",
+  "payload": "PRO/59/{\"urn\":\"crosslang\",\"dnm\":\"Cross-Language Test\",\"cre\":[\"0\"]}",
+  "hash_hex": "54D53D7400B02C65F7BC7E4E5F58D9F75A34C9BD98E4CF7D8B6D7CD9127D3B0F",
+  "python_signature": "IMfXLMP4YeLHwhKdKd2GnIeRu0GCQn4TvV/XYh9mXZQMYjm7CF+b9SZbaAeK9/H+FwDI8yjPT7sFF+ze/mkbV0k=",
+  "python_sig_flag": 32,
+  "keyword_address": "mpanH9qLhbtrWA5FjsbHgmj3PJeQnxUATw",
+  "encoded_addresses": [
+    "mo7LARcKj9G4W2XSxtBSHpp8xjopSrDeq7",
+    "mq2QtKKsfoGQUdb7ExATMvEainNUgsbVPu",
+    "moNf89Ww2wFf2Uy1hBAUFPpGYqnW6JkizR",
+    "mo7gezCPvgPCUmxLcA2Hw79jMVYQ5EVBfD",
+    "mka9Z1zbjALFKp7EUei4KPyY7WhAyB6JVH",
+    "mkjKh2SgXNEkiNiqPFKNXiFTpAcQfgr2Mb",
+    "mjYKE7aFXtuZkdaNzgmWVD6YgQy9wCnXqt",
+    "mpwf3Bz7xjZJAqxJNh2SLsCEFuXV7v87u7",
+    "mrvcrQrYD3xCjoKMhuNhU3vfvGwj1woLcc",
+    "mpanH9qLhbtrWA5FjsbHgmj3PJeQnxUATw",
+    "mpc9CiViQxPvLkkWuvmHtKw9LvtCXN7GAi"
+  ],
+  "full_payload": "SIG/88/IMfXLMP4YeLHwhKdKd2GnIeRu0GCQn4TvV/XYh9mXZQMYjm7CF+b9SZbaAeK9/H+FwDI8yjPT7sFF+ze/mkbV0k=PRO/59/{\"urn\":\"crosslang\",\"dnm\":\"Cross-Language Test\",\"cre\":[\"0\"]}"
+}

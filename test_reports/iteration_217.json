@@ -1,0 +1,64 @@
+{
+  "summary": "Frontend testing for API call deduplication changes. All features tested successfully: login with WIF key, feed page, desktop sidebar with ChatsPage, /chats desktop placeholder, profile page, settings with IPFS status, storefront, discover, and contacts pages. No console errors related to dedupFetch or useIpfsStatus singleton hook.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "General",
+        "issues": ["React hydration warning: nested button elements detected in some components"]
+      }
+    ]
+  },
+  "test_report_links": [
+    "/.screenshots/01_landing_page.png",
+    "/.screenshots/05_feed_page.png",
+    "/.screenshots/06_chats_page.png",
+    "/.screenshots/11_contacts_page.png"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "dedupFetch.js: Correctly implements TTL cache (3s) and in-flight request deduplication for GET requests",
+    "useIpfsStatus.js: Singleton pattern using useSyncExternalStore - only one poll interval runs regardless of component count",
+    "App.js: ChatsPage double-mount prevention working - uses isDesktop state to conditionally render",
+    "useFollows.js: Uses dedupGet for user-state API calls",
+    "useDMNotifications.js: Uses dedupGet for DM threads API calls",
+    "useAuth.js: Uses dedupGet for profile lookup",
+    "FeedPage.js: Uses dedupGet for profile image fetch"
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "N/A (frontend only test)",
+    "frontend": "100%"
+  },
+  "test_credentials": {
+    "WIF": "cPYRpd9zq5mTdoo93NM5V9gTkpPnL26kjS5f6qYExPHLtCFp2gN8",
+    "password": "pXk7uHCH8kuu85B",
+    "network": "btc-testnet"
+  },
+  "seed_data_creation": "None",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "API call deduplication changes verified. Key implementations: (1) useIpfsStatus singleton hook using useSyncExternalStore - one poll interval shared across all consumers, (2) dedupGet wrapper in dedupFetch.js provides 3-second TTL cache and concurrent request deduplication, (3) ChatsPage no longer double-mounts on desktop - App.js uses isDesktop state check. All navigation flows working. Console shows some 504 errors from external APIs but no errors related to dedup changes.",
+  "features_tested": [
+    "Login with WIF key - redirects to /feed",
+    "Feed page loads with posts",
+    "Desktop sidebar shows ChatsPage with contacts and tethered rooms",
+    "Desktop /chats route shows 'Select a conversation' placeholder (not duplicate ChatsPage)",
+    "My Profile page loads",
+    "Settings page loads with IPFS status indicator",
+    "Objects/Storefront page loads",
+    "Discover page loads",
+    "Contacts/Profiles page loads",
+    "No console errors related to dedupFetch or useIpfsStatus"
+  ],
+  "deduplication_verification": {
+    "useIpfsStatus_singleton": "VERIFIED - Uses useSyncExternalStore with shared _subscribers, _status, _intervalId, _refCount",
+    "dedupGet_wrapper": "VERIFIED - Implements TTL cache and in-flight request deduplication",
+    "ChatsPage_no_double_mount": "VERIFIED - Desktop shows placeholder on /chats route, sidebar shows ChatsPage"
+  }
+}

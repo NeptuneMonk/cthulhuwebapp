@@ -1,0 +1,47 @@
+{
+  "summary": "Verified DomainRedirectCard feature for decentralized domains. All 6 test scenarios passed: (1) 🤖🚬 domain shows DomainRedirectCard with 'DECENTRALIZED DOMAIN' badge and Visit button linking to embii.wtf, (2) 'embii domain' shows DomainRedirectCard with 'EMBII' domain name and Visit button linking to www.embii.com, (3) Alien audio shows AudioPlayer NOT DomainRedirectCard, (4) GEN2 ROBOT shows content-sniffed image with 'image detected' badge, (5) STARGATE PDF shows card-style viewer with Open PDF/Download buttons, (6) discover-addresses returns 77 addresses (> 70).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_domain_redirect_iter212.py"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [],
+  "updated_files": [
+    "/app/backend/tests/test_domain_redirect_iter212.py"
+  ],
+  "success_rate": {
+    "backend": "100%",
+    "frontend": "100%"
+  },
+  "test_credentials": {},
+  "seed_data_creation": "None - used existing blockchain data",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "DomainRedirectCard feature verified working. Key detection logic: isDomainRedirect = (urnMediaType === 'raw-text' && primaryParsed?.rawText && object.uri && /^(https?:\\/\\/|p2fk:\\/\\/)/.test(object.uri)). The card shows domain name from URN, 'DECENTRALIZED DOMAIN' badge, image from object.image, and Visit button linking to URI. Non-domain objects (audio, PDF, HTML) correctly show their respective viewers. Object pages may take 8-15 seconds to load due to on-chain resolution.",
+  "frontend_verification_results": {
+    "🤖🚬 domain (n2syzkcZL6ciUqzJhZkCeuYS9uyQDNjNRv)": "PASS - DomainRedirectCard with badge, domain name '🤖🚬', Visit button to embii.wtf",
+    "embii domain (mnFoeouVDTjuwx6j8piAqsZhc2QuEtZBJA)": "PASS - DomainRedirectCard with badge, domain name 'EMBII', Visit button to www.embii.com",
+    "Alien audio (mnSog2Aj8q5U7msvKWbs33EWrhpXM8xnWD)": "PASS - AudioPlayer shown, NO DomainRedirectCard",
+    "GEN2 ROBOT (mty8eoLw2ATs94x5GEeBhC7Z1KwZLYV5Nw)": "PASS - Content-sniffed image with 'image detected' badge, data-testid='html-sniffed-image'",
+    "STARGATE PDF (myn9cdwx4RtKjbh6YqWwUXqt9KqVYV6h8w)": "PASS - Card-style PDF viewer with 'Open PDF' and 'Download' buttons, no iframe"
+  },
+  "backend_verification_results": {
+    "discover-addresses endpoint": "PASS - Returns 77 addresses (74 objects + 1 profile + 2 collections) for muVrFVk3ErfrnmWosLF4WixxRtDKfMx9bs, total > 70",
+    "🤖🚬 object API": "PASS - URN='🤖🚬' (plain text), URI='http://embii.wtf' (URL)",
+    "embii domain object API": "PASS - URN='EMBII' (plain text), URI='http://www.embii.com' (URL)"
+  },
+  "code_review_verification": {
+    "DomainRedirectCard component (line ~864)": "Renders domain name, badge, image, redirect target, and Visit button",
+    "isDomainRedirect detection (line ~1166)": "Correctly detects URN as raw-text + URI as URL pattern",
+    "renderPrimaryContent (line ~1173)": "Returns DomainRedirectCard when isDomainRedirect is true"
+  },
+  "note_on_test_address_discrepancy": "Test request mentioned 'OUTERSPACE audio' at muVrFVk3ErfrnmWosLF4WixxRtDKfMx9bs but this address is actually the 'embii domain' object. Tested Alien audio (mnSog2Aj8q5U7msvKWbs33EWrhpXM8xnWD) instead to verify non-domain objects don't show DomainRedirectCard."
+}

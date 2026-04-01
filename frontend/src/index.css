@@ -1,0 +1,392 @@
+/* Hide emergent badge — uses properties not overridden by the injection script */
+#emergent-badge {
+  opacity: 0 !important;
+  visibility: hidden !important;
+  clip-path: inset(100%) !important;
+  pointer-events: none !important;
+}
+
+/* Hide all scrollbars globally */
+* {
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE/Edge */
+}
+*::-webkit-scrollbar {
+  display: none; /* Chrome/Safari/Opera */
+}
+
+/* Mention highlight animation */
+.mention-highlight {
+  animation: mentionPulse 2s ease-in-out;
+}
+@keyframes mentionPulse {
+  0%, 100% { box-shadow: none; }
+  25% { box-shadow: 0 0 20px rgba(59, 130, 246, 0.4); }
+  50% { box-shadow: 0 0 30px rgba(59, 130, 246, 0.6); }
+  75% { box-shadow: 0 0 20px rgba(59, 130, 246, 0.4); }
+}
+
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ─── Theme system: CSS variables applied by useTheme.js ─── */
+:root {
+  --c-bg: #0a0e14;
+  --c-card: #111827;
+  --c-border: #1f2937;
+  --c-accent: #14b8a6;
+  --c-accentMuted: rgba(20,184,166,0.15);
+  --c-text: #e5e7eb;
+  --c-textMuted: #6b7280;
+}
+
+/* Override Tailwind's hardcoded grays with theme variables */
+/* Only apply card bg to non-sticker feed cards (stickers have transparent bg) */
+[data-testid^="feed-card-"]:not([style*="transparent"]) {
+  background-color: var(--c-card) !important;
+  border-color: var(--c-border) !important;
+}
+
+/* Sticker cards must stay transparent */
+[data-testid^="feed-card-"][style*="transparent"] {
+  background-color: transparent !important;
+}
+
+[data-testid="sidebar"] {
+  background-color: var(--c-card) !important;
+  border-color: var(--c-border) !important;
+}
+
+[data-testid="feed-page"] {
+  background-color: var(--c-bg) !important;
+}
+
+/* Compose bar and other input areas */
+[data-testid="compose-bar"] {
+  background-color: var(--c-card) !important;
+  border-color: var(--c-border) !important;
+}
+
+/* ─── Theme-aware accent utilities ─── */
+/* Primary action buttons use accent */
+.btn-accent {
+  background-color: var(--c-accent) !important;
+  color: #fff !important;
+}
+.btn-accent:hover {
+  filter: brightness(1.15);
+}
+.btn-accent:disabled {
+  opacity: 0.4;
+  filter: none;
+}
+
+/* Accent text */
+.text-accent { color: var(--c-accent) !important; }
+.bg-accent { background-color: var(--c-accent) !important; }
+.border-accent { border-color: var(--c-accent) !important; }
+
+/* Accent with opacity for backgrounds */
+.bg-accent-muted { background-color: var(--c-accentMuted) !important; }
+
+/* Active tab indicator */
+.tab-accent-active {
+  border-color: var(--c-accent) !important;
+  color: var(--c-accent) !important;
+}
+
+/* Focus ring */
+.focus-accent:focus {
+  border-color: var(--c-accent) !important;
+  outline: none;
+  box-shadow: 0 0 0 1px var(--c-accent);
+}
+
+body {
+    margin: 0;
+    font-family:
+        -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Oxygen",
+        "Ubuntu", "Cantarell", "Fira Sans", "Droid Sans", "Helvetica Neue",
+        sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+code {
+    font-family:
+        source-code-pro, Menlo, Monaco, Consolas, "Courier New", monospace;
+}
+
+@layer base {
+    :root {
+        --background: 0 0% 100%;
+        --foreground: 0 0% 3.9%;
+        --card: 0 0% 100%;
+        --card-foreground: 0 0% 3.9%;
+        --popover: 0 0% 100%;
+        --popover-foreground: 0 0% 3.9%;
+        --primary: 0 0% 9%;
+        --primary-foreground: 0 0% 98%;
+        --secondary: 0 0% 96.1%;
+        --secondary-foreground: 0 0% 9%;
+        --muted: 0 0% 96.1%;
+        --muted-foreground: 0 0% 45.1%;
+        --accent: 0 0% 96.1%;
+        --accent-foreground: 0 0% 9%;
+        --destructive: 0 84.2% 60.2%;
+        --destructive-foreground: 0 0% 98%;
+        --border: 0 0% 89.8%;
+        --input: 0 0% 89.8%;
+        --ring: 0 0% 3.9%;
+        --chart-1: 12 76% 61%;
+        --chart-2: 173 58% 39%;
+        --chart-3: 197 37% 24%;
+        --chart-4: 43 74% 66%;
+        --chart-5: 27 87% 67%;
+        --radius: 0.5rem;
+    }
+    .dark {
+        --background: 0 0% 3.9%;
+        --foreground: 0 0% 98%;
+        --card: 0 0% 3.9%;
+        --card-foreground: 0 0% 98%;
+        --popover: 0 0% 3.9%;
+        --popover-foreground: 0 0% 98%;
+        --primary: 0 0% 98%;
+        --primary-foreground: 0 0% 9%;
+        --secondary: 0 0% 14.9%;
+        --secondary-foreground: 0 0% 98%;
+        --muted: 0 0% 14.9%;
+        --muted-foreground: 0 0% 63.9%;
+        --accent: 0 0% 14.9%;
+        --accent-foreground: 0 0% 98%;
+        --destructive: 0 62.8% 30.6%;
+        --destructive-foreground: 0 0% 98%;
+        --border: 0 0% 14.9%;
+        --input: 0 0% 14.9%;
+        --ring: 0 0% 83.1%;
+        --chart-1: 220 70% 50%;
+        --chart-2: 160 60% 45%;
+        --chart-3: 30 80% 55%;
+        --chart-4: 280 65% 60%;
+        --chart-5: 340 75% 55%;
+    }
+}
+
+@layer base {
+    * {
+        @apply border-border;
+    }
+    body {
+        @apply bg-background text-foreground;
+    }
+}
+
+@layer base {
+    [data-debug-wrapper="true"] {
+        display: contents !important;
+    }
+
+    [data-debug-wrapper="true"] > * {
+        margin-left: inherit;
+        margin-right: inherit;
+        margin-top: inherit;
+        margin-bottom: inherit;
+        padding-left: inherit;
+        padding-right: inherit;
+        padding-top: inherit;
+        padding-bottom: inherit;
+        column-gap: inherit;
+        row-gap: inherit;
+        gap: inherit;
+        border-left-width: inherit;
+        border-right-width: inherit;
+        border-top-width: inherit;
+        border-bottom-width: inherit;
+        border-left-style: inherit;
+        border-right-style: inherit;
+        border-top-style: inherit;
+        border-bottom-style: inherit;
+        border-left-color: inherit;
+        border-right-color: inherit;
+        border-top-color: inherit;
+        border-bottom-color: inherit;
+    }
+}
+
+
+/* Cthulhu Logo — materialize/dematerialize loop when IPFS is active */
+@keyframes cthulhuMaterialize {
+  0% { opacity: 1; filter: brightness(1) drop-shadow(0 0 0px transparent); }
+  15% { opacity: 0.4; filter: brightness(1.8) drop-shadow(0 0 8px rgba(0, 255, 150, 0.6)); }
+  30% { opacity: 0.9; filter: brightness(1.1) drop-shadow(0 0 4px rgba(0, 255, 150, 0.3)); }
+  45% { opacity: 0.3; filter: brightness(2) drop-shadow(0 0 12px rgba(0, 255, 150, 0.8)); }
+  60% { opacity: 0.85; filter: brightness(1.2) drop-shadow(0 0 3px rgba(0, 255, 150, 0.2)); }
+  80% { opacity: 1; filter: brightness(1) drop-shadow(0 0 2px rgba(0, 255, 150, 0.1)); }
+  100% { opacity: 1; filter: brightness(1) drop-shadow(0 0 0px transparent); }
+}
+.cthulhu-materialize {
+  animation: cthulhuMaterialize 3s ease-in-out infinite;
+}
+
+/* IPFS status dot pulse */
+@keyframes ipfsPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.5); }
+  50% { box-shadow: 0 0 0 4px rgba(52, 211, 153, 0); }
+}
+.ipfs-pulse {
+  animation: ipfsPulse 2s ease-in-out infinite;
+}
+
+
+/* ═══════════════════════════════════════════════════
+   DEVICE-SPECIFIC OPTIMIZATIONS
+   iPhone, Android, Desktop Chrome/Edge
+   ═══════════════════════════════════════════════════ */
+
+/* ── Global: iOS rubber-band bounce prevention ── */
+html, body {
+  overscroll-behavior: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* ── iOS: Safe area insets for notched devices ── */
+body {
+  padding-top: env(safe-area-inset-top, 0);
+  padding-bottom: env(safe-area-inset-bottom, 0);
+  padding-left: env(safe-area-inset-left, 0);
+  padding-right: env(safe-area-inset-right, 0);
+}
+
+/* Bottom navigation safe area padding for iPhone */
+.bottom-nav-safe {
+  padding-bottom: calc(0.5rem + env(safe-area-inset-bottom, 0));
+}
+
+/* ── iOS: Fix 100vh not accounting for Safari toolbar ── */
+.h-screen-safe {
+  height: 100vh;
+  height: 100dvh;
+}
+.min-h-screen-safe {
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+/* ── iOS/Android: Prevent zoom on input focus (font-size >= 16px) ── */
+input, textarea, select {
+  font-size: 16px !important;
+}
+@media (min-width: 768px) {
+  input, textarea, select {
+    font-size: inherit !important;
+  }
+}
+
+/* ── Touch: Minimum 44px tap targets (WCAG / Apple HIG) ── */
+@media (pointer: coarse) {
+  button, a, [role="button"], [data-testid] {
+    min-height: 44px;
+    min-width: 44px;
+  }
+  /* Smaller elements that need touch area expansion */
+  .touch-target-sm {
+    position: relative;
+  }
+  .touch-target-sm::after {
+    content: '';
+    position: absolute;
+    top: -8px; bottom: -8px;
+    left: -8px; right: -8px;
+  }
+}
+
+/* ── iOS: Disable tap highlight ── */
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* ── iOS: Fix position:fixed elements with virtual keyboard ── */
+@supports (-webkit-touch-callout: none) {
+  .fixed-bottom-ios {
+    position: fixed;
+    bottom: 0;
+    bottom: env(safe-area-inset-bottom, 0);
+  }
+}
+
+/* ── Android: Status bar theme integration ── */
+@media (display-mode: standalone) {
+  body {
+    padding-top: 0;
+  }
+}
+
+/* ── Desktop: Hover states (only for non-touch devices) ── */
+@media (hover: hover) and (pointer: fine) {
+  .hover-lift:hover {
+    transform: translateY(-1px);
+    transition: transform 0.15s ease;
+  }
+  .hover-glow:hover {
+    box-shadow: 0 0 12px rgba(139, 92, 246, 0.3);
+    transition: box-shadow 0.2s ease;
+  }
+}
+
+/* ── Desktop: Better focus indicators for keyboard navigation ── */
+@media (pointer: fine) {
+  *:focus-visible {
+    outline: 2px solid rgba(139, 92, 246, 0.6);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+}
+
+/* ── Mobile: Optimize text rendering ── */
+@media (max-width: 767px) {
+  body {
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+  /* Prevent horizontal scroll from wide content */
+  #root {
+    overflow-x: hidden;
+    max-width: 100vw;
+  }
+}
+
+/* ── iOS Safari: Fix modals behind address bar ── */
+@supports (-webkit-touch-callout: none) {
+  .modal-fullscreen {
+    height: -webkit-fill-available;
+  }
+}
+
+/* ── Performance: GPU acceleration for animated elements ── */
+.gpu-accelerated {
+  will-change: transform;
+  transform: translateZ(0);
+  backface-visibility: hidden;
+}
+
+/* ── Edge: Scrollbar styling for when scrollbars are forced visible ── */
+@supports (-ms-overflow-style: auto) {
+  *::-webkit-scrollbar {
+    width: 4px;
+    background: transparent;
+  }
+  *::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 4px;
+  }
+}
+
+/* Compact emoji picker overrides */
+.emoji-compact .epr-category-nav { display: none !important; }
+.emoji-compact .epr-body .epr-emoji-category-label { font-size: 10px !important; padding: 2px 8px !important; margin: 0 !important; }
+.emoji-compact .epr-body { padding-top: 2px !important; }
+.emoji-compact .epr-emoji-list { padding: 0 2px !important; }
+.emoji-compact aside.EmojiPickerReact { border: none !important; }

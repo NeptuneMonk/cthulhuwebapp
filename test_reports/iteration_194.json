@@ -1,0 +1,126 @@
+{
+  "summary": "Iteration 194: Code verification for UTXO management and cross-network WIF fixes. All primary fixes verified. Found 2 functions (buildAndSendWithUtxos, buildMultiSend) that still use old ECPair.fromWIF pattern instead of parseWIFForNetwork.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [
+    "OPTIONAL: Update buildAndSendWithUtxos (line 248) to use parseWIFForNetwork instead of ECPair.fromWIF(cleanWif, network)",
+    "OPTIONAL: Update buildMultiSend (line 339) to use parseWIFForNetwork instead of ECPair.fromWIF(cleanWif, network)",
+    "OPTIONAL: Update buildMultiSend to fetch from 3 addresses (main+change+royalties) and use 'source' tag instead of 'isChange'"
+  ],
+  "critical_code_review_comments": [
+    "VERIFIED: txBuilder.js parseWIFForNetwork() helper exists (lines 33-40) - accepts both network types, re-derives for target network",
+    "VERIFIED: txBuilder.js buildAndBroadcast() fetches UTXOs from 3 addresses: main, change, royalties (lines 497-501)",
+    "VERIFIED: txBuilder.js buildAndBroadcast() sorts UTXOs by confirmed-first then largest-first (lines 588-593), uses 'source' tag (lines 504-508)",
+    "VERIFIED: txBuilder.js buildAndBroadcast() signing loop handles 3 source types: main, change, royalty (lines 664-668)",
+    "VERIFIED: txBuilder.js buildAndSend() fetches from 3 addresses (lines 163-167), signs with correct key per source (lines 219-222)",
+    "VERIFIED: p2fk.js parseWIF() helper exists (lines 36-39), uses BOTH_NETWORKS for network-agnostic parsing",
+    "VERIFIED: p2fk.js - All 12 ECPair.fromWIF calls replaced with parseWIF (bitcoinMessageSign, buildProfileTransaction, buildPostTransaction, buildObjectTransaction, buildObjectUpdateTransaction, buildGiveTransaction, buildBurnTransaction, buildBuyTransaction, buildListTransaction, buildPrivateMessageTransaction, buildInquiryTransaction, derivePKXPKY)",
+    "VERIFIED: stateBackup.js backupStateToVault uses buildPostTransaction and buildAndBroadcast with 'btc-testnet' (lines 172-184)",
+    "VERIFIED: Backend GET /api/vault/discover-onchain/{address} returns {found: false, backup: null} for test addresses",
+    "VERIFIED: Frontend compiles without errors",
+    "VERIFIED: getAddressFromWIF, getChangeAddress, getRoyaltiesAddress all use parseWIFForNetwork (lines 78, 90, 114)",
+    "NOTE: buildAndSendWithUtxos (line 248) and buildMultiSend (line 339) still use old ECPair.fromWIF pattern - these are less critical functions but could be updated for consistency"
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "100%",
+    "frontend": "100%"
+  },
+  "seed_data_creation": "",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iteration 194 verified the UTXO management and cross-network WIF fixes. The main functions (buildAndBroadcast, buildAndSend, all p2fk.js transaction builders) now correctly: (1) fetch UTXOs from 3 addresses (main+change+royalties), (2) sort by largest balance first (not main-first), (3) use parseWIFForNetwork for cross-network WIF support. Two less-critical functions (buildAndSendWithUtxos, buildMultiSend) still use the old pattern but these are optional to fix.",
+  "features_verified": {
+    "parseWIFForNetwork_helper": {
+      "file": "txBuilder.js",
+      "lines": "33-40",
+      "status": "PASS",
+      "description": "Accepts any WIF (mainnet or testnet), re-derives for target network"
+    },
+    "buildAndBroadcast_3_address_fetch": {
+      "file": "txBuilder.js",
+      "lines": "497-501",
+      "status": "PASS",
+      "addresses": ["main", "change", "royalties"]
+    },
+    "buildAndBroadcast_sort_order": {
+      "file": "txBuilder.js",
+      "lines": "588-593",
+      "status": "PASS",
+      "order": "confirmed-first, then largest-first (NOT main-first)"
+    },
+    "buildAndBroadcast_source_tag": {
+      "file": "txBuilder.js",
+      "lines": "504-508",
+      "status": "PASS",
+      "tags": ["main", "change", "royalty"]
+    },
+    "buildAndBroadcast_signing_loop": {
+      "file": "txBuilder.js",
+      "lines": "664-668",
+      "status": "PASS",
+      "handles": ["main → keyPair", "change → changeKeyPair", "royalty → royKeyPair"]
+    },
+    "buildAndSend_3_address_fetch": {
+      "file": "txBuilder.js",
+      "lines": "163-167",
+      "status": "PASS"
+    },
+    "buildAndSend_signing_loop": {
+      "file": "txBuilder.js",
+      "lines": "219-222",
+      "status": "PASS"
+    },
+    "p2fk_parseWIF_helper": {
+      "file": "p2fk.js",
+      "lines": "36-39",
+      "status": "PASS"
+    },
+    "p2fk_all_fromWIF_replaced": {
+      "file": "p2fk.js",
+      "status": "PASS",
+      "functions_updated": 12
+    },
+    "stateBackup_uses_testnet": {
+      "file": "stateBackup.js",
+      "lines": "172-184",
+      "status": "PASS"
+    },
+    "backend_discover_onchain": {
+      "endpoint": "/api/vault/discover-onchain/{address}",
+      "status": "PASS",
+      "response": "{found: false, backup: null}"
+    },
+    "frontend_compiles": {
+      "status": "PASS",
+      "warnings_only": true
+    },
+    "address_derivation_functions": {
+      "getAddressFromWIF": "PASS (line 78)",
+      "getChangeAddress": "PASS (line 90)",
+      "getRoyaltiesAddress": "PASS (line 114)"
+    }
+  },
+  "incomplete_functions": {
+    "buildAndSendWithUtxos": {
+      "file": "txBuilder.js",
+      "line": 248,
+      "issue": "Still uses ECPair.fromWIF(cleanWif, network) instead of parseWIFForNetwork",
+      "severity": "LOW - function is for manual UTXO selection, less commonly used"
+    },
+    "buildMultiSend": {
+      "file": "txBuilder.js",
+      "line": 339,
+      "issue": "Still uses ECPair.fromWIF(cleanWif, network) and only fetches from 2 addresses (main+change), uses isChange instead of source",
+      "severity": "LOW - function is for multi-recipient sends, less commonly used"
+    }
+  }
+}

@@ -1,0 +1,58 @@
+{
+  "summary": "Iteration 191: Verified treasury address detection fix and per-network settings. All 8 backend tests passed. Treasury info endpoint now correctly returns configured:true for btc-mainnet with DB-imported address (13186N2tavrF5pn9n6au6VRGn3vRZMsByM). Admin settings endpoint accepts faucet_amount_mainnet, tax_rate_mainnet, and treasury_btc_testnet parameters.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_treasury_settings_iter191.py",
+    "/app/test_reports/pytest/pytest_results_iter191.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "VERIFIED: /api/treasury/info?network=btc-mainnet returns configured:true with address 13186N2tavrF5pn9n6au6VRGn3vRZMsByM from DB treasury_keys",
+    "VERIFIED: /api/treasury/info?network=btc-testnet returns configured:true with address mjxw5DaLmPET8mJ6cH3DHzzgqKbBQszBnd",
+    "VERIFIED: _get_treasury_address_async correctly checks DB treasury_keys first, then admin settings, then env vars",
+    "VERIFIED: PUT /api/admin/settings accepts faucet_amount_mainnet parameter",
+    "VERIFIED: PUT /api/admin/settings accepts tax_rate_mainnet parameter",
+    "VERIFIED: PUT /api/admin/settings accepts treasury_btc_testnet parameter (stored in treasury_addresses.btc_testnet)"
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_treasury_settings_iter191.py"
+  ],
+  "success_rate": {
+    "backend": "100% (8/8 tests passed)",
+    "frontend": "N/A (skipped per request)"
+  },
+  "seed_data_creation": "",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iteration 191 verified treasury address detection and per-network settings. The treasury_keys collection has btc-mainnet record with address 13186N2tavrF5pn9n6au6VRGn3vRZMsByM. Testnet treasury is configured at mjxw5DaLmPET8mJ6cH3DHzzgqKbBQszBnd with ~10 BTC balance. Admin settings now support separate mainnet/testnet faucet amounts and tax rates.",
+  "features_verified": {
+    "treasury_info_btc_mainnet": {
+      "endpoint": "/api/treasury/info?network=btc-mainnet",
+      "configured": true,
+      "address": "13186N2tavrF5pn9n6au6VRGn3vRZMsByM",
+      "source": "DB treasury_keys collection",
+      "status": "PASS"
+    },
+    "treasury_info_btc_testnet": {
+      "endpoint": "/api/treasury/info?network=btc-testnet",
+      "configured": true,
+      "address": "mjxw5DaLmPET8mJ6cH3DHzzgqKbBQszBnd",
+      "balance_btc": 10.0194798,
+      "status": "PASS"
+    },
+    "admin_settings_per_network": {
+      "faucet_amount_mainnet": "PASS",
+      "tax_rate_mainnet": "PASS",
+      "treasury_btc_testnet": "PASS",
+      "multiple_params_at_once": "PASS"
+    }
+  }
+}
