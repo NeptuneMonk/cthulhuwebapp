@@ -1,0 +1,60 @@
+{
+  "summary": "P2FK Migration testing complete. Backend now uses p2fk_get() with local decoder fallback instead of direct p2fk.io URLs. Frontend media URLs now point to backend /api/onchain/file/ as primary with p2fk.io as fallback. All 8 tested endpoints working correctly.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_p2fk_migration_iter220.py"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "media.js: Correctly uses ${API}/onchain/file/ as primary URL and P2FK_ROOT_FALLBACK (p2fk.io) as fallback",
+    "SingleObjectPage.js: Same pattern - backend /api/onchain/file/ is primary, p2fk.io/root is fallback",
+    "standalone.js: P2FK_LOCAL points to backend's /api/p2fk-local and tries local decoder first",
+    "objects.py: Uses p2fk_get() for all API calls (lines 146, 195, 248, 517, 640, 711, 717, 723, 815, 822, 863, 946, 1067) - no direct p2fk.io URLs",
+    "discover.py: Uses p2fk_get() for GetKnownRootsBySearchString (line 249) - no direct p2fk.io URLs",
+    "helpers.py: _local_p2fk_fallback() handles 7+ API paths locally when p2fk.io is unavailable"
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_p2fk_migration_iter220.py"
+  ],
+  "success_rate": {
+    "backend": "100% (8/8 endpoints tested)",
+    "frontend": "100% (Feed, Settings/Network, Discover all verified)"
+  },
+  "test_credentials": {
+    "testnet_txid": "00b06bf60897cefdfe2b7237d2510b72c700609833eccff8dabefc75ee29e0c8",
+    "test_keyword": "test",
+    "expected_address": "mr8QDF9fSfusDCPeGvsUVi3P3V6RD47uGS"
+  },
+  "seed_data_creation": "None",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "P2FK migration from p2fk.io as primary to backend as primary is complete. Backend uses SQLite (NOT MongoDB) for caching. All endpoints working: /api/health, /api/feed/btc-testnet, /api/p2fk-local/root/{txid}, /api/p2fk-local/keyword/{keyword}, /api/p2fk-local/search, /api/objects/search/{keyword}, /api/objects/storefront/{network}, /api/objects/discover. Frontend verified: Feed loads with posts, Settings > Network > Connect Your Node section renders correctly with Auto-Detect and Manual Setup buttons, Discover page search works for 'embii'.",
+  "features_tested": [
+    "GET /api/health - PASS (healthy status)",
+    "GET /api/p2fk-local/root/{txid} - PASS (returns decoded P2FK root with SEC file)",
+    "GET /api/p2fk-local/keyword/{keyword} - PASS (test → mr8QDF9fSfusDCPeGvsUVi3P3V6RD47uGS)",
+    "GET /api/p2fk-local/search?keyword=hello - PASS (returns 2 roots at keyword address)",
+    "GET /api/feed/btc-testnet - PASS (count=2, total=3905, has_more=true)",
+    "GET /api/objects/search/embii - PASS (count=3, total=85)",
+    "GET /api/objects/storefront/btc-testnet - PASS (count=3, total=197)",
+    "POST /api/objects/discover - PASS (returns results array)",
+    "Frontend: Feed loads with posts from Emergent/Emergent2 - PASS",
+    "Frontend: Settings > Network > Connect Your Node section - PASS (Auto-Detect and Manual Setup buttons present)",
+    "Frontend: Discover page search for 'embii' - PASS (56 Objects, 34 Profiles, 42 Media found)"
+  ],
+  "code_verification": {
+    "media.js": "Uses ${API}/onchain/file/ as primary, P2FK_ROOT_FALLBACK as fallback - VERIFIED",
+    "SingleObjectPage.js": "Uses ${API}/onchain/file/ as primary, P2FK_ROOT_FALLBACK as fallback - VERIFIED",
+    "standalone.js": "P2FK_LOCAL defined, tries local decoder first before p2fk.io - VERIFIED",
+    "objects.py": "Uses p2fk_get() for all API calls, no direct p2fk.io URLs - VERIFIED",
+    "discover.py": "Uses p2fk_get() for GetKnownRootsBySearchString - VERIFIED"
+  }
+}

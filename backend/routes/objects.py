@@ -720,11 +720,8 @@ async def search_objects(request: Request, keyword: str, network: str = 'btc-tes
 
         async def _known_objects_search():
             try:
-                client = get_client()
-                resp = await client.get("https://p2fk.io/GetKnownObjectsBySearchString",
-                    params={"searchString": kw_lower, "qty": 10, "skip": 0}, timeout=10.0)
-                if resp.status_code == 200:
-                    return ('known', resp.json())
+                return ('known', await p2fk_get("GetKnownObjectsBySearchString",
+                    is_mainnet, {"searchString": kw_lower, "qty": 10, "skip": 0}))
             except Exception:
                 pass
             return ('known', None)

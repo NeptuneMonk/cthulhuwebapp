@@ -9,11 +9,10 @@ from fastapi.responses import Response, JSONResponse
 
 from db import object_cache_col
 from utils.http_pool import get_client
+from utils.helpers import p2fk_get
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api")
-
-P2FK_API = "https://p2fk.io"
 
 CHAIN_SHORT = {
     'Bitcoin': 'BTC', 'Bitcoin-T': 'BTC-T', 'Litecoin': 'LTC',
@@ -245,15 +244,11 @@ async def _check_ownership(txid: str, chain: str, images: list, files: list) -> 
 
 
 async def _p2fk_discover(query: str, count: int = 50) -> list:
-    """Try p2fk.io GetKnownRootsBySearchString API. Filters to unsigned roots with real files."""
+    """Try p2fk.io GetKnownRootsBySearchString API (via p2fk_get with local fallback)."""
     try:
-        client = get_client()
-        resp = await client.get(f"{P2FK_API}/GetKnownRootsBySearchString", params={
+        data = await p2fk_get("GetKnownRootsBySearchString", False, {
             "search": query, "qty": min(count, 50)
-        }, timeout=20.0)
-        if resp.status_code != 200:
-            return []
-        data = resp.json()
+        })
         if not isinstance(data, list) or len(data) == 0:
             return []
 

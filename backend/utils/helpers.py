@@ -135,6 +135,60 @@ async def _local_p2fk_fallback(path: str, mainnet: bool = False):
             keyword = path.split('/', 1)[1]
             return keyword_to_address(keyword, version_byte)
 
+        # GetObjectByTransactionId/{txid} — returns decoded root (objects are roots)
+        if path.startswith('GetObjectByTransactionId/'):
+            txid = path.split('/', 1)[1]
+            raw_tx = await local_fetch_tx(txid, network)
+            if not raw_tx:
+                return None
+            root = decode_root_from_raw_tx(txid, raw_tx, version_byte)
+            return _root_to_p2fk_format(root.to_dict()) if root else None
+
+        # GetProfileByAddress/{address} — fetch roots, extract profile-like data
+        if path.startswith('GetProfileByAddress/'):
+            address = path.split('/', 1)[1]
+            txs = await local_fetch_addr_txs(address, network, max_pages=1)
+            for tx in txs:
+                txid = tx.get('txid', '')
+                if not txid:
+                    continue
+                root = decode_root_from_raw_tx(txid, tx, version_byte)
+                if not root or address not in root.outputs:
+                    continue
+                rd = root.to_dict()
+                # Check if this root contains profile data (PRO file or JSON with URN)
+                if 'PRO' in rd.get('File', {}):
+                    for msg in rd.get('Message', []):
+                        try:
+                            data = json.loads(msg)
+                            data.update({
+                                'TransactionId': rd.get('TransactionId', ''),
+                                'SignedBy': rd.get('SignedBy', ''),
+                                'Signed': rd.get('Signed', False),
+                                'BlockDate': rd.get('BlockDate', ''),
+                                'Creators': [rd.get('SignedBy', '')],
+                            })
+                            return data
+                        except json.JSONDecodeError:
+                            continue
+            return None
+
+        # GetObjectByAddress/{address} — fetch roots, extract first object
+        if path.startswith('GetObjectByAddress/') or path.startswith('GetObjectsByAddress/'):
+            address = path.split('/', 1)[1]
+            txs = await local_fetch_addr_txs(address, network, max_pages=1)
+            results = []
+            for tx in txs:
+                txid = tx.get('txid', '')
+                if not txid:
+                    continue
+                root = decode_root_from_raw_tx(txid, tx, version_byte)
+                if root and address in root.outputs:
+                    results.append(_root_to_p2fk_format(root.to_dict()))
+            if path.startswith('GetObjectsByAddress/'):
+                return results
+            return results[0] if results else None
+
     except Exception as e:
         logger.debug(f"Local fallback error [{path}]: {e}")
     return None

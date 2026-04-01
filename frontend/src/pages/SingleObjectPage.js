@@ -25,7 +25,7 @@ import { cacheByUrn, meshFetchByUrn } from '@/utils/meshFirstFetch';
 import { isMainnetNetwork } from '@/utils/media';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
-const P2FK_ROOT = 'https://p2fk.io/root';
+const P2FK_ROOT_FALLBACK = 'https://p2fk.io/root';
 
 /** Chain prefixes that indicate on-chain data (from SUP protocol) */
 const CHAIN_PREFIXES = ['BTC:', 'LTC:', 'MZC:', 'DOG:', 'btc:', 'ltc:', 'mzc:', 'dog:'];
@@ -270,8 +270,8 @@ const parseMediaRef = (ref, mainnet = true) => {
     const resolvedExt = ext || 'txt';
     const chain = chainPrefix.replace(':', '').toUpperCase();
     const useMainnet = (chain === 'MZC' || chain === 'DOG') ? true : mainnet;
-    const url = `${P2FK_ROOT}/${txid}/${encodeURIComponent(resolvedFilename)}?mainnet=${useMainnet}`;
-    const fallbackUrl = `${API}/onchain/file/${txid}/${encodeURIComponent(resolvedFilename)}?chain=${chain}&mainnet=${useMainnet}`;
+    const url = `${API}/onchain/file/${txid}/${encodeURIComponent(resolvedFilename)}?chain=${chain}&mainnet=${useMainnet}`;
+    const fallbackUrl = `${P2FK_ROOT_FALLBACK}/${txid}/${encodeURIComponent(resolvedFilename)}?mainnet=${useMainnet}`;
     return { url, fallbackUrl, filename: resolvedFilename, extension: resolvedExt, source: 'onchain', chain, txid };
   }
 
@@ -283,8 +283,8 @@ const parseMediaRef = (ref, mainnet = true) => {
     const ext = filename.includes('.') ? filename.split('.').pop().toLowerCase() : '';
     const resolvedFilename = filename || 'data.txt';
     const resolvedExt = ext || 'txt';
-    const url = `${P2FK_ROOT}/${txid}/${encodeURIComponent(resolvedFilename)}?mainnet=${mainnet}`;
-    const fallbackUrl = `${API}/onchain/file/${txid}/${encodeURIComponent(resolvedFilename)}?chain=BTC&mainnet=${mainnet}`;
+    const url = `${API}/onchain/file/${txid}/${encodeURIComponent(resolvedFilename)}?chain=BTC&mainnet=${mainnet}`;
+    const fallbackUrl = `${P2FK_ROOT_FALLBACK}/${txid}/${encodeURIComponent(resolvedFilename)}?mainnet=${mainnet}`;
     return { url, fallbackUrl, filename: resolvedFilename, extension: resolvedExt, source: 'onchain', chain: 'BTC', txid };
   }
 
@@ -304,8 +304,8 @@ const parseMediaRef = (ref, mainnet = true) => {
         const txid = pathMatch[1];
         const fname = decodeURIComponent(pathMatch[2] || 'data');
         const ext = fname.includes('.') ? fname.split('.').pop().toLowerCase() : '';
-        const url = `${P2FK_ROOT}/${txid}/${encodeURIComponent(fname)}?mainnet=${mainnet}`;
-        const fallbackUrl = `${API}/onchain/file/${txid}/${encodeURIComponent(fname)}?chain=BTC&mainnet=${mainnet}`;
+        const url = `${API}/onchain/file/${txid}/${encodeURIComponent(fname)}?chain=BTC&mainnet=${mainnet}`;
+        const fallbackUrl = `${P2FK_ROOT_FALLBACK}/${txid}/${encodeURIComponent(fname)}?mainnet=${mainnet}`;
         return { url, fallbackUrl, filename: fname, extension: ext, source: 'onchain', chain: 'BTC', txid };
       }
     }

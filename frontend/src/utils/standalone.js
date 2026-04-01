@@ -14,6 +14,7 @@
  */
 
 const P2FK = 'https://p2fk.io';
+const P2FK_LOCAL = process.env.REACT_APP_BACKEND_URL ? `${process.env.REACT_APP_BACKEND_URL}/api/p2fk-local` : null;
 const MEMPOOL_TESTNET = 'https://mempool.space/testnet/api';
 const MEMPOOL_MAINNET = 'https://mempool.space/api';
 const IPFS_GATEWAYS = [
@@ -160,10 +161,42 @@ function mempoolBase(network) {
 }
 
 async function p2fkGet(path, mainnet = false) {
+  const network = mainnet ? 'btc-mainnet' : 'btc-testnet';
+  // Try local decoder first when backend is available
+  if (P2FK_LOCAL) {
+    const localResult = await _tryLocalDecoder(path, network);
+    if (localResult) return localResult;
+  }
+  // Fall back to p2fk.io
   try {
     const r = await fetch(`${P2FK}/${path}?mainnet=${mainnet}`, { signal: AbortSignal.timeout(15000) });
     if (r.ok) return await r.json();
   } catch (e) { console.warn(`p2fk.io error [${path}]:`, e); }
+  return null;
+}
+
+/** Map p2fk.io API paths to local decoder endpoints */
+async function _tryLocalDecoder(path, network) {
+  try {
+    // GetRootByTransactionID/{txid}
+    if (path.startsWith('GetRootByTransactionID/')) {
+      const txid = path.split('/')[1];
+      const r = await fetch(`${P2FK_LOCAL}/root/${txid}?network=${network}`, { signal: AbortSignal.timeout(20000) });
+      if (r.ok) { const d = await r.json(); if (!d.error) return d; }
+    }
+    // GetRootsByAddress/{address}
+    if (path.startsWith('GetRootsByAddress/')) {
+      const addr = path.split('/')[1];
+      const r = await fetch(`${P2FK_LOCAL}/roots/${addr}?network=${network}`, { signal: AbortSignal.timeout(20000) });
+      if (r.ok) { const d = await r.json(); return d.roots || []; }
+    }
+    // GetPublicAddressByKeyword/{keyword}
+    if (path.startsWith('GetPublicAddressByKeyword/')) {
+      const kw = path.split('/')[1];
+      const r = await fetch(`${P2FK_LOCAL}/keyword/${kw}?network=${network}`, { signal: AbortSignal.timeout(5000) });
+      if (r.ok) { const d = await r.json(); return d.address; }
+    }
+  } catch {} // Silently fall through to p2fk.io
   return null;
 }
 
