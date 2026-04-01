@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { FiSettings, FiAlertCircle, FiMessageSquare, FiBarChart2, FiLogOut, FiLock, FiSave, FiRefreshCw, FiChevronDown, FiChevronUp, FiSend, FiTrash2, FiKey, FiActivity, FiFilm, FiCpu, FiDatabase, FiGlobe, FiMusic, FiPhone, FiZap, FiDollarSign, FiFile, FiEdit, FiCheck, FiX, FiCopy, FiUpload, FiPlus, FiExternalLink, FiLoader, FiBriefcase, FiPackage } from 'react-icons/fi';
+import { FiSettings, FiAlertCircle, FiMessageSquare, FiBarChart2, FiLogOut, FiLock, FiSave, FiRefreshCw, FiChevronDown, FiChevronUp, FiSend, FiTrash2, FiKey, FiActivity, FiFilm, FiCpu, FiDatabase, FiGlobe, FiMusic, FiPhone, FiZap, FiDollarSign, FiFile, FiEdit, FiCheck, FiX, FiCopy, FiUpload, FiPlus, FiExternalLink, FiLoader, FiBriefcase, FiPackage, FiHardDrive, FiDownload, FiPlay } from 'react-icons/fi';
 import { getCallLogs, clearCallLogs, exportCallLogs } from '@/utils/callDebugLog';
 import AdminWalletPanel from '@/components/admin/AdminWalletPanel';
 import CheckpointPanel from '@/components/admin/CheckpointPanel';
@@ -1020,6 +1020,249 @@ function StatCard({ label, value, sub, color = 'text-gray-200', bg = 'bg-gray-80
 }
 
 
+// ─── Chain Snapshots Panel ───
+function SnapshotPanel({ network }) {
+  const [status, setStatus] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [vacuumStarting, setVacuumStarting] = useState(false);
+  const [producing, setProducing] = useState(false);
+  const [consumeCid, setConsumeCid] = useState('');
+  const [consuming, setConsuming] = useState(false);
+  const [consumeResult, setConsumeResult] = useState(null);
+
+  const fetchStatus = useCallback(async () => {
+    try {
+      const res = await fetch(`${ROOT_API}/snapshot/status`);
+      if (res.ok) setStatus(await safeJson(res));
+    } catch {}
+    setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    fetchStatus();
+    const iv = setInterval(fetchStatus, 3000);
+    return () => clearInterval(iv);
+  }, [fetchStatus]);
+
+  const startVacuum = async () => {
+    setVacuumStarting(true);
+    try {
+      await fetch(`${ROOT_API}/snapshot/vacuum?network=${network}`, { method: 'POST' });
+      setTimeout(fetchStatus, 1000);
+    } catch {}
+    setVacuumStarting(false);
+  };
+
+  const produceSnapshot = async () => {
+    setProducing(true);
+    try {
+      const res = await fetch(`${ROOT_API}/snapshot/produce?network=${network}`, { method: 'POST' });
+      if (res.ok) {
+        const data = await safeJson(res);
+        if (data.cid) {
+          alert(`Snapshot pinned!\n\nCID: ${data.cid}\nSize: ${data.size_human}\nRoots: ${data.total_roots}\nProfiles: ${data.total_profiles}`);
+          fetchStatus();
+        } else {
+          alert(`Snapshot failed: ${data.error || 'Unknown error'}`);
+        }
+      }
+    } catch (e) { alert(`Error: ${e.message}`); }
+    setProducing(false);
+  };
+
+  const consumeSnapshot = async () => {
+    if (!consumeCid.trim()) return;
+    setConsuming(true);
+    setConsumeResult(null);
+    try {
+      const res = await fetch(`${ROOT_API}/snapshot/consume?cid=${encodeURIComponent(consumeCid.trim())}&network=${network}`, { method: 'POST' });
+      if (res.ok) setConsumeResult(await safeJson(res));
+    } catch (e) { setConsumeResult({ error: e.message }); }
+    setConsuming(false);
+  };
+
+  if (loading && !status) return <div className="text-gray-500 text-sm animate-pulse">Loading snapshot status...</div>;
+
+  const v = status?.vacuum;
+  const cache = status?.cache;
+  const snapshots = status?.snapshots || [];
+  const isVacuumRunning = v?.running;
+
+  return (
+    <div className="space-y-6" data-testid="snapshot-panel">
+      {/* Overview */}
+      <div className="bg-gray-900/60 border border-gray-800 rounded-xl p-5">
+        <h3 className="text-sm font-bold text-gray-200 mb-1">IPFS Chain Index</h3>
+        <p className="text-xs text-gray-500 mb-4">
+          Vacuum p2fk.io into your local cache, then snapshot it to IPFS. Any Cthulhu node can bootstrap from a snapshot CID — zero dependency on p2fk.io.
+        </p>
+        <div className="grid grid-cols-3 gap-3">
+          <div className="bg-gray-800/50 rounded-lg p-3">
+            <p className="text-[10px] text-gray-500">Cached P2FK Entries</p>
+            <p className="text-xl font-bold text-cyan-400">{cache?.p2fk_entries?.toLocaleString() || 0}</p>
+          </div>
+          <div className="bg-gray-800/50 rounded-lg p-3">
+            <p className="text-[10px] text-gray-500">Snapshots Produced</p>
+            <p className="text-xl font-bold text-emerald-400">{snapshots.length}</p>
+          </div>
+          <div className="bg-gray-800/50 rounded-lg p-3">
+            <p className="text-[10px] text-gray-500">Network</p>
+            <p className="text-xl font-bold text-gray-200">{network === 'btc-testnet' ? 'Testnet' : 'Mainnet'}</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Vacuum Control */}
+      <div className="bg-gray-900/60 border border-gray-800 rounded-xl p-5">
+        <div className="flex items-center justify-between mb-3">
+          <div>
+            <h3 className="text-sm font-bold text-gray-200">Vacuum p2fk.io</h3>
+            <p className="text-[10px] text-gray-500">Crawl the full P2FK index at ~1.5 req/sec. Runs in background.</p>
+          </div>
+          <button
+            onClick={startVacuum}
+            disabled={isVacuumRunning || vacuumStarting}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-medium transition-colors ${
+              isVacuumRunning
+                ? 'bg-amber-600/20 text-amber-400 border border-amber-700/30'
+                : 'bg-purple-600 hover:bg-purple-500 text-white'
+            } disabled:opacity-60`}
+            data-testid="start-vacuum-btn"
+          >
+            {isVacuumRunning ? (
+              <><FiLoader size={12} className="animate-spin" /> Running...</>
+            ) : (
+              <><FiPlay size={12} /> {vacuumStarting ? 'Starting...' : 'Start Vacuum'}</>
+            )}
+          </button>
+        </div>
+
+        {/* Vacuum Progress */}
+        {isVacuumRunning && (
+          <div className="space-y-2 mt-3">
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-gray-400 capitalize">{v.phase?.replace(/_/g, ' ')}</span>
+              <span className="text-gray-500">{v.progress}/{v.total} · {v.crawled} crawled · {v.errors} errors</span>
+            </div>
+            <div className="h-2 rounded-full bg-gray-800 overflow-hidden">
+              <div
+                className="h-full bg-purple-500 transition-all duration-500"
+                style={{ width: v.total > 0 ? `${(v.progress / v.total) * 100}%` : '0%' }}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Vacuum Log */}
+        {v?.log?.length > 0 && (
+          <div className="mt-3 bg-gray-950 border border-gray-800/50 rounded-lg p-2 max-h-40 overflow-y-auto font-mono text-[10px] text-gray-500 space-y-0.5">
+            {v.log.slice(-15).map((line, i) => (
+              <div key={i}>{line}</div>
+            ))}
+          </div>
+        )}
+
+        {v?.phase === 'complete' && !isVacuumRunning && (
+          <div className="mt-3 bg-emerald-900/20 border border-emerald-700/30 rounded-lg p-3">
+            <p className="text-xs text-emerald-400">Vacuum complete. {v.crawled} items crawled, {v.errors} errors.</p>
+          </div>
+        )}
+      </div>
+
+      {/* Produce Snapshot */}
+      <div className="bg-gray-900/60 border border-gray-800 rounded-xl p-5">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-sm font-bold text-gray-200">Produce Snapshot</h3>
+            <p className="text-[10px] text-gray-500">Serialize current cache → compress → pin to IPFS. Creates a daisy-chained CID.</p>
+          </div>
+          <button
+            onClick={produceSnapshot}
+            disabled={producing || (cache?.p2fk_entries || 0) === 0}
+            className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-medium disabled:opacity-40 transition-colors"
+            data-testid="produce-snapshot-btn"
+          >
+            <FiUpload size={12} />
+            {producing ? 'Producing...' : 'Produce & Pin'}
+          </button>
+        </div>
+      </div>
+
+      {/* Consume Snapshot */}
+      <div className="bg-gray-900/60 border border-gray-800 rounded-xl p-5">
+        <h3 className="text-sm font-bold text-gray-200 mb-2">Consume Snapshot</h3>
+        <p className="text-[10px] text-gray-500 mb-3">Fetch a snapshot from IPFS by CID and hydrate your local cache.</p>
+        <div className="flex gap-2">
+          <input
+            value={consumeCid}
+            onChange={e => setConsumeCid(e.target.value)}
+            placeholder="QmSnapshot... or bafy..."
+            className="flex-1 bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-xs text-gray-200 font-mono focus:outline-none focus:border-purple-500"
+            data-testid="consume-cid-input"
+          />
+          <button
+            onClick={consumeSnapshot}
+            disabled={consuming || !consumeCid.trim()}
+            className="flex items-center gap-2 px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg text-xs font-medium disabled:opacity-40 transition-colors"
+            data-testid="consume-snapshot-btn"
+          >
+            <FiDownload size={12} />
+            {consuming ? 'Loading...' : 'Consume'}
+          </button>
+        </div>
+        {consumeResult && (
+          <div className={`mt-2 p-2 rounded-lg text-xs ${consumeResult.error ? 'bg-red-900/20 text-red-400' : 'bg-emerald-900/20 text-emerald-400'}`}>
+            {consumeResult.error
+              ? `Error: ${consumeResult.error}`
+              : `Imported ${consumeResult.imported} entries from ${consumeResult.chain} (${consumeResult.timestamp})`
+            }
+          </div>
+        )}
+      </div>
+
+      {/* Snapshot History (Daisy Chain) */}
+      {snapshots.length > 0 && (
+        <div className="bg-gray-900/60 border border-gray-800 rounded-xl p-5">
+          <h3 className="text-sm font-bold text-gray-200 mb-3">Snapshot Chain</h3>
+          <div className="space-y-2">
+            {snapshots.map((s, i) => (
+              <div key={i} className="flex items-start gap-3">
+                {/* Chain connector */}
+                <div className="flex flex-col items-center pt-1">
+                  <div className="w-3 h-3 rounded-full bg-emerald-500 border-2 border-emerald-300/30" />
+                  {i < snapshots.length - 1 && <div className="w-0.5 h-8 bg-gray-700 mt-0.5" />}
+                </div>
+                <div className="flex-1 bg-gray-800/40 rounded-lg p-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-mono text-emerald-400 truncate max-w-[250px]" title={s.cid}>{s.cid}</span>
+                    <button
+                      onClick={() => { navigator.clipboard.writeText(s.cid); }}
+                      className="text-gray-600 hover:text-gray-300 p-1"
+                      title="Copy CID"
+                    >
+                      <FiCopy size={10} />
+                    </button>
+                  </div>
+                  <div className="flex gap-4 mt-1 text-[10px] text-gray-500">
+                    <span>{s.root_count} roots</span>
+                    <span>{s.size_bytes ? `${(s.size_bytes/1024).toFixed(0)}KB` : '-'}</span>
+                    <span>{s.created_at ? new Date(s.created_at).toLocaleString() : ''}</span>
+                  </div>
+                  {s.previous_cid && (
+                    <p className="text-[9px] text-gray-600 mt-1 font-mono truncate" title={s.previous_cid}>← {s.previous_cid}</p>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+
 // ─── Decoder Health Dashboard ───
 function DecoderHealthPanel() {
   const [stats, setStats] = useState(null);
@@ -1872,6 +2115,7 @@ function CallDebugPanel() {
 const TABS = [
   { id: 'settings', label: 'Settings', icon: FiSettings },
   { id: 'decoder', label: 'Decoder Health', icon: FiActivity },
+  { id: 'snapshot', label: 'Chain Snapshots', icon: FiHardDrive },
   { id: 'releases', label: 'Releases', icon: FiPackage },
   { id: 'wallet', label: 'Wallet', icon: FiBriefcase },
   { id: 'treasury', label: 'Treasury', icon: FiDollarSign },
@@ -1979,6 +2223,7 @@ export default function AdminDashboard() {
 
         {tab === 'stats' && <StatsOverview />}
         {tab === 'decoder' && <DecoderHealthPanel />}
+        {tab === 'snapshot' && <SnapshotPanel network={adminNetwork} />}
         {tab === 'system' && <SystemStatsPanel />}
         {tab === 'settings' && <SettingsPanel />}
         {tab === 'releases' && <ReleasePanel network={adminNetwork} />}

@@ -51,6 +51,7 @@ from routes.etch import router as etch_router
 from routes.admin_wallet import router as admin_wallet_router
 from routes.auto_checkpoint import router as auto_checkpoint_router, start_auto_checkpoint
 from routes.releases import router as releases_router, public_router as releases_public_router
+from routes.snapshot import router as snapshot_router
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -94,6 +95,7 @@ app.include_router(admin_wallet_router)
 app.include_router(auto_checkpoint_router)
 app.include_router(releases_router)
 app.include_router(releases_public_router)
+app.include_router(snapshot_router)
 
 
 # ─── Download endpoint for desktop packages ───
