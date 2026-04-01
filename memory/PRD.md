@@ -1,16 +1,17 @@
 # Cthulhu - Decentralized Social Media Platform
 
 ## Original Problem Statement
-Build a modern, responsive frontend for a blockchain-based social media platform (Cthulhu) with tokenized object storefront and data vault. Dark theme, mobile-friendly, inspired by Telegram. All blockchain data from p2fk.io API. 100% client-side signing architecture.
+Build a modern, responsive frontend for a blockchain-based social media platform (Cthulhu) with tokenized object storefront and data vault. Dark theme, mobile-friendly, inspired by Telegram. All blockchain data from p2fk.io API (with local decoder fallback). 100% client-side signing architecture.
 
 ## Architecture
 - **Frontend:** React + Tailwind + Shadcn UI
 - **Backend:** FastAPI + SQLite (NOT MongoDB)
-- **Blockchain:** P2FK protocol via p2fk.io API (rate limited 30/10s)
+- **Blockchain:** P2FK protocol via p2fk.io API (with local decoder fallback via blockchain explorers)
 - **IPFS:** Local Kubo daemon (uploads pinned permanently, viewed content auto-pinned w/ 48h GC)
 - **Auth:** Client-side WIF encryption (Web Crypto API), never touches server
 - **Signing:** 100% client-side via bitcoinjs-lib + @noble/secp256k1
 - **Admin:** Single user, env-based credentials, JWT 24h expiry + rate limiting
+- **Local Decoder:** Python P2FK Root decoder + async blockchain explorer client (Blockstream → mempool.space fallback)
 
 ## What's Implemented
 - Full auth flow (WIF import, encrypt, login)
@@ -32,91 +33,71 @@ Build a modern, responsive frontend for a blockchain-based social media platform
 - API Call Deduplication (125 → 27 calls on login)
 - Desktop/Mobile UI Audit (eliminated all dual-mount clashes)
 - Transaction ID resolution via GetRootsByAddress fallback
+- INQ Vote Fix — Protocol-Correct Implementation
+- Local P2FK Decoder (Python port of C# SUP Root decoder)
+- Async Blockchain Explorer Client (Blockstream/mempool.space with fallback)
+- Local p2fk.io Fallback (when p2fk.io is down, most common queries served locally)
+- Connect Your Node UI (Settings > Network > custom Bitcoin Core RPC)
 
-## Recent Changes (April 1, 2026)
+## Recent Changes (April 1, 2026 — Session 2)
 
-### INQ Vote Fix — Protocol-Correct Implementation (DONE)
-- Root cause: votes used `buildPostTransaction(wif, 'vote', ...)` which created P2FK Root with "vote" text
-- Per SUP FoundINQControl.cs, votes should have EMPTY content and send to TWO addresses: `GetPublicAddressByKeyword(pollTxId)` + `answerAddress`
-- Fixed `buildVoteTransaction` to pass pollTxId as hashtag (→ keyword address) and use empty content
-- Added `isVotePost` filter in FeedCard.js to hide vote transactions from the feed
+### Local P2FK Decoder — Complete (DONE)
+- Built `p2fk_decoder.py`: Full Python port of SUP C# P2FK Root decoder
+  - Base58Check encode/decode, keyword↔address conversion
+  - Dust value detection, packet parsing (SIG, files, messages, keywords)
+  - Handles mempool.space, Blockstream, BlockCypher, litecoinspace formats
+- Built `blockchain_api.py`: Fully async multi-provider explorer client
+  - BTC mainnet/testnet: Blockstream → mempool.space fallback
+  - DOGE: BlockCypher, LTC: litecoinspace.org
+  - Custom Bitcoin Core RPC support (for "Connect Your Node")
+  - Rate limiting, connection pooling via httpx.AsyncClient
+- Built `routes/p2fk_local.py`: API endpoints replacing p2fk.io
+  - `/api/p2fk-local/root/{txid}` — decode single transaction
+  - `/api/p2fk-local/roots/{address}` — all roots at address
+  - `/api/p2fk-local/keyword/{keyword}` — keyword → address
+  - `/api/p2fk-local/search?keyword=...` — search by keyword
+  - `/api/p2fk-local/node/status|detect|configure` — custom node management
+  - SQLite caching with 5-minute TTL
+- Updated `helpers.py`: Local decoder fallback when p2fk.io fails
+  - Handles `GetRootByTransactionID`, `GetRootsByAddress`, `GetPublicAddressByKeyword`
+  - Format compatibility layer (satoshis → BTC strings)
 
-### Profile Page Scroll Preservation (DONE)
-- Added sessionStorage-based scroll position save/restore to ProfileDetailPage
-- Saves on unmount, restores after initial data load with double rAF timing
-
-### ComposeModal Attach Menu Fix (DONE)
-- Attach popup menu was clipped/cut off at the top of the modal due to `overflow-y-auto` on the modal container
-- Moved toolbar to a fixed footer section outside the scrollable content area
-- Removed `overflow-y-auto` from outer modal div, kept it only on inner content area
-- Popup now renders above toolbar without clipping (z-[60])
-
-### ComposeBar Overflow Fix (DONE)
-- Removed `overflow-hidden` from compose container that was clipping the attach popup menu
-
-### ObjectsPage Scroll Preservation Fix (DONE)
-- Root cause: when restoring saved state with a different `activeFilter`, the useEffect re-ran and wiped restored data
-- Added `skipFetchOnRestoreRef` to skip the next fetch cycle after restoration changes the filter
-- Used double `requestAnimationFrame` for reliable scroll restoration after React DOM commit
-
-### MyProfilePage URL Flattening Fix (DONE)
-- Profile URL dict (e.g. `{website: "https://...", twitter: "https://..."}`) was flattened to comma-separated string
-- Now serialized as `key: value` per line format (preserves dict structure)
-- Save logic parses lines back to proper dict (split by first `:`)
-- URL and Location fields are now multiline in edit mode
-
-### IPFS Pinning Fixes (DONE)
-- Auto-pin viewed IPFS content in background task (every viewer becomes a pinning node)
-- Persist uploaded CIDs to SQLite `uploaded_cids` table (previously in-memory, lost on restart)
-- GC now correctly preserves uploaded pins (never touches them) while cleaning 48h-stale viewed pins
-
-### Transaction ID Resolution (DONE)
-- p2fk.io's `GetObjectsOwnedByAddress` often returns `TransactionId: null`
-- Added fallback: query `GetRootsByAddress/{objectAddress}` to find the creation txid
-- Fixed `SignedBy` field mapping (was using `Signed By` which doesn't exist in p2fk.io response)
-- txid now displays correctly in SingleObjectPage Transaction section
-
-### 3-Creator Object Bug Fix (DONE)
-- ObjectCreateModal could mount twice (overlay + route), generating 2 different object addresses
-- Fixed: removed overlay modal, navigate to `/create-object` route; added `generatingRef` guard
-
-### Admin Security Lockdown (DONE)
-- Credentials in `.env` only (ADMIN_USERNAME, ADMIN_PASSWORD, ADMIN_JWT_SECRET)
-- 24h JWT token expiry, 5-attempt rate limiting (15min lockout), session invalidation endpoint
-
-### API Call Deduplication (DONE)
-- 125 → 27 calls on login (78% reduction)
-
-### Desktop/Mobile UI Audit (DONE)
-- Removed all overlay modals, route-only navigation
-- Conditional JS rendering instead of CSS hiding in BottomNav
-- Dead state cleanup
+### Connect Your Node UI (DONE)
+- Added `ConnectNodeSection` component in Settings > Network tab
+- Auto-Detect: scans common Bitcoin Core RPC ports (8332, 18332, 18443, 38332)
+- Manual Setup: Host, Port, RPC User, RPC Password form with bitcoin.conf guidance
+- Connected state: shows chain info, block height, sync progress
+- Disconnect button to revert to public explorers
 
 ## Backlog (Prioritized)
+### P0
+- Migrate frontend p2fk.io direct calls to local decoder (in components like standalone.js, media.js)
+- Rework main feed using local decoder + `GetKnownRootsBySearchString` search API
+
 ### P1
-- Rework main feed using `GetKnownRootsBySearchString?searchString=*` API (pending embii)
 - Complete IPFS Client-Side Caching UI (IpfsSettings page + useIpfsCache integration)
 - Ownership Cascade Transfers
+- Tauri desktop app packaging (pairs with local decoder — full sovereignty)
 
 ### P2
-- SingleObjectPage lazy loading refactor
-- Object count discrepancies
+- Object count discrepancies for profiles
 - "Ink Log" wallet transaction history tab
-
-### P3
-- Tauri desktop app packaging
 - Venue & Seat Sales / Locked Objects
 - Object-based chat rooms
+
+### P3
 - "SupFlix" Media Gallery
+- Research paid blockchain explorer APIs
 
 ## Key Files
+- `/app/backend/p2fk_decoder.py` — P2FK Root decoder (Python port of SUP C#)
+- `/app/backend/blockchain_api.py` — Async multi-provider blockchain explorer client
+- `/app/backend/routes/p2fk_local.py` — Local P2FK API routes
+- `/app/backend/utils/helpers.py` — p2fk_get with local fallback
 - `/app/backend/routes/ipfs.py` — IPFS upload/cat/GC (auto-pin, persisted CIDs)
 - `/app/backend/routes/objects.py` — Object endpoints (txid resolution fallback)
-- `/app/backend/utils/helpers.py` — p2fk API, format_object_for_api
-- `/app/backend/routes/admin.py` — Secured admin auth
+- `/app/frontend/src/components/SettingsModal.js` — ConnectNodeSection component
 - `/app/frontend/src/App.js` — Main layout
-- `/app/frontend/src/utils/dedupFetch.js` — API deduplication
-- `/app/frontend/src/components/ObjectCreateModal.js` — generatingRef guard
 
 ## Test Credentials
 - WIF: `cPYRpd9zq5mTdoo93NM5V9gTkpPnL26kjS5f6qYExPHLtCFp2gN8`
