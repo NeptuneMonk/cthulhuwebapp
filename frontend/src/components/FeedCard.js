@@ -64,6 +64,9 @@ export const FeedCard = React.forwardRef(({ item, network, currentUserAddress, c
   // Skip vault backup posts — system messages, not user content
   const isVaultPost = rawContent.startsWith('CTHULHU_VAULT ');
 
+  // Skip INQ vote transactions — empty content or "vote" sent to an answer address
+  const isVotePost = content.trim() === 'vote' || (content.trim() === '' && message.to_address && message.to_address !== message.from_address);
+
   // Detect INQ (poll) transactions — via backend flag or content prefix
   const isINQ = message.is_poll || (rawContent.startsWith('INQ') && rawContent.length > 4 && '\\//:*?"<>|'.includes(rawContent[3]));
   const isPending = message.is_pending || false;
@@ -166,7 +169,7 @@ export const FeedCard = React.forwardRef(({ item, network, currentUserAddress, c
   }, [contextMenu]);
 
   // Filter out encrypted messages after all hooks
-  if (isSEC || isProtocolOp || isVaultPost) return null;
+  if (isSEC || isProtocolOp || isVaultPost || isVotePost) return null;
 
   // Right-click handler (desktop)
   const handleContextMenu = (e) => {

@@ -62,7 +62,7 @@ export default function PollCard({ poll, network, onVoted }) {
       const [{ buildVoteTransaction }, { buildAndBroadcast }] = await Promise.all([
         import('@/utils/p2fk'), import('@/utils/txBuilder'),
       ]);
-      const { addresses, taxInsertIndex } = buildVoteTransaction(activeWif, answerAddress, network);
+      const { addresses, taxInsertIndex } = buildVoteTransaction(activeWif, answerAddress, network, poll.txid);
       await buildAndBroadcast(activeWif, addresses, network, [], 0, 546, [], taxInsertIndex);
 
       // Record the vote in the backend registry

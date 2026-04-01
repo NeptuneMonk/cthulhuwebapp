@@ -57,6 +57,41 @@ export default function ProfileDetailPage({ network, isFollowing, toggleFollow, 
   const [pkCopied, setPkCopied] = useState(false);
   const [addrCopied, setAddrCopied] = useState(false);
 
+  // Scroll preservation
+  const scrollContainerRef = useRef(null);
+  const scrollRestoredRef = useRef(false);
+
+  // Save scroll position on unmount
+  useEffect(() => {
+    return () => {
+      const el = scrollContainerRef.current;
+      if (el && el.scrollTop > 0) {
+        try { sessionStorage.setItem(`profile_scroll_${address}`, String(el.scrollTop)); } catch {}
+      }
+    };
+  }, [address]);
+
+  // Restore scroll position after initial data load
+  useEffect(() => {
+    if (loading || scrollRestoredRef.current) return;
+    scrollRestoredRef.current = true;
+    try {
+      const saved = sessionStorage.getItem(`profile_scroll_${address}`);
+      if (saved) {
+        sessionStorage.removeItem(`profile_scroll_${address}`);
+        const scrollY = parseInt(saved, 10);
+        if (scrollY > 0) {
+          requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+              const el = scrollContainerRef.current;
+              if (el) el.scrollTop = scrollY;
+            });
+          });
+        }
+      }
+    } catch {}
+  }, [loading, address]);
+
   useEffect(() => {
     setProfile(null);
     setResolvedAddr(null);
@@ -238,7 +273,7 @@ export default function ProfileDetailPage({ network, isFollowing, toggleFollow, 
   const mediaOpts = { mainnet: isMainnetNetwork(network) };
 
   return (
-    <div className="h-full overflow-y-auto" style={wallpaperStyle} data-testid="profile-page">
+    <div ref={scrollContainerRef} className="h-full overflow-y-auto" style={wallpaperStyle} data-testid="profile-page">
       {/* Back header */}
       <div className="flex items-center gap-3 px-4 py-3 bg-gray-900/80 backdrop-blur-sm border-b border-gray-800/60 sticky top-0 z-10">
         <button onClick={() => navigate(-1)} className="p-1.5 -ml-1 rounded-lg hover:bg-gray-800 text-gray-400 hover:text-gray-200 transition-colors" data-testid="profile-back-btn">

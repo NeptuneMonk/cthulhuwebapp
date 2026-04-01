@@ -1303,21 +1303,21 @@ export function buildInquiryTransaction(wif, question, answers, gates = {}, endB
  * @param {string} networkName   - Network
  * @returns {object} { addresses, senderAddress, network, taxInsertIndex }
  */
-export function buildVoteTransaction(wif, answerAddress, networkName = 'btc-testnet') {
-  const isMainnet = networkName.includes('mainnet');
-  const network = isMainnet ? bitcoin.networks.bitcoin : bitcoin.networks.testnet;
-  const keyPair = parseWIF(wif, network);
-  const { address: senderAddress } = bitcoin.payments.p2pkh({ pubkey: keyPair.publicKey, network });
+export function buildVoteTransaction(wif, answerAddress, networkName = 'btc-testnet', pollTxId = null) {
+  // Per SUP FoundINQControl.cs:
+  //   string INQToKey = Root.GetPublicAddressByKeyword(transactionId);
+  //   string voteDust = INQToKey + "," + answerAddress;
+  //   DiscoBall disco = new DiscoBall(activeprofile, "", voteDust, ...);
+  //
+  // A vote is a P2FK Root with:
+  //   - EMPTY content (not "vote")
+  //   - Sent to INQToKey (keyword addr of poll txid) AND answerAddress
+  // GetRootsByAddress(answerAddress) counts signed Roots as votes.
 
-  // A vote is NOT a P2FK Root — it's a simple dust payment to the answer address.
-  // The INQ indexer counts transactions at each answer address as votes.
-  // Sender goes last so the indexer knows who voted.
-  const addresses = [answerAddress];
-  if (answerAddress !== senderAddress) {
-    addresses.push(senderAddress);
-  }
-
-  return { addresses, senderAddress, network: networkName, taxInsertIndex: -1 };
+  // Build with empty content, the poll txid as hashtag (→ INQToKey address),
+  // and answerAddress as the toAddress
+  const hashtags = pollTxId ? [pollTxId] : [];
+  return buildPostTransaction(wif, '', hashtags, answerAddress, networkName);
 }
 
 /**

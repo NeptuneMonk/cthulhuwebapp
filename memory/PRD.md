@@ -35,6 +35,16 @@ Build a modern, responsive frontend for a blockchain-based social media platform
 
 ## Recent Changes (April 1, 2026)
 
+### INQ Vote Fix — Protocol-Correct Implementation (DONE)
+- Root cause: votes used `buildPostTransaction(wif, 'vote', ...)` which created P2FK Root with "vote" text
+- Per SUP FoundINQControl.cs, votes should have EMPTY content and send to TWO addresses: `GetPublicAddressByKeyword(pollTxId)` + `answerAddress`
+- Fixed `buildVoteTransaction` to pass pollTxId as hashtag (→ keyword address) and use empty content
+- Added `isVotePost` filter in FeedCard.js to hide vote transactions from the feed
+
+### Profile Page Scroll Preservation (DONE)
+- Added sessionStorage-based scroll position save/restore to ProfileDetailPage
+- Saves on unmount, restores after initial data load with double rAF timing
+
 ### ComposeModal Attach Menu Fix (DONE)
 - Attach popup menu was clipped/cut off at the top of the modal due to `overflow-y-auto` on the modal container
 - Moved toolbar to a fixed footer section outside the scrollable content area
