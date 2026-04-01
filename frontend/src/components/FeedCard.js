@@ -352,7 +352,7 @@ export const FeedCard = React.forwardRef(({ item, network, currentUserAddress, c
               {/* Message content */}
               <div className="text-sm text-gray-300 leading-relaxed">
                 {isINQ && parsedPoll ? (
-                  <PollCard poll={parsedPoll} network={network} />
+                  <PollCard poll={parsedPoll} network={network} onVoted={() => { /* optimistic update handles local state */ }} />
                 ) : (
                   <MessageContent content={content} files={message.files} txid={txid} />
                 )}

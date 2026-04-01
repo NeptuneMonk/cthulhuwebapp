@@ -1304,9 +1304,20 @@ export function buildInquiryTransaction(wif, question, answers, gates = {}, endB
  * @returns {object} { addresses, senderAddress, network, taxInsertIndex }
  */
 export function buildVoteTransaction(wif, answerAddress, networkName = 'btc-testnet') {
-  // A vote is just a minimal post to the answer address
-  // SUP counts any Root transaction sent to the answer address as a vote
-  return buildPostTransaction(wif, 'vote', [], answerAddress, networkName);
+  const isMainnet = networkName.includes('mainnet');
+  const network = isMainnet ? bitcoin.networks.bitcoin : bitcoin.networks.testnet;
+  const keyPair = parseWIF(wif, network);
+  const { address: senderAddress } = bitcoin.payments.p2pkh({ pubkey: keyPair.publicKey, network });
+
+  // A vote is NOT a P2FK Root — it's a simple dust payment to the answer address.
+  // The INQ indexer counts transactions at each answer address as votes.
+  // Sender goes last so the indexer knows who voted.
+  const addresses = [answerAddress];
+  if (answerAddress !== senderAddress) {
+    addresses.push(senderAddress);
+  }
+
+  return { addresses, senderAddress, network: networkName, taxInsertIndex: -1 };
 }
 
 /**
