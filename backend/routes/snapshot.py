@@ -163,6 +163,12 @@ async def _run_vacuum(network: str = "btc-testnet"):
 
     _vlog(f"Seed crawl complete. Discovered {len(discovered_addresses)} additional addresses.")
 
+    # Cap discovered addresses to prevent runaway crawls
+    MAX_DISCOVER = 500
+    if len(discovered_addresses) > MAX_DISCOVER:
+        _vlog(f"Capping discovery to {MAX_DISCOVER} addresses (found {len(discovered_addresses)})")
+        discovered_addresses = set(list(discovered_addresses)[:MAX_DISCOVER])
+
     # Phase 2: Crawl known users from our DB
     _vacuum_state["phase"] = "crawling_known_users"
     conn = await get_conn()
