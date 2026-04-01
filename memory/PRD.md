@@ -6,11 +6,10 @@ Build a modern, responsive frontend for a blockchain-based social media platform
 ## Architecture
 - **Frontend:** React + Tailwind + Shadcn UI
 - **Backend:** FastAPI + SQLite (NOT MongoDB)
-- **Blockchain:** P2FK protocol via p2fk.io API (with local decoder fallback via blockchain explorers)
+- **Blockchain:** Local P2FK decoder (primary) + p2fk.io (last-resort fallback)
 - **IPFS:** Local Kubo daemon (uploads pinned permanently, viewed content auto-pinned w/ 48h GC)
 - **Auth:** Client-side WIF encryption (Web Crypto API), never touches server
 - **Signing:** 100% client-side via bitcoinjs-lib + @noble/secp256k1
-- **Admin:** Single user, env-based credentials, JWT 24h expiry + rate limiting
 - **Local Decoder:** Python P2FK Root decoder + async blockchain explorer client (Blockstream → mempool.space fallback)
 
 ## What's Implemented
@@ -34,50 +33,44 @@ Build a modern, responsive frontend for a blockchain-based social media platform
 - Desktop/Mobile UI Audit (eliminated all dual-mount clashes)
 - Transaction ID resolution via GetRootsByAddress fallback
 - INQ Vote Fix — Protocol-Correct Implementation
-- Local P2FK Decoder (Python port of C# SUP Root decoder)
-- Async Blockchain Explorer Client (Blockstream/mempool.space with fallback)
-- Local p2fk.io Fallback (when p2fk.io is down, most common queries served locally)
-- Connect Your Node UI (Settings > Network > custom Bitcoin Core RPC)
+- **Local P2FK Decoder (Python port of C# SUP Root decoder)**
+- **Async Blockchain Explorer Client (Blockstream/mempool.space with fallback)**
+- **p2fk.io Migration Complete — Backend is primary data source, p2fk.io is last-resort fallback**
+- **Connect Your Node UI (Settings > Network > custom Bitcoin Core RPC)**
 
 ## Recent Changes (April 1, 2026 — Session 2)
 
 ### Local P2FK Decoder — Complete (DONE)
-- Built `p2fk_decoder.py`: Full Python port of SUP C# P2FK Root decoder
-  - Base58Check encode/decode, keyword↔address conversion
-  - Dust value detection, packet parsing (SIG, files, messages, keywords)
-  - Handles mempool.space, Blockstream, BlockCypher, litecoinspace formats
-- Built `blockchain_api.py`: Fully async multi-provider explorer client
-  - BTC mainnet/testnet: Blockstream → mempool.space fallback
-  - DOGE: BlockCypher, LTC: litecoinspace.org
-  - Custom Bitcoin Core RPC support (for "Connect Your Node")
-  - Rate limiting, connection pooling via httpx.AsyncClient
-- Built `routes/p2fk_local.py`: API endpoints replacing p2fk.io
-  - `/api/p2fk-local/root/{txid}` — decode single transaction
-  - `/api/p2fk-local/roots/{address}` — all roots at address
-  - `/api/p2fk-local/keyword/{keyword}` — keyword → address
-  - `/api/p2fk-local/search?keyword=...` — search by keyword
-  - `/api/p2fk-local/node/status|detect|configure` — custom node management
-  - SQLite caching with 5-minute TTL
-- Updated `helpers.py`: Local decoder fallback when p2fk.io fails
-  - Handles `GetRootByTransactionID`, `GetRootsByAddress`, `GetPublicAddressByKeyword`
-  - Format compatibility layer (satoshis → BTC strings)
+- `p2fk_decoder.py`: Full Python port of SUP C# P2FK Root decoder
+- `blockchain_api.py`: Fully async multi-provider explorer client with custom node RPC support
+- `routes/p2fk_local.py`: 7 API endpoints replacing p2fk.io
+- SQLite caching with 5-minute TTL
+
+### p2fk.io → Local Backend Migration — Complete (DONE)
+- **Frontend `media.js`**: Backend `/api/onchain/file/` is now PRIMARY for on-chain content. p2fk.io/root is fallback only.
+- **Frontend `SingleObjectPage.js`**: Same swap — backend primary, p2fk.io fallback.
+- **Frontend `standalone.js`**: Added `P2FK_LOCAL` — tries local decoder endpoints first, falls back to p2fk.io.
+- **Backend `helpers.py`**: Expanded `_local_p2fk_fallback()` to handle 7+ API paths locally:
+  - `GetRootByTransactionID/{txid}`
+  - `GetRootsByAddress/{address}`
+  - `GetPublicAddressByKeyword/{keyword}`
+  - `GetObjectByTransactionId/{txid}`
+  - `GetProfileByAddress/{address}`
+  - `GetObjectByAddress/{address}`
+  - `GetObjectsByAddress/{address}`
+- **Backend `discover.py`**: Removed direct `P2FK_API` constant, routed through `p2fk_get()` (has local fallback).
+- **Backend `objects.py`**: Replaced direct `client.get("https://p2fk.io/...")` with `p2fk_get()`.
 
 ### Connect Your Node UI (DONE)
-- Added `ConnectNodeSection` component in Settings > Network tab
-- Auto-Detect: scans common Bitcoin Core RPC ports (8332, 18332, 18443, 38332)
-- Manual Setup: Host, Port, RPC User, RPC Password form with bitcoin.conf guidance
-- Connected state: shows chain info, block height, sync progress
-- Disconnect button to revert to public explorers
+- Settings > Network tab: Auto-Detect, Manual Setup, Connected state display
+- Backend: `/api/p2fk-local/node/status|detect|configure` endpoints
 
 ## Backlog (Prioritized)
-### P0
-- Migrate frontend p2fk.io direct calls to local decoder (in components like standalone.js, media.js)
-- Rework main feed using local decoder + `GetKnownRootsBySearchString` search API
-
 ### P1
-- Complete IPFS Client-Side Caching UI (IpfsSettings page + useIpfsCache integration)
+- IPFS Client-Side Caching UI (IpfsSettings page + useIpfsCache integration)
+- Rework main feed using local decoder + global search API
 - Ownership Cascade Transfers
-- Tauri desktop app packaging (pairs with local decoder — full sovereignty)
+- Tauri desktop app packaging (full sovereignty with local decoder)
 
 ### P2
 - Object count discrepancies for profiles
@@ -90,14 +83,16 @@ Build a modern, responsive frontend for a blockchain-based social media platform
 - Research paid blockchain explorer APIs
 
 ## Key Files
-- `/app/backend/p2fk_decoder.py` — P2FK Root decoder (Python port of SUP C#)
+- `/app/backend/p2fk_decoder.py` — P2FK Root decoder
 - `/app/backend/blockchain_api.py` — Async multi-provider blockchain explorer client
 - `/app/backend/routes/p2fk_local.py` — Local P2FK API routes
-- `/app/backend/utils/helpers.py` — p2fk_get with local fallback
-- `/app/backend/routes/ipfs.py` — IPFS upload/cat/GC (auto-pin, persisted CIDs)
-- `/app/backend/routes/objects.py` — Object endpoints (txid resolution fallback)
-- `/app/frontend/src/components/SettingsModal.js` — ConnectNodeSection component
-- `/app/frontend/src/App.js` — Main layout
+- `/app/backend/utils/helpers.py` — p2fk_get with expanded local fallback
+- `/app/backend/routes/discover.py` — Discovery (now via p2fk_get)
+- `/app/backend/routes/objects.py` — Objects (now via p2fk_get)
+- `/app/frontend/src/utils/media.js` — Media URL resolution (backend primary)
+- `/app/frontend/src/utils/standalone.js` — Standalone mode (local decoder first)
+- `/app/frontend/src/pages/SingleObjectPage.js` — Object display (backend primary)
+- `/app/frontend/src/components/SettingsModal.js` — ConnectNodeSection
 
 ## Test Credentials
 - WIF: `cPYRpd9zq5mTdoo93NM5V9gTkpPnL26kjS5f6qYExPHLtCFp2gN8`
