@@ -74,3 +74,7 @@ chainlit.md
 .ipynb_checkpoints/
 dump.rdb
 frontend/node_modules/.cache/default-development/0.pack
+-e 
+# Environment files
+*.env
+*.env.*
