@@ -41,7 +41,17 @@ export default function PollCard({ poll, network, onVoted }) {
 
   // Compute display data — use poll's persisted counts (no optimistic needed if backend updates)
   const { answers, totalVotes } = useMemo(() => {
-    const base = (poll.answers || []).map(a => ({ ...a }));
+    // poll.answers may be an array or a dict {address: answer_text} — normalize to array
+    let rawAnswers = poll.answers || [];
+    if (!Array.isArray(rawAnswers)) {
+      rawAnswers = Object.entries(rawAnswers).map(([addr, text]) => ({
+        address: addr,
+        answer: typeof text === 'string' ? text : text?.answer || text?.Answer || '',
+        total_votes: typeof text === 'object' ? (text?.total_votes || text?.TotalVotes || 0) : 0,
+        total_value: typeof text === 'object' ? (text?.total_value || text?.TotalValue || 0) : 0,
+      }));
+    }
+    const base = rawAnswers.map(a => ({ ...a }));
     let total = poll.total_votes || base.reduce((s, a) => s + (a.total_votes || 0), 0);
 
     // If we just voted locally but the data hasn't refreshed yet, apply optimistic +1
