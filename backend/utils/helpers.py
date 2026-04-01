@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 
 from db import known_users_col, api_cache_col
 from config import P2FK_API_BASE, SEED_ADDRESSES
-from utils.stats_tracker import track_api_call, track_cache
+from utils.stats_tracker import track_api_call, track_cache, track_decoder_source
 from utils.http_pool import get_client
 
 # Local P2FK decoder imports (fallback when p2fk.io is down)
@@ -211,6 +211,7 @@ async def p2fk_get(path: str, mainnet: bool = False, extra_params: dict = None):
         cached = await _get_api_cache(cache_key, cache_ttl)
         if cached is not None:
             track_cache(hit=True)
+            track_decoder_source(path, "cache_fresh", 0)
             return cached
 
     track_cache(hit=False)
@@ -278,11 +279,13 @@ async def p2fk_get(path: str, mainnet: bool = False, extra_params: dict = None):
                 )
                 if not is_empty_profile:
                     asyncio.create_task(_set_api_cache(cache_key, data))
+                    track_decoder_source(path, "p2fk_io", duration_ms)
                 else:
                     # p2fk.io returned garbage — try stale cache instead
                     cached = await _get_api_cache(cache_key, ttl=86400)
                     if cached is not None:
                         logger.info(f"Ignoring empty p2fk.io response, serving stale cache for [{path}]")
+                        track_decoder_source(path, "cache_stale", duration_ms)
                         return cached
                 return data
             break  # Non-429 error, fall through to stale cache
@@ -294,14 +297,19 @@ async def p2fk_get(path: str, mainnet: bool = False, extra_params: dict = None):
     cached = await _get_api_cache(cache_key, ttl=max(cache_ttl, 86400))
     if cached is not None:
         logger.info(f"Serving stale cache for [{path}]")
+        track_decoder_source(path, "cache_stale", 0)
         return cached
 
     # Last resort: try local P2FK decoder for supported paths
+    t0_local = time.time()
     local_result = await _local_p2fk_fallback(path, mainnet)
+    local_ms = (time.time() - t0_local) * 1000
     if local_result is not None:
         logger.info(f"Local decoder fallback succeeded for [{path}]")
+        track_decoder_source(path, "local_decoder", local_ms)
         asyncio.create_task(_set_api_cache(cache_key, local_result))
         return local_result
+    track_decoder_source(path, "local_decoder", local_ms, success=False)
     return None
 
 

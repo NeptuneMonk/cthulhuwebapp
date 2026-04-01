@@ -348,6 +348,149 @@ function ConnectNodeSection({ network }) {
 }
 
 
+/** IPFS Cache Manager — view/clear the local IndexedDB IPFS content cache */
+function IpfsCacheManager() {
+  const [stats, setStats] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [clearing, setClearing] = useState(false);
+  const [cacheEnabled, setCacheEnabled] = useState(isCacheEnabled());
+  const [showItems, setShowItems] = useState(false);
+
+  const loadStats = useCallback(async () => {
+    try {
+      const { getCacheStats } = await import('@/utils/ipfsCache');
+      const s = await getCacheStats();
+      setStats(s);
+    } catch {}
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { loadStats(); }, [loadStats]);
+
+  const handleClear = async () => {
+    setClearing(true);
+    try {
+      const { clearCache } = await import('@/utils/ipfsCache');
+      await clearCache();
+      setStats({ count: 0, totalSize: 0, items: [] });
+    } catch {}
+    setClearing(false);
+  };
+
+  const handleToggle = (val) => {
+    setCacheEnabled(val);
+    setCacheEnabledPref(val);
+  };
+
+  const handleRemoveItem = async (cid) => {
+    try {
+      const { removeCached } = await import('@/utils/ipfsCache');
+      await removeCached(cid);
+      loadStats();
+    } catch {}
+  };
+
+  return (
+    <div className="bg-gray-950 border border-gray-800 rounded-xl p-4 space-y-4" data-testid="ipfs-cache-manager">
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-sm font-medium text-gray-200">IPFS Content Cache</p>
+          <p className="text-xs text-gray-500 mt-0.5">
+            Content you browse is cached locally, making you a pinning node for the network.
+          </p>
+        </div>
+        <button
+          onClick={() => handleToggle(!cacheEnabled)}
+          className={`relative w-10 h-5 rounded-full transition-colors ${cacheEnabled ? 'bg-emerald-600' : 'bg-gray-700'}`}
+          data-testid="ipfs-cache-toggle"
+        >
+          <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${cacheEnabled ? 'translate-x-5' : 'translate-x-0.5'}`} />
+        </button>
+      </div>
+
+      {/* Cache Stats */}
+      {loading ? (
+        <div className="text-xs text-gray-600 animate-pulse">Loading cache stats...</div>
+      ) : stats ? (
+        <div className="grid grid-cols-2 gap-3">
+          <div className="bg-gray-900/50 rounded-lg p-3">
+            <p className="text-[10px] text-gray-500">Cached Items</p>
+            <p className="text-lg font-bold text-gray-200">{stats.count}</p>
+          </div>
+          <div className="bg-gray-900/50 rounded-lg p-3">
+            <p className="text-[10px] text-gray-500">Total Size</p>
+            <p className="text-lg font-bold text-gray-200">{formatBytes(stats.totalSize)}</p>
+          </div>
+        </div>
+      ) : null}
+
+      {/* Actions */}
+      <div className="flex gap-2">
+        <button
+          onClick={handleClear}
+          disabled={clearing || !stats?.count}
+          className="flex items-center gap-2 px-3 py-2 bg-red-600/20 hover:bg-red-600/30 text-red-400 rounded-lg text-xs disabled:opacity-40 border border-red-800/50 transition-colors"
+          data-testid="ipfs-cache-clear"
+        >
+          <FiTrash2 size={12} />
+          {clearing ? 'Clearing...' : 'Clear All Cache'}
+        </button>
+        {stats?.count > 0 && (
+          <button
+            onClick={() => setShowItems(!showItems)}
+            className="flex items-center gap-2 px-3 py-2 bg-gray-800/50 hover:bg-gray-700/50 text-gray-300 rounded-lg text-xs border border-gray-700/50 transition-colors"
+            data-testid="ipfs-cache-browse"
+          >
+            <FiDatabase size={12} />
+            {showItems ? 'Hide Items' : 'Browse Cache'}
+          </button>
+        )}
+      </div>
+
+      {/* Browseable cache items */}
+      {showItems && stats?.items?.length > 0 && (
+        <div className="bg-gray-900/40 rounded-lg border border-gray-800/50 max-h-64 overflow-y-auto">
+          <table className="w-full text-[11px]">
+            <thead className="sticky top-0 bg-gray-900/90">
+              <tr className="border-b border-gray-800/50">
+                <th className="text-left py-1.5 px-2 text-gray-500 font-medium">CID</th>
+                <th className="text-left py-1.5 px-2 text-gray-500 font-medium">File</th>
+                <th className="text-right py-1.5 px-2 text-gray-500 font-medium">Size</th>
+                <th className="text-right py-1.5 px-2 text-gray-500 font-medium">Cached</th>
+                <th className="py-1.5 px-1"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {stats.items.slice(0, 50).map((item, i) => (
+                <tr key={i} className="border-b border-gray-800/20 hover:bg-gray-800/30">
+                  <td className="py-1 px-2 text-gray-400 font-mono truncate max-w-[120px]" title={item.cid}>{item.cid?.slice(0, 12)}...</td>
+                  <td className="py-1 px-2 text-gray-500 truncate max-w-[100px]">{item.filename || '-'}</td>
+                  <td className="py-1 px-2 text-right text-gray-500">{formatBytes(item.size || 0)}</td>
+                  <td className="py-1 px-2 text-right text-gray-600">{item.cachedAt ? new Date(item.cachedAt).toLocaleDateString() : '-'}</td>
+                  <td className="py-1 px-1">
+                    <button
+                      onClick={() => handleRemoveItem(item.cid)}
+                      className="text-red-500/50 hover:text-red-400 p-0.5"
+                      title="Remove from cache"
+                    >
+                      <FiTrash2 size={10} />
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {stats.items.length > 50 && (
+            <p className="text-center text-[10px] text-gray-600 py-1">...and {stats.items.length - 50} more</p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+
 function NotificationsTab() {
   const [muted, setMutedState] = useState(isMuted());
 
@@ -434,7 +577,7 @@ const MENU_ITEMS = [
   { id: 'walkie', label: 'Walkie Talkie', subtitle: 'On-chain Voice Broadcast', icon: FiRadio, color: '#EF4444' },
   { id: 'phone', label: 'Phone Settings', subtitle: 'Incoming Calls, Answering Machine', icon: FiPhone, color: '#10B981' },
   { id: 'treasury', label: 'Treasury', subtitle: 'Platform Fees, Address', icon: FiDollarSign, color: '#14B8A6' },
-  { id: 'ipfs', label: 'Data and Storage', subtitle: 'IPFS Cache, Downloads', icon: FiHardDrive, color: '#6366F1' },
+  { id: 'ipfs', label: 'Data and Storage', subtitle: 'IPFS Cache, Backups', icon: FiHardDrive, color: '#6366F1' },
   { id: 'mesh', label: 'Mesh Relay', subtitle: 'P2P Node, Network Stats', icon: FiServer, color: '#0EA5E9' },
   { id: 'blocked', label: 'Privacy', subtitle: 'Blocked Users', icon: FiSlash, color: '#A855F7' },
   { id: 'paywall', label: 'Report / Admin', subtitle: 'Report Content', icon: FiAlertCircle, color: '#F59E0B', hostedOnly: true },
@@ -2319,10 +2462,13 @@ export default function SettingsModal({ fullPage, onClose, profileImage, network
           {/* ===== IPFS PINNING TAB ===== */}
           {tab === 'ipfs' && (
             <div className="space-y-4" data-testid="settings-ipfs-tab">
+              {/* IPFS Cache Manager */}
+              <IpfsCacheManager />
+
               {/* Note pointing to Mesh Relay */}
               <div className="bg-gray-800/40 rounded-xl p-4">
                 <p className="text-xs text-gray-400 leading-relaxed">
-                  IPFS content caching and pinning is managed in <button onClick={() => setTab('mesh')} className="text-cyan-400 hover:underline font-medium">Mesh Relay</button>. Content you browse is automatically cached and shared with mesh peers.
+                  IPFS content is also shared peer-to-peer via <button onClick={() => setTab('mesh')} className="text-cyan-400 hover:underline font-medium">Mesh Relay</button>. Content you browse is automatically cached and shared with mesh peers.
                 </p>
               </div>
 

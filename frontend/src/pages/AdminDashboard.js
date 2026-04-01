@@ -1019,6 +1019,187 @@ function StatCard({ label, value, sub, color = 'text-gray-200', bg = 'bg-gray-80
   );
 }
 
+
+// ─── Decoder Health Dashboard ───
+function DecoderHealthPanel() {
+  const [stats, setStats] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [nodeStatus, setNodeStatus] = useState(null);
+
+  const fetchStats = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await adminFetch('/system-stats');
+      if (res.ok) {
+        const data = await safeJson(res);
+        setStats(data.tracker?.decoder);
+      }
+    } catch {}
+    // Also fetch node status (public endpoint)
+    try {
+      const nr = await fetch(`${ROOT_API}/p2fk-local/node/status`);
+      if (nr.ok) setNodeStatus(await nr.json());
+    } catch {}
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { fetchStats(); const iv = setInterval(fetchStats, 15000); return () => clearInterval(iv); }, [fetchStats]);
+
+  if (loading && !stats) return <div className="text-gray-500 text-sm animate-pulse">Loading decoder stats...</div>;
+  if (!stats) return <div className="text-gray-600 text-sm">No decoder stats available yet.</div>;
+
+  const { total_requests, independence_score, sources, by_path, recent } = stats;
+
+  const sourceColors = {
+    local_decoder: { text: 'text-emerald-400', bg: 'bg-emerald-900/20', label: 'Local Decoder' },
+    p2fk_io: { text: 'text-red-400', bg: 'bg-red-900/20', label: 'p2fk.io' },
+    cache_fresh: { text: 'text-cyan-400', bg: 'bg-cyan-900/20', label: 'Fresh Cache' },
+    cache_stale: { text: 'text-amber-400', bg: 'bg-amber-900/20', label: 'Stale Cache' },
+  };
+
+  // Calculate bar widths for independence meter
+  const localPct = sources?.local_decoder ? (sources.local_decoder.total / Math.max(1, total_requests) * 100) : 0;
+  const cachePct = sources ? ((sources.cache_fresh?.total || 0) + (sources.cache_stale?.total || 0)) / Math.max(1, total_requests) * 100 : 0;
+  const p2fkPct = sources?.p2fk_io ? (sources.p2fk_io.total / Math.max(1, total_requests) * 100) : 0;
+
+  return (
+    <div className="space-y-6" data-testid="decoder-health-panel">
+      {/* Independence Score */}
+      <div className="bg-gray-900/60 border border-gray-800 rounded-xl p-5">
+        <div className="flex items-center justify-between mb-3">
+          <div>
+            <h3 className="text-sm font-bold text-gray-200">Independence Score</h3>
+            <p className="text-[10px] text-gray-500">Requests served without p2fk.io</p>
+          </div>
+          <div className="text-right">
+            <span className={`text-3xl font-black ${independence_score >= 80 ? 'text-emerald-400' : independence_score >= 50 ? 'text-amber-400' : 'text-red-400'}`}>
+              {independence_score}%
+            </span>
+            <p className="text-[10px] text-gray-600">{total_requests} total requests</p>
+          </div>
+        </div>
+        {/* Source distribution bar */}
+        <div className="h-3 rounded-full bg-gray-800 overflow-hidden flex">
+          {localPct > 0 && <div className="bg-emerald-500 transition-all" style={{ width: `${localPct}%` }} title={`Local: ${localPct.toFixed(1)}%`} />}
+          {cachePct > 0 && <div className="bg-cyan-500 transition-all" style={{ width: `${cachePct}%` }} title={`Cache: ${cachePct.toFixed(1)}%`} />}
+          {p2fkPct > 0 && <div className="bg-red-500 transition-all" style={{ width: `${p2fkPct}%` }} title={`p2fk.io: ${p2fkPct.toFixed(1)}%`} />}
+        </div>
+        <div className="flex gap-4 mt-2 text-[10px]">
+          <span className="text-emerald-400">Local Decoder</span>
+          <span className="text-cyan-400">Cache</span>
+          <span className="text-red-400">p2fk.io</span>
+        </div>
+      </div>
+
+      {/* Node Status */}
+      <div className="bg-gray-900/60 border border-gray-800 rounded-xl p-4">
+        <h3 className="text-sm font-bold text-gray-200 mb-2">Custom Node</h3>
+        {nodeStatus?.connected ? (
+          <div className="flex items-center gap-3">
+            <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
+            <div>
+              <p className="text-xs text-gray-300">Connected — {nodeStatus.chain} ({nodeStatus.blocks?.toLocaleString()} blocks)</p>
+              <p className="text-[10px] text-gray-600">Sync: {((nodeStatus.verification_progress || 0) * 100).toFixed(1)}%</p>
+            </div>
+          </div>
+        ) : (
+          <div className="flex items-center gap-3">
+            <div className="w-2.5 h-2.5 rounded-full bg-gray-600" />
+            <p className="text-xs text-gray-500">No custom node connected. Using public explorers (Blockstream, mempool.space).</p>
+          </div>
+        )}
+      </div>
+
+      {/* Source Breakdown */}
+      <div>
+        <h3 className="text-sm font-bold text-gray-200 mb-3">Source Breakdown</h3>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {Object.entries(sourceColors).map(([key, cfg]) => {
+            const s = sources?.[key] || { total: 0, success: 0, fail: 0, success_rate: 0, avg_ms: 0 };
+            return (
+              <div key={key} className={`${cfg.bg} border border-gray-800 rounded-xl p-3`}>
+                <p className="text-[10px] text-gray-500 mb-0.5">{cfg.label}</p>
+                <p className={`text-xl font-bold ${cfg.text}`}>{s.total}</p>
+                <p className="text-[9px] text-gray-600 mt-0.5">
+                  {s.success_rate}% ok · {s.avg_ms}ms avg
+                </p>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* By API Path */}
+      {by_path && Object.keys(by_path).length > 0 && (
+        <div>
+          <h3 className="text-sm font-bold text-gray-200 mb-3">By API Path</h3>
+          <div className="bg-gray-900/60 border border-gray-800/50 rounded-xl overflow-hidden">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="border-b border-gray-800/50">
+                  <th className="text-left py-2 px-3 text-gray-500 font-medium">Path</th>
+                  <th className="text-right py-2 px-3 text-emerald-600 font-medium">Local</th>
+                  <th className="text-right py-2 px-3 text-cyan-600 font-medium">Cache</th>
+                  <th className="text-right py-2 px-3 text-red-600 font-medium">p2fk.io</th>
+                </tr>
+              </thead>
+              <tbody>
+                {Object.entries(by_path).map(([path, srcs]) => (
+                  <tr key={path} className="border-b border-gray-800/30 hover:bg-gray-800/30">
+                    <td className="py-1.5 px-3 text-gray-300 font-mono text-[11px]">{path}</td>
+                    <td className="py-1.5 px-3 text-right text-emerald-400">{srcs.local_decoder || 0}</td>
+                    <td className="py-1.5 px-3 text-right text-cyan-400">{(srcs.cache_fresh || 0) + (srcs.cache_stale || 0)}</td>
+                    <td className="py-1.5 px-3 text-right text-red-400">{srcs.p2fk_io || 0}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Recent Events */}
+      {recent && recent.length > 0 && (
+        <div>
+          <h3 className="text-sm font-bold text-gray-200 mb-3">Recent Decoder Events</h3>
+          <div className="bg-gray-900/60 border border-gray-800/50 rounded-xl overflow-hidden max-h-80 overflow-y-auto">
+            <table className="w-full text-[11px]">
+              <thead className="sticky top-0 bg-gray-900">
+                <tr className="border-b border-gray-800/50">
+                  <th className="text-left py-1.5 px-2 text-gray-500">Time</th>
+                  <th className="text-left py-1.5 px-2 text-gray-500">Path</th>
+                  <th className="text-center py-1.5 px-2 text-gray-500">Source</th>
+                  <th className="text-right py-1.5 px-2 text-gray-500">Ms</th>
+                </tr>
+              </thead>
+              <tbody>
+                {recent.map((ev, i) => {
+                  const cfg = sourceColors[ev.source] || { text: 'text-gray-400' };
+                  const ago = Math.round((Date.now() / 1000) - ev.ts);
+                  const agoStr = ago < 60 ? `${ago}s` : ago < 3600 ? `${Math.floor(ago/60)}m` : `${Math.floor(ago/3600)}h`;
+                  return (
+                    <tr key={i} className="border-b border-gray-800/20">
+                      <td className="py-1 px-2 text-gray-600 font-mono">{agoStr} ago</td>
+                      <td className="py-1 px-2 text-gray-400 font-mono truncate max-w-[200px]">{ev.path}</td>
+                      <td className={`py-1 px-2 text-center ${cfg.text}`}>{sourceColors[ev.source]?.label || ev.source}</td>
+                      <td className="py-1 px-2 text-right text-gray-500">{ev.ms}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Refresh */}
+      <button onClick={fetchStats} className="text-[10px] text-gray-600 hover:text-gray-300 flex items-center gap-1 transition-colors" data-testid="decoder-refresh">
+        <FiRefreshCw size={10} /> Refresh (auto every 15s)
+      </button>
+    </div>
+  );
+}
+
 // ─── Etch Manager Panel ───
 function EtchManagerPanel({ adminNetwork = 'btc-testnet' }) {
   const fileInputRef = useRef(null);
@@ -1690,6 +1871,7 @@ function CallDebugPanel() {
 // ─── Main Dashboard ───
 const TABS = [
   { id: 'settings', label: 'Settings', icon: FiSettings },
+  { id: 'decoder', label: 'Decoder Health', icon: FiActivity },
   { id: 'releases', label: 'Releases', icon: FiPackage },
   { id: 'wallet', label: 'Wallet', icon: FiBriefcase },
   { id: 'treasury', label: 'Treasury', icon: FiDollarSign },
@@ -1796,6 +1978,7 @@ export default function AdminDashboard() {
         </h2>
 
         {tab === 'stats' && <StatsOverview />}
+        {tab === 'decoder' && <DecoderHealthPanel />}
         {tab === 'system' && <SystemStatsPanel />}
         {tab === 'settings' && <SettingsPanel />}
         {tab === 'releases' && <ReleasePanel network={adminNetwork} />}

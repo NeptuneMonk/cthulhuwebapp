@@ -16,6 +16,16 @@ _route_hits = defaultdict(int)
 # Cache stats
 _cache_stats = {"hits": 0, "misses": 0}
 
+# Decoder source tracking: which source served each request
+_decoder_stats = {
+    "local_decoder": {"success": 0, "fail": 0, "total_ms": 0},
+    "p2fk_io": {"success": 0, "fail": 0, "total_ms": 0},
+    "cache_fresh": {"success": 0, "fail": 0, "total_ms": 0},
+    "cache_stale": {"success": 0, "fail": 0, "total_ms": 0},
+}
+_decoder_path_sources = defaultdict(lambda: defaultdict(int))  # { path_prefix: { source: count } }
+_decoder_recent = []  # Last 50 decoder events: [{ path, source, ms, ts }, ...]
+
 # Server start time
 _start_time = time.time()
 
@@ -39,6 +49,32 @@ def track_cache(hit: bool):
         _cache_stats["hits"] += 1
     else:
         _cache_stats["misses"] += 1
+
+
+def track_decoder_source(path: str, source: str, duration_ms: float = 0, success: bool = True):
+    """Record which data source served a p2fk API request.
+    source: 'local_decoder', 'p2fk_io', 'cache_fresh', 'cache_stale'"""
+    if source in _decoder_stats:
+        if success:
+            _decoder_stats[source]["success"] += 1
+        else:
+            _decoder_stats[source]["fail"] += 1
+        _decoder_stats[source]["total_ms"] += duration_ms
+
+    # Track by path prefix (e.g. 'GetRootByTransactionID')
+    prefix = path.split('/')[0] if '/' in path else path
+    _decoder_path_sources[prefix][source] += 1
+
+    # Recent events log
+    _decoder_recent.append({
+        "path": path[:60],
+        "source": source,
+        "ms": round(duration_ms, 1),
+        "ok": success,
+        "ts": time.time(),
+    })
+    if len(_decoder_recent) > 50:
+        del _decoder_recent[:25]
 
 
 def get_stats():
@@ -73,6 +109,7 @@ def get_stats():
         ),
         "top_routes": [{"route": r, "hits": c} for r, c in sorted_routes[:30]],
         "total_route_hits": sum(_route_hits.values()),
+        "decoder": get_decoder_stats(),
     }
 
 
@@ -83,6 +120,45 @@ def reset_stats():
     _route_hits.clear()
     _cache_stats["hits"] = 0
     _cache_stats["misses"] = 0
+    for src in _decoder_stats:
+        _decoder_stats[src] = {"success": 0, "fail": 0, "total_ms": 0}
+    _decoder_path_sources.clear()
+    _decoder_recent.clear()
+
+
+def get_decoder_stats():
+    """Return decoder-specific statistics."""
+    total_decoder = sum(s["success"] + s["fail"] for s in _decoder_stats.values())
+    local_total = _decoder_stats["local_decoder"]["success"] + _decoder_stats["local_decoder"]["fail"]
+    p2fk_total = _decoder_stats["p2fk_io"]["success"] + _decoder_stats["p2fk_io"]["fail"]
+
+    # Independence score: % of requests served without p2fk.io
+    non_p2fk = total_decoder - p2fk_total
+    independence = round(non_p2fk / max(1, total_decoder) * 100, 1)
+
+    # Per-source averages
+    sources = {}
+    for src, data in _decoder_stats.items():
+        total = data["success"] + data["fail"]
+        sources[src] = {
+            "total": total,
+            "success": data["success"],
+            "fail": data["fail"],
+            "success_rate": round(data["success"] / max(1, total) * 100, 1),
+            "avg_ms": round(data["total_ms"] / max(1, total), 1),
+        }
+
+    return {
+        "total_requests": total_decoder,
+        "independence_score": independence,
+        "sources": sources,
+        "by_path": {
+            path: dict(srcs) for path, srcs in sorted(
+                _decoder_path_sources.items(), key=lambda x: sum(x[1].values()), reverse=True
+            )[:15]
+        },
+        "recent": list(reversed(_decoder_recent[-20:])),
+    }
 
 
 def _format_uptime(seconds):
