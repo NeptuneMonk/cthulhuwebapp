@@ -36,6 +36,7 @@ from routes.ogpreview import router as ogpreview_router
 from routes.rooms import router as rooms_router
 from routes.treasury import router as treasury_router
 from routes.polls import router as polls_router
+from routes.p2fk_local import router as p2fk_local_router
 from routes.discover import router as discover_router
 from routes.emoji import router as emoji_router
 from routes.admin import router as admin_router
@@ -82,6 +83,7 @@ app.include_router(emoji_router)
 app.include_router(admin_router)
 app.include_router(calls_router)
 app.include_router(user_state_router)
+app.include_router(p2fk_local_router)
 app.include_router(favorites_router)
 app.include_router(vault_router)
 app.include_router(room_topics_router)
