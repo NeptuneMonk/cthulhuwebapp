@@ -12,7 +12,7 @@ Build a modern, responsive frontend for a blockchain-based social media platform
 - **Signing:** 100% client-side via bitcoinjs-lib + @noble/secp256k1
 - **Local Decoder:** Python P2FK Root decoder + async blockchain explorer client (Blockstream → mempool.space fallback)
 
-## What's Implemented
+## What's Implemented (All Features)
 - Full auth flow (WIF import, encrypt, login)
 - Profile minting (client-side PSBT)
 - Object creation, give, buy, burn (all client-side)
@@ -22,52 +22,55 @@ Build a modern, responsive frontend for a blockchain-based social media platform
 - Discover page (profiles, objects, roots search)
 - On-chain file reconstruction
 - IPFS upload via local Kubo daemon
-- IPFS GC system (48hr stale cleanup for viewed content, permanent pins for uploads)
+- IPFS GC system (48hr stale cleanup, permanent pins for uploads)
 - IPFS auto-pin on content view (pinning node behavior)
-- Uploaded CIDs persisted to SQLite (survive restarts)
+- Uploaded CIDs persisted to SQLite
 - Mesh network (WebRTC P2P content sharing)
 - Walkie-talkie phone system (audio + video calls)
 - SEC encrypted state backups
-- Admin dashboard (env-based credentials, JWT 24h expiry, rate limiting, session invalidation)
-- API Call Deduplication (125 → 27 calls on login)
-- Desktop/Mobile UI Audit (eliminated all dual-mount clashes)
-- Transaction ID resolution via GetRootsByAddress fallback
+- Admin dashboard with full system stats
+- API Call Deduplication
+- Desktop/Mobile UI Audit
 - INQ Vote Fix — Protocol-Correct Implementation
-- **Local P2FK Decoder (Python port of C# SUP Root decoder)**
-- **Async Blockchain Explorer Client (Blockstream/mempool.space with fallback)**
-- **p2fk.io Migration Complete — Backend is primary data source, p2fk.io is last-resort fallback**
-- **Connect Your Node UI (Settings > Network > custom Bitcoin Core RPC)**
+- Local P2FK Decoder (Python port of C# SUP Root decoder)
+- Async Blockchain Explorer Client (Blockstream/mempool.space with fallback)
+- p2fk.io → Local Backend Migration Complete
+- Connect Your Node UI (Settings > Network > custom Bitcoin Core RPC)
+- **Decoder Health Dashboard** (Admin > Decoder Health — independence score, source breakdown, live event log)
+- **IPFS Content Cache Manager** (Settings > Data and Storage — browse/clear/toggle cache, per-item management)
 
-## Recent Changes (April 1, 2026 — Session 2)
+## Session 2 Changes (April 1, 2026)
 
-### Local P2FK Decoder — Complete (DONE)
+### Local P2FK Decoder (DONE)
 - `p2fk_decoder.py`: Full Python port of SUP C# P2FK Root decoder
-- `blockchain_api.py`: Fully async multi-provider explorer client with custom node RPC support
-- `routes/p2fk_local.py`: 7 API endpoints replacing p2fk.io
-- SQLite caching with 5-minute TTL
+- `blockchain_api.py`: Async multi-provider explorer client with custom node RPC
+- `routes/p2fk_local.py`: 7+ endpoints replacing p2fk.io, SQLite cache
 
-### p2fk.io → Local Backend Migration — Complete (DONE)
-- **Frontend `media.js`**: Backend `/api/onchain/file/` is now PRIMARY for on-chain content. p2fk.io/root is fallback only.
-- **Frontend `SingleObjectPage.js`**: Same swap — backend primary, p2fk.io fallback.
-- **Frontend `standalone.js`**: Added `P2FK_LOCAL` — tries local decoder endpoints first, falls back to p2fk.io.
-- **Backend `helpers.py`**: Expanded `_local_p2fk_fallback()` to handle 7+ API paths locally:
-  - `GetRootByTransactionID/{txid}`
-  - `GetRootsByAddress/{address}`
-  - `GetPublicAddressByKeyword/{keyword}`
-  - `GetObjectByTransactionId/{txid}`
-  - `GetProfileByAddress/{address}`
-  - `GetObjectByAddress/{address}`
-  - `GetObjectsByAddress/{address}`
-- **Backend `discover.py`**: Removed direct `P2FK_API` constant, routed through `p2fk_get()` (has local fallback).
-- **Backend `objects.py`**: Replaced direct `client.get("https://p2fk.io/...")` with `p2fk_get()`.
+### p2fk.io → Local Migration (DONE)
+- Frontend: Backend is now PRIMARY for all on-chain content (p2fk.io is last-resort fallback)
+- Backend: `helpers.py` handles 7+ API paths locally when p2fk.io fails
+- Backend: `discover.py` and `objects.py` no longer call p2fk.io directly
+
+### Decoder Health Dashboard (DONE)
+- New admin tab with Independence Score meter (% requests served without p2fk.io)
+- Source distribution bar (local decoder / cache / p2fk.io)
+- Per-source stats: total requests, success rate, average latency
+- By API Path table: which source serves each endpoint
+- Recent Decoder Events: live scrolling log with timestamps
+
+### IPFS Content Cache Manager (DONE)
+- Settings > Data and Storage: full cache management UI
+- Shows cached items count and total size
+- Toggle to enable/disable IPFS caching
+- "Clear All Cache" button
+- "Browse Cache" — expandable table showing each CID, filename, size, date, with per-item remove
 
 ### Connect Your Node UI (DONE)
-- Settings > Network tab: Auto-Detect, Manual Setup, Connected state display
-- Backend: `/api/p2fk-local/node/status|detect|configure` endpoints
+- Settings > Network: Auto-Detect + Manual Setup for Bitcoin Core RPC
+- Connected state: chain info, block height, sync progress
 
 ## Backlog (Prioritized)
 ### P1
-- IPFS Client-Side Caching UI (IpfsSettings page + useIpfsCache integration)
 - Rework main feed using local decoder + global search API
 - Ownership Cascade Transfers
 - Tauri desktop app packaging (full sovereignty with local decoder)
@@ -84,18 +87,16 @@ Build a modern, responsive frontend for a blockchain-based social media platform
 
 ## Key Files
 - `/app/backend/p2fk_decoder.py` — P2FK Root decoder
-- `/app/backend/blockchain_api.py` — Async multi-provider blockchain explorer client
+- `/app/backend/blockchain_api.py` — Async blockchain explorer client
 - `/app/backend/routes/p2fk_local.py` — Local P2FK API routes
-- `/app/backend/utils/helpers.py` — p2fk_get with expanded local fallback
-- `/app/backend/routes/discover.py` — Discovery (now via p2fk_get)
-- `/app/backend/routes/objects.py` — Objects (now via p2fk_get)
-- `/app/frontend/src/utils/media.js` — Media URL resolution (backend primary)
-- `/app/frontend/src/utils/standalone.js` — Standalone mode (local decoder first)
-- `/app/frontend/src/pages/SingleObjectPage.js` — Object display (backend primary)
-- `/app/frontend/src/components/SettingsModal.js` — ConnectNodeSection
+- `/app/backend/utils/helpers.py` — p2fk_get with local fallback + decoder tracking
+- `/app/backend/utils/stats_tracker.py` — Decoder source tracking
+- `/app/frontend/src/pages/AdminDashboard.js` — DecoderHealthPanel
+- `/app/frontend/src/components/SettingsModal.js` — IpfsCacheManager, ConnectNodeSection
+- `/app/frontend/src/utils/ipfsCache.js` — IndexedDB IPFS cache
 
 ## Test Credentials
 - WIF: `cPYRpd9zq5mTdoo93NM5V9gTkpPnL26kjS5f6qYExPHLtCFp2gN8`
 - PW: `pXk7uHCH8kuu85B`
 - Network: `btc-testnet`
-- Admin: See `backend/.env`
+- Admin: `CthulhuAdmin` / `78UH1%2kC^vH2Gi1MqI@`
