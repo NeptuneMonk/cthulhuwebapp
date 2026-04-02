@@ -127,9 +127,11 @@ export function useOnChainActions(network) {
     });
   }, [dustAction, user?.address, network]);
 
-  const performDelete = useCallback((txid) => {
-    return dustAction(txid, `<<-delete>><<${Math.floor(Math.random() * -99999)}>>`, 'Delete');
-  }, [dustAction]);
+  const performDelete = useCallback(async (txid) => {
+    const r = await dustAction(txid, `<<-delete>><<${Math.floor(Math.random() * -99999)}>>`, 'Delete');
+    if (r?.success) savePendingReaction(txid, 'delete', user?.address, network, r.txid);
+    return r;
+  }, [dustAction, user?.address, network]);
 
   /**
    * Monetized Like: dust to txid keyword + tip output to author.

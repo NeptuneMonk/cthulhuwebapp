@@ -280,6 +280,13 @@ export default function AuthPage() {
           <p className="text-sm text-gray-500 mt-1">Decentralized Social Objects</p>
         </div>
 
+        {/* Unmoderated Content Advisory */}
+        <div className="bg-amber-900/10 border border-amber-700/20 rounded-lg px-4 py-3 mb-6" data-testid="content-advisory">
+          <p className="text-[11px] text-amber-400/80 leading-relaxed">
+            <strong>Unmoderated Space:</strong> This is a decentralized, public network. Content is written directly to the blockchain and cannot be censored or removed by any authority. You are responsible for blocking profiles that create content you find unacceptable.
+          </p>
+        </div>
+
         {/* Toggle */}
         <div className="flex bg-gray-900 rounded-lg p-1 mb-6">
           <button

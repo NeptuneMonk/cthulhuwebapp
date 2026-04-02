@@ -503,12 +503,25 @@ async def get_reactions(txid: str, network: str = 'btc-testnet'):
             elif rtype == "delete":
                 deletes.append(entry)
 
+        # Check if any delete was from the original post author
+        # First get the original root to find its author
+        deleted_by_author = False
+        if deletes:
+            original_root = await p2fk_get(f"GetRootByTransactionID/{txid}", is_mainnet)
+            original_author = ''
+            if isinstance(original_root, dict):
+                signed_by = original_root.get('SignedBy', '')
+                original_author = signed_by if signed_by else ''
+            if original_author:
+                deleted_by_author = any(d["from"] == original_author for d in deletes)
+
         return {
             "txid": txid,
             "likes": len(likes),
             "tips": len(tips),
             "pins": len(pins),
             "deletes": len(deletes),
+            "deleted_by_author": deleted_by_author,
             "like_addrs": [lk["from"] for lk in likes[:10]],
             "pin_addrs": [p["from"] for p in pins[:10]],
             "tip_total": sum(e.get("amount", 0) for e in tips),
@@ -516,7 +529,7 @@ async def get_reactions(txid: str, network: str = 'btc-testnet'):
         }
     except Exception as e:
         logger.error(f"Reactions error for {txid}: {e}")
-        return {"txid": txid, "likes": 0, "tips": 0, "pins": 0, "deletes": 0, "like_addrs": [], "pin_addrs": [], "tip_total": 0, "has_pending": False}
+        return {"txid": txid, "likes": 0, "tips": 0, "pins": 0, "deletes": 0, "deleted_by_author": False, "like_addrs": [], "pin_addrs": [], "tip_total": 0, "has_pending": False}
 
 
 @router.get("/profile/{address}")

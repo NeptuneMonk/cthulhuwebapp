@@ -5,6 +5,7 @@ import { ProfileThumb } from '@/components/ProfileThumb';
 import { MessageContent } from '@/components/MessageContent';
 import { ComposeModal } from '@/components/ComposeModal';
 import { ReactionBar } from '@/components/ReactionBar';
+import { getLocalReactions } from '@/hooks/useFeedMonitor';
 import PollCard from '@/components/PollCard';
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -128,6 +129,23 @@ export const FeedCard = React.forwardRef(({ item, network, currentUserAddress, c
   const recipients = message.recipients || [];
   const blockTime = message.block_time || message.created_at;
   const firstSeen = message.first_seen;
+
+  // Check if the post was deleted by its author (on-chain delete)
+  const [isAuthorDeleted, setIsAuthorDeleted] = useState(false);
+  useEffect(() => {
+    if (!txid || isPending || isSEC || isProtocolOp || isVaultPost || isVotePost) return;
+    // Check local reactions (instant)
+    const local = getLocalReactions(txid);
+    if (local.deletes?.has(senderAddress)) {
+      setIsAuthorDeleted(true);
+      return;
+    }
+    // Check chain data (background)
+    fetch(`${API}/reactions/${txid}?network=${network}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d?.deleted_by_author) setIsAuthorDeleted(true); })
+      .catch(() => {});
+  }, [txid, network, senderAddress, isPending]); // eslint-disable-line react-hooks/exhaustive-deps
   const mempoolTime = message.mempool_time;
   const status = message.status || (blockTime ? 'confirmed' : isPending ? 'mempool' : 'confirmed');
 
@@ -173,6 +191,9 @@ export const FeedCard = React.forwardRef(({ item, network, currentUserAddress, c
 
   // Filter out encrypted messages after all hooks
   if (isSEC || isProtocolOp || isVaultPost || isVotePost) return null;
+
+  // Filter out author-deleted posts — completely hidden from everyone's view
+  if (isAuthorDeleted) return null;
 
   // Right-click handler (desktop)
   const handleContextMenu = (e) => {

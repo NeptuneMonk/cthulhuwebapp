@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import { FiSend, FiAward, FiBox, FiUser, FiLayers, FiMessageCircle, FiArrowLeft, FiEdit3, FiCheck, FiPlusSquare, FiMessageSquare, FiTrash2, FiKey, FiCopy } from 'react-icons/fi';
+import { FiSend, FiAward, FiBox, FiUser, FiLayers, FiMessageCircle, FiArrowLeft, FiEdit3, FiCheck, FiPlusSquare, FiMessageSquare, FiTrash2, FiKey, FiCopy, FiSlash } from 'react-icons/fi';
 import { ProfileThumb } from '@/components/ProfileThumb';
 import { CachedImage } from '@/components/CachedImage';
 import { FeedCard } from '@/components/FeedCard';
@@ -16,7 +16,7 @@ import { getBurnedAddresses } from '@/utils/burnBlocklist';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
-export default function ProfileDetailPage({ network, isFollowing, toggleFollow, myAddress }) {
+export default function ProfileDetailPage({ network, isFollowing, toggleFollow, myAddress, blockUser, isBlocked }) {
   const { address } = useParams();
   const navigate = useNavigate();
   const { wallpaperStyle } = useTheme();
@@ -414,6 +414,13 @@ export default function ProfileDetailPage({ network, isFollowing, toggleFollow, 
                 <ActionBtn icon={FiMessageCircle} label="Message" onClick={() => navigate(`/dm/${resolvedAddr || profile.address}`)} testId="dm-button" accent />
                 <ActionBtn icon={FiSend} label="Tip" onClick={() => setShowTip(true)} testId="tip-button" />
                 <ActionBtn icon={FiBox} label="Objects" onClick={() => navigate(`/profile/${profile.address}/objects`)} testId="profile-objects-btn" count={objectCount} />
+                <ActionBtn
+                  icon={FiSlash}
+                  label={isBlocked?.(profile.address) ? 'Blocked' : 'Block'}
+                  onClick={() => blockUser?.(profile.address, profile.urn || '')}
+                  active={isBlocked?.(profile.address)}
+                  testId="block-button"
+                />
               </>
             )}
           </div>

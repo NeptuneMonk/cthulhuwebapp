@@ -80,7 +80,7 @@ const BLOCKCHAINS = [
 ];
 
 // Profiles Page (Search Landing)
-const ProfilesPage = ({ network, myAddress, follows = [] }) => {
+const ProfilesPage = ({ network, myAddress, follows = [], blockList }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState(null);
   const [searchLoading, setSearchLoading] = useState(false);
@@ -210,7 +210,7 @@ const ProfilesPage = ({ network, myAddress, follows = [] }) => {
               <button
                 key={i}
                 onClick={() => navigate(`/profile/${p.address}`)}
-                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-gray-800/50 transition-colors text-left"
+                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-gray-800/50 transition-colors text-left group"
                 data-testid={`search-result-${i}`}
               >
                 <ProfileThumb name={name || p.urn} image={p.image} size="md" />
@@ -218,6 +218,16 @@ const ProfilesPage = ({ network, myAddress, follows = [] }) => {
                   <p className="text-sm font-medium text-gray-100 truncate">{name}</p>
                   <p className="text-xs text-purple-400/70 truncate">@{p.urn}</p>
                 </div>
+                {blockList && p.address !== myAddress && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); blockList.blockUser(p.address, p.urn || ''); }}
+                    className="opacity-0 group-hover:opacity-100 p-1.5 rounded-full hover:bg-red-500/20 text-gray-600 hover:text-red-400 transition-all"
+                    title="Block user"
+                    data-testid={`block-search-${i}`}
+                  >
+                    <FiSlash size={14} />
+                  </button>
+                )}
               </button>
               );
             })}
@@ -1157,10 +1167,10 @@ function AppLayout({ network, setNetwork, claimed, claimProfile, unclaimProfile,
             <Route path="/object/:txid" element={<SingleObjectPage network={network} />} />
             <Route path="/collection/:urn" element={<CollectionPage network={network} />} />
             <Route path="/collection-by-address/:address" element={<CollectionPage network={network} byAddress />} />
-            <Route path="/profiles" element={<ProfilesPage network={network} myAddress={myAddress} follows={follows} />} />
+            <Route path="/profiles" element={<ProfilesPage network={network} myAddress={myAddress} follows={follows} blockList={blockList} />} />
             <Route path="/profile/:address/objects" element={<UserObjectsPage network={network} myAddress={myAddress} />} />
             <Route path="/profile/:address" element={
-              <ProfileDetailPage network={network} isFollowing={isFollowing} toggleFollow={toggleFollow} myAddress={myAddress} />
+              <ProfileDetailPage network={network} isFollowing={isFollowing} toggleFollow={toggleFollow} myAddress={myAddress} blockUser={blockUser} isBlocked={isBlocked} />
             } />
             <Route path="/search" element={<SearchPage network={network} follows={follows} toggleFollow={toggleFollow} myAddress={myAddress} />} />
             <Route path="/discover" element={<DiscoverPage network={network} />} />
