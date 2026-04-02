@@ -196,6 +196,7 @@ async def _local_p2fk_fallback(path: str, mainnet: bool = False):
 
 async def p2fk_get(path: str, mainnet: bool = False, extra_params: dict = None):
     """Fetch from p2fk.io with MongoDB cache (serve fresh cache, fallback stale).
+    Priority: cache_fresh → local_decoder → p2fk_io → cache_stale.
     Rate-limited to 3 concurrent requests with 429 backoff/retry."""
     cache_key = f"p2fk:{path}:{mainnet}:{extra_params}"
     # GetRootByTransactionId is immutable — cache permanently
@@ -216,6 +217,19 @@ async def p2fk_get(path: str, mainnet: bool = False, extra_params: dict = None):
 
     track_cache(hit=False)
 
+    # ── LOCAL DECODER FIRST ──
+    # Try our own P2FK decoder before hitting p2fk.io
+    t0_local = time.time()
+    local_result = await _local_p2fk_fallback(path, mainnet)
+    local_ms = (time.time() - t0_local) * 1000
+    if local_result is not None:
+        logger.info(f"Local decoder served [{path}] in {local_ms:.0f}ms")
+        track_decoder_source(path, "local_decoder", local_ms)
+        asyncio.create_task(_set_api_cache(cache_key, local_result))
+        return local_result
+    track_decoder_source(path, "local_decoder", local_ms, success=False)
+
+    # ── FALLBACK: p2fk.io ──
     params = {"mainnet": str(mainnet).lower()}
     if extra_params:
         params.update(extra_params)
@@ -300,16 +314,6 @@ async def p2fk_get(path: str, mainnet: bool = False, extra_params: dict = None):
         track_decoder_source(path, "cache_stale", 0)
         return cached
 
-    # Last resort: try local P2FK decoder for supported paths
-    t0_local = time.time()
-    local_result = await _local_p2fk_fallback(path, mainnet)
-    local_ms = (time.time() - t0_local) * 1000
-    if local_result is not None:
-        logger.info(f"Local decoder fallback succeeded for [{path}]")
-        track_decoder_source(path, "local_decoder", local_ms)
-        asyncio.create_task(_set_api_cache(cache_key, local_result))
-        return local_result
-    track_decoder_source(path, "local_decoder", local_ms, success=False)
     return None
 
 
