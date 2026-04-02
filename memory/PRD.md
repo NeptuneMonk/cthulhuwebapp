@@ -44,6 +44,14 @@ Build a modern, responsive frontend for a blockchain-based social media platform
 - Consume: fetch CID from IPFS → hydrate SQLite + auto-register users
 - Genesis: `QmUokA8vW5NNDddLhPAZKtu3iJetNKYzUwY9fuohHDNG8A` (6,025 roots, 84 profiles)
 
+### Delta Snapshots & Auto-Bootstrap (DONE — April 2, 2026)
+- **Delta Snapshots**: `POST /api/snapshot/produce?delta=true` — only new roots since last snapshot. Tracked via `snapshot_txids` table. Full=5MB, Delta=<1KB when no changes.
+- **Auto-Bootstrap**: `POST /api/snapshot/auto-bootstrap` — background task walks the IPFS daisy-chain, consumes all snapshots in chronological order, hydrates local cache.
+- **Bootstrap Status**: `GET /api/snapshot/bootstrap-status` — polls progress (running, phase, imported, users).
+- **Admin UI**: Delta toggle (amber), Auto-Bootstrap button (purple), Tracked TXIDs stat, type badges on snapshot chain (delta=amber, full=emerald).
+- **Bug Fix**: Fixed `fetchone()` async bug in snapshot txid tracking. Fixed chain resolution hanging on genesis snapshot with NULL `previous_cid`.
+- **502 Fix**: Backend crash during hot-reload resolved (supervisor restart).
+
 ### Feed Hydration (DONE)
 - `POST /api/snapshot/hydrate-feed`: extracts all 158 unique signers from cached data
 - Registers them as known users → feed now shows ALL discovered content
@@ -61,7 +69,6 @@ Build a modern, responsive frontend for a blockchain-based social media platform
 - Tauri desktop app packaging
 
 ### P2
-- Delta snapshots (incremental)
 - Scheduled automatic snapshot production
 - Object count discrepancies
 - "Ink Log" wallet history, Venue & Seat Sales
@@ -71,7 +78,7 @@ Build a modern, responsive frontend for a blockchain-based social media platform
 - Object-based chat rooms
 
 ## Key Files
-- `/app/backend/routes/snapshot.py` — Vacuum, produce, consume, hydrate-feed, latest-cid
+- `/app/backend/routes/snapshot.py` — Vacuum, produce (full+delta), consume, hydrate-feed, auto-bootstrap, bootstrap-status, latest-cid
 - `/app/backend/p2fk_decoder.py` — P2FK Root decoder
 - `/app/backend/blockchain_api.py` — Async blockchain explorer client
 - `/app/backend/routes/p2fk_local.py` — Local P2FK API routes
