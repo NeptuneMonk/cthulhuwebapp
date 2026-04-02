@@ -74,6 +74,14 @@ async def _ensure_snapshot_table():
             created_at TEXT NOT NULL
         )
     """)
+    # Track txids included in the last full snapshot (for delta computation)
+    await conn.execute("""
+        CREATE TABLE IF NOT EXISTS snapshot_txids (
+            txid TEXT PRIMARY KEY,
+            chain TEXT NOT NULL,
+            snapshot_id INTEGER
+        )
+    """)
     await conn.commit()
 
 
@@ -249,13 +257,26 @@ async def _run_vacuum(network: str = "btc-testnet"):
 
 # ─── Snapshot: Serialize → IPFS ──────────────────────────────────────────────
 
-async def _produce_snapshot(network: str = "btc-testnet") -> dict:
-    """Serialize the current P2FK cache into a snapshot and pin to IPFS."""
+async def _produce_snapshot(network: str = "btc-testnet", delta: bool = False) -> dict:
+    """Serialize the P2FK cache into a snapshot and pin to IPFS.
+    delta=True: only include roots NOT in the last full snapshot."""
     mainnet = "mainnet" in network
     conn = await get_conn()
+    await _ensure_snapshot_table()
+
+    # For delta mode, get txids from the last full snapshot
+    known_txids = set()
+    if delta:
+        async with conn.execute(
+            "SELECT txid FROM snapshot_txids WHERE chain = ?", (network,)
+        ) as cursor:
+            known_txids = {row[0] for row in await cursor.fetchall()}
+        if not known_txids:
+            _vlog("No base snapshot found — producing full snapshot instead")
+            delta = False
 
     # Gather all cached roots, profiles, objects
-    prefix = f"p2fk:"
+    prefix = "p2fk:"
     async with conn.execute(
         "SELECT _id, data FROM api_cache WHERE _id LIKE ?", (f"{prefix}%",)
     ) as cursor:
@@ -265,7 +286,6 @@ async def _produce_snapshot(network: str = "btc-testnet") -> dict:
     profiles = []
     objects = []
     keywords = {}
-    max_block_height = 0
 
     for _id, data_str in rows:
         try:
@@ -301,22 +321,32 @@ async def _produce_snapshot(network: str = "btc-testnet") -> dict:
         txid = r.get("TransactionId", "") if isinstance(r, dict) else ""
         if txid and txid not in seen_txids:
             seen_txids.add(txid)
+            if delta and txid in known_txids:
+                continue  # Skip — already in base snapshot
             unique_roots.append(r)
 
     # Get last snapshot CID for daisy-chain
-    await _ensure_snapshot_table()
     async with conn.execute(
-        "SELECT cid FROM snapshots WHERE chain = ? ORDER BY id DESC LIMIT 1", (network,)
+        "SELECT id, cid FROM snapshots WHERE chain = ? ORDER BY id DESC LIMIT 1", (network,)
     ) as cursor:
         prev_row = await cursor.fetchone()
-    previous_cid = prev_row[0] if prev_row else None
+    previous_id = prev_row[0] if prev_row else None
+    previous_cid = prev_row[1] if prev_row else None
+
+    snap_type = "delta" if delta else "full"
+
+    # For delta: only include new profiles (by address not seen before)
+    if delta:
+        # Keep all profiles/objects for now in deltas (they're small)
+        pass
 
     snapshot = {
         "version": SNAPSHOT_VERSION,
         "chain": network,
         "timestamp": datetime.now(timezone.utc).isoformat(),
-        "type": "full",
+        "type": snap_type,
         "previous_cid": previous_cid,
+        "base_snapshot_cid": previous_cid if delta else None,
         "stats": {
             "total_roots": len(unique_roots),
             "total_profiles": len(profiles),
@@ -325,8 +355,8 @@ async def _produce_snapshot(network: str = "btc-testnet") -> dict:
             "cache_entries": len(rows),
         },
         "roots": unique_roots,
-        "profiles": profiles,
-        "objects": objects,
+        "profiles": profiles if not delta else [],  # Delta skips profiles (apply from base)
+        "objects": objects if not delta else [],      # Delta skips objects
         "keywords": keywords,
     }
 
@@ -335,32 +365,51 @@ async def _produce_snapshot(network: str = "btc-testnet") -> dict:
     snapshot_gz = gzip.compress(snapshot_json.encode("utf-8"))
     size_bytes = len(snapshot_gz)
 
-    _vlog(f"Snapshot: {len(unique_roots)} roots, {len(profiles)} profiles, {len(objects)} objects, {size_bytes/1024:.0f}KB compressed")
+    _vlog(f"{snap_type.title()} snapshot: {len(unique_roots)} roots, {size_bytes/1024:.0f}KB compressed")
 
     # Pin to local Kubo IPFS daemon
     try:
         client = get_client()
         resp = await client.post(
             "http://127.0.0.1:5001/api/v0/add",
-            files={"file": (f"cthulhu-snapshot-{network}.json.gz", snapshot_gz, "application/gzip")},
+            files={"file": (f"cthulhu-{snap_type}-{network}.json.gz", snapshot_gz, "application/gzip")},
             params={"pin": "true"},
             timeout=30.0,
         )
         if resp.status_code == 200:
             result = resp.json()
             cid = result.get("Hash", "")
-            _vlog(f"Snapshot pinned: {cid} ({size_bytes/1024:.0f}KB)")
+            _vlog(f"{snap_type.title()} snapshot pinned: {cid} ({size_bytes/1024:.0f}KB)")
 
             # Record in snapshots table
             await conn.execute(
                 """INSERT INTO snapshots (cid, block_height, chain, type, root_count, size_bytes, previous_cid, created_at)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-                (cid, max_block_height, network, "full", len(unique_roots), size_bytes, previous_cid, datetime.now(timezone.utc).isoformat()),
+                (cid, 0, network, snap_type, len(unique_roots), size_bytes, previous_cid, datetime.now(timezone.utc).isoformat()),
             )
+
+            # For full snapshots, update the txid tracking table
+            if not delta:
+                await conn.execute("DELETE FROM snapshot_txids WHERE chain = ?", (network,))
+                # Gather ALL txids (including ones from previous snapshots)
+                all_txids = set()
+                for r in roots:
+                    txid = r.get("TransactionId", "") if isinstance(r, dict) else ""
+                    if txid:
+                        all_txids.add(txid)
+                snap_id = (await conn.execute("SELECT last_insert_rowid()")).fetchone()
+                snap_id_val = snap_id[0] if snap_id else 0
+                for txid in all_txids:
+                    await conn.execute(
+                        "INSERT OR IGNORE INTO snapshot_txids (txid, chain, snapshot_id) VALUES (?, ?, ?)",
+                        (txid, network, snap_id_val),
+                    )
+
             await conn.commit()
 
             return {
                 "cid": cid,
+                "type": snap_type,
                 "size_bytes": size_bytes,
                 "size_human": f"{size_bytes/1024:.0f}KB",
                 "previous_cid": previous_cid,
@@ -525,9 +574,13 @@ async def start_vacuum(
 
 
 @router.post("/produce")
-async def produce_snapshot(network: str = Query("btc-testnet")):
-    """Serialize current P2FK cache → compress → pin to IPFS → return CID."""
-    result = await _produce_snapshot(network)
+async def produce_snapshot(
+    network: str = Query("btc-testnet"),
+    delta: bool = Query(False, description="Produce a delta snapshot (only new roots since last full)"),
+):
+    """Serialize current P2FK cache → compress → pin to IPFS → return CID.
+    delta=True: only includes roots not in the last full snapshot (much smaller)."""
+    result = await _produce_snapshot(network, delta=delta)
     return result
 
 
