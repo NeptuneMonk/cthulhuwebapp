@@ -174,6 +174,19 @@ export default function ObjectsPage({ network }) {
   const scrollContainerRef = useRef(null);
   const restoredRef = useRef(false);
   const skipFetchOnRestoreRef = useRef(false);
+  const burnedSetRef = useRef(new Set());
+
+  // Fetch burned object addresses once on mount
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await axios.get(`${API}/api/snapshot/burned-set?network=${network}`);
+        if (res.data?.addresses) {
+          burnedSetRef.current = new Set(res.data.addresses);
+        }
+      } catch {}
+    })();
+  }, [network]);
 
   // ─── Scroll + state preservation ───
   // Save state to sessionStorage on any navigation away
@@ -212,7 +225,11 @@ export default function ObjectsPage({ network }) {
           .map(item => ({ ...item.object, _blockchain: item.blockchain || '' }))
           .filter(o => !(o.License || '').toLowerCase().startsWith('cthulhu:tether'))
           .filter(o => (o.Name && o.Name !== 'Unnamed Object') || o.Image)
-          .filter(o => !o.is_burned && o.burn_status !== 'fully_burned');
+          .filter(o => {
+            const creators = o.Creators || {};
+            const addr = Object.keys(creators)[0] || '';
+            return !burnedSetRef.current.has(addr);
+          });
         // Apply strict blockchain filter
         const activeChainFilter = CHAIN_FILTERS.find(f => f.key === activeFilter);
         const chainMatch = activeChainFilter?.match;
@@ -228,7 +245,11 @@ export default function ObjectsPage({ network }) {
         .map(item => ({ ...item.object, _blockchain: item.blockchain || '' }))
         .filter(o => !(o.License || '').toLowerCase().startsWith('cthulhu:tether'))
         .filter(o => (o.Name && o.Name !== 'Unnamed Object') || o.Image)
-        .filter(o => !o.is_burned && o.burn_status !== 'fully_burned');
+        .filter(o => {
+          const creators = o.Creators || {};
+          const addr = Object.keys(creators)[0] || '';
+          return !burnedSetRef.current.has(addr);
+        });
 
       // Apply strict blockchain filter when a chain filter is active
       const activeChainFilter = CHAIN_FILTERS.find(f => f.key === activeFilter);

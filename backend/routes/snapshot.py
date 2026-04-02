@@ -1293,6 +1293,15 @@ async def trigger_announce(
     return await _announce_cid_onchain(cid, network, snap_type, root_count)
 
 
+@router.get("/burned-set")
+async def get_burned_set_endpoint(network: str = Query("btc-testnet")):
+    """Return the set of all known burned object addresses for client-side filtering."""
+    burned = await get_burned_set(network)
+    return {"addresses": list(burned), "count": len(burned)}
+
+
+
+
 def _get_auto_delta_status():
     s = _auto_delta_state
     return {
