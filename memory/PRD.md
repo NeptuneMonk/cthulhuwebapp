@@ -108,6 +108,36 @@ Build a modern, responsive frontend for a blockchain-based social media platform
 - "SupFlix" Media Gallery
 - Object-based chat rooms
 
+### Session 3 Changes (April 2, 2026)
+
+#### Surgical Delete/Burn Cache Purge (DONE)
+- `_surgical_cache_purge()` in `data.py`: removes ONLY the specific txid from the feed cache, not the entire cache
+- Unpins associated IPFS CIDs from local Kubo daemon (best-effort)
+- Triggered on both `POST /api/reactions/{txid}` (type=delete) and when `GET /api/reactions/{txid}` discovers a confirmed author-delete
+- Frontend: `performDelete` emits `cthulhu-post-deleted` event; FeedPage listens and removes the post from local state instantly
+
+#### Recoverable Clear Chat (DONE)
+- DM "Clear Chat" now uses timestamped soft-delete only — no longer destroys IndexedDB caches (sent messages, conversation cache, decrypt cache)
+- `setClearedBefore()` now records a clear history (last 10 clears) for auditability
+- Added `removeClearedBefore()` function in `dmDb.js` to undo a clear
+- "Recover Chat" button added to DM menu — removes the `clearedBefore` filter so messages reappear on next fetch from chain
+
+#### SEC Backup Blocklist Integration (DONE)
+- `collectNetworkState()` now includes `blockedUsers` from localStorage
+- `restoreNetworkState()` merges restored blocklist with existing local blocklist (deduplicating by address)
+- Blocked users survive device changes when SEC backup is restored
+
+#### Storefront Chain Filter Fix (DONE)
+- `CHAIN_FILTERS` now has a `match` field for strict blockchain matching
+- `fetchObjects()` applies client-side post-filter: `object._blockchain.toUpperCase().includes(chainMatch)`
+- Featured (embii) has no chain match — shows all results as before
+- BTC/LTC/DOG/MZC/IPFS filters now strictly validate the `_blockchain` field
+
+#### BlockList Crash Fix (DONE)
+- Fixed `ReferenceError: blockList is not defined` in `AppLayout`
+- Added `useBlockList(network)` hook to `AppLayout` function
+- Changed `blockUser={blockUser} isBlocked={isBlocked}` to `blockUser={blockList.blockUser} isBlocked={blockList.isBlocked}` on ProfileDetailPage route
+
 ## Key Files
 - `/app/backend/routes/snapshot.py` — Vacuum, produce (full+delta), consume, hydrate-feed, auto-bootstrap, bootstrap-status, latest-cid
 - `/app/backend/p2fk_decoder.py` — P2FK Root decoder
