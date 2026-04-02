@@ -144,6 +144,23 @@ Build a modern, responsive frontend for a blockchain-based social media platform
 - Added `useBlockList(network)` hook to `AppLayout` function
 - Changed `blockUser={blockUser} isBlocked={isBlocked}` to `blockUser={blockList.blockUser} isBlocked={blockList.isBlocked}` on ProfileDetailPage route
 
+
+#### Drag & Drop / Paste File Support in Compose (DONE — April 2, 2026)
+- ComposeModal.js (Feed overlay) and ComposeBar.js (Feed inline + Object Chat): Added drag/drop + paste file handlers
+- Drop zone overlay appears on drag. Paste catches clipboard files (screenshots, etc.)
+- NOT added to DMPage.js (Private Messages) per user instruction
+- Large files (>5MB) start background upload immediately via UploadQueue
+
+#### Local Decoder Priority Flip (DONE — April 2, 2026)
+- Flipped `p2fk_get()` priority: `cache_fresh → local_decoder → p2fk_io → cache_stale`
+- Independence score: 0% → 99.6%
+
+#### Proactive IPFS Pinning for Feed Posts (DONE — April 2, 2026)
+- `_proactive_pin_feed_cids()` pins all IPFS CIDs from feed messages to local Kubo on every load
+- Node went from 1 pin → 88+ pins after first feed load
+
+#### Auto-Backup Verification (CONFIRMED — April 2, 2026)
+- No auto-backup intervals exist. SEC backups are manual only (SettingsModal sign-out flow)
 ## Key Files
 - `/app/backend/routes/snapshot.py` — Vacuum, produce (full+delta), consume, hydrate-feed, auto-bootstrap, bootstrap-status, latest-cid
 - `/app/backend/p2fk_decoder.py` — P2FK Root decoder
