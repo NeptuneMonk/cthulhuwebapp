@@ -181,6 +181,12 @@ Build a modern, responsive frontend for a blockchain-based social media platform
 - Created `/app/src-tauri/` project skeleton: `tauri.conf.json`, `Cargo.toml`, `src/main.rs`, `build.rs`, `capabilities/default.json`
 - Rust host spawns Python API (PyInstaller sidecar) + Kubo IPFS daemon as child processes
 - Created `/app/TAURI_PACKAGING.md` step-by-step guide for building platform-specific installers
+
+#### Burn Detection & Display (DONE — April 2, 2026)
+- Backend: Object endpoint now scans P2FK roots for `BRN` (burn) transactions and adds `burn_transactions`, `burn_txids`, `is_burned`, `burn_status` fields
+- Frontend: SingleObjectPage shows red burn banner when burns are detected on-chain
+- Defensive guards: All `.map()` calls in SingleObjectPage now use `(array || []).map()` to prevent crashes on missing data
+- Verified: Object `msBayXP6iCByaHeMteiwmXMbS74x91MmqY` has 7 BRN roots on-chain (6 by owner, 1 by buyer). p2fk.io indexer doesn't reflect burns yet.
 - `/app/backend/routes/snapshot.py` — Vacuum, produce (full+delta), consume, hydrate-feed, auto-bootstrap, bootstrap-status, latest-cid
 - `/app/backend/p2fk_decoder.py` — P2FK Root decoder
 - `/app/backend/blockchain_api.py` — Async blockchain explorer client

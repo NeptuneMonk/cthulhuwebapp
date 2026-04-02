@@ -857,6 +857,27 @@ async def get_object_by_address(address: str, network: str = 'btc-testnet'):
         formatted['network'] = network
         formatted['object_address'] = address
 
+        # ── Burn detection: check on-chain roots for BRN transactions ──
+        try:
+            roots = await p2fk_get(f"GetRootsByAddress/{address}", is_mainnet)
+            burn_count = 0
+            burn_txids = []
+            if isinstance(roots, list):
+                for root in roots:
+                    file_data = root.get('File') or {}
+                    if 'BRN' in file_data:
+                        burn_count += 1
+                        burn_txids.append(root.get('TransactionId', '')[:16])
+            if burn_count > 0:
+                formatted['burn_transactions'] = burn_count
+                formatted['burn_txids'] = burn_txids
+                # If total supply is 0 or all owners have 0 quantity, mark as fully burned
+                total_owned = sum(o.get('quantity', 0) for o in (formatted.get('owners') or []))
+                formatted['is_burned'] = total_owned == 0
+                formatted['burn_status'] = 'fully_burned' if total_owned == 0 else 'partially_burned'
+        except Exception as e:
+            logger.debug(f"Burn check error for {address}: {e}")
+
         # Resolve missing TransactionId via GetRootsByAddress
         if not formatted.get('transaction_id'):
             try:

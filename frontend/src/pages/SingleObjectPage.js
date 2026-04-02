@@ -1170,7 +1170,14 @@ export default function SingleObjectPage({ network, lookupByAddress }) {
     // use it directly instead of re-fetching from an unreliable address lookup
     const prefetched = location.state?.prefetchedObject;
     if (prefetched && lookupByAddress) {
-      setObject(prefetched);
+      setObject({
+        ...prefetched,
+        owners: prefetched.owners || [],
+        creators: prefetched.creators || [],
+        listings: prefetched.listings || [],
+        offers: prefetched.offers || [],
+        royalties: prefetched.royalties || {},
+      });
       setLoading(false);
       setError(null);
       return;
@@ -1186,7 +1193,14 @@ export default function SingleObjectPage({ network, lookupByAddress }) {
           m.meshFirstFetch(`/${apiPath}`, { network }, { timeout: 2000 })
         );
         if (data && !data.error && !data.detail) {
-          setObject(data);
+          setObject({
+            ...data,
+            owners: data.owners || [],
+            creators: data.creators || [],
+            listings: data.listings || [],
+            offers: data.offers || [],
+            royalties: data.royalties || {},
+          });
           // Cache by URN for future cross-chain lookups
           if (data.urn) cacheByUrn(data.urn, data, null);
           setLoading(false);
@@ -1197,8 +1211,16 @@ export default function SingleObjectPage({ network, lookupByAddress }) {
       // Fallback to direct axios
       try {
         const res = await axios.get(`${API}/${apiPath}`, { params: { network } });
-        setObject(res.data);
-        if (res.data?.urn) cacheByUrn(res.data.urn, res.data, null);
+        const d = res.data;
+        setObject({
+          ...d,
+          owners: d.owners || [],
+          creators: d.creators || [],
+          listings: d.listings || [],
+          offers: d.offers || [],
+          royalties: d.royalties || {},
+        });
+        if (d?.urn) cacheByUrn(d.urn, d, null);
       } catch (err) {
         setError(err.response?.data?.detail || 'Failed to load object');
       }
@@ -1404,6 +1426,27 @@ export default function SingleObjectPage({ network, lookupByAddress }) {
         )}
       </div>
 
+      {/* Burn status banner */}
+      {object.burn_transactions > 0 && (
+        <div className="bg-red-900/30 border-b border-red-700/40 px-4 sm:px-6 py-3 flex items-center gap-3" data-testid="burn-banner">
+          <FiAlertTriangle size={18} className="text-red-400 flex-shrink-0" />
+          <div className="flex-1">
+            <p className="text-sm font-medium text-red-300">
+              {object.is_burned
+                ? 'This object has been burned and is no longer active.'
+                : `${object.burn_transactions} burn transaction${object.burn_transactions > 1 ? 's' : ''} detected on-chain.`
+              }
+            </p>
+            <p className="text-[10px] text-red-400/70 mt-0.5">
+              {object.burn_status === 'fully_burned'
+                ? 'All units have been destroyed per SUP protocol.'
+                : 'The on-chain indexer may not yet reflect the current burn state. Verify via blockchain explorer.'
+              }
+            </p>
+          </div>
+        </div>
+      )}
+
       <div className="max-w-5xl mx-auto p-4 sm:p-6 pb-24">
         <div className="grid grid-cols-1 lg:grid-cols-5 gap-8">
           {/* Left: Media + Description */}
@@ -1458,8 +1501,8 @@ export default function SingleObjectPage({ network, lookupByAddress }) {
                 <FiUsers size={14} /> Owners ({object.owner_count})
               </h3>
               <div className="space-y-3">
-                {object.owners.map((owner, idx) => {
-                  const isCreator = object.creators.some(c => c.address === owner.address);
+                {(object.owners || []).map((owner, idx) => {
+                  const isCreator = (object.creators || []).some(c => c.address === owner.address);
                   const rp = resolved[owner.address];
                   const displayName = rp?.urn || rp?.display_name;
                   return (
@@ -1526,7 +1569,7 @@ export default function SingleObjectPage({ network, lookupByAddress }) {
                   <p className="text-3xl font-bold text-white mb-1" data-testid="object-price">
                     {object.min_price === 0 ? 'FREE' : `${object.min_price} BTC`}
                   </p>
-                  {object.listings.length > 0 && (
+                  {(object.listings || []).length > 0 && (
                     <p className="text-xs text-gray-500 mb-6">
                       {object.listings[0].quantity.toLocaleString()} available from{' '}
                       <AddressLabel address={object.listings[0].owner} network={network} className="text-xs" />
@@ -1657,8 +1700,8 @@ export default function SingleObjectPage({ network, lookupByAddress }) {
             <div className="bg-gray-900 border border-gray-800 rounded-xl p-6" data-testid="object-creators">
               <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-3">Creators</h3>
               <div className="space-y-2">
-                {object.creators.map((c, idx) => {
-                  const isAlsoOwner = object.owners.some(o => o.address === c.address);
+                {(object.creators || []).map((c, idx) => {
+                  const isAlsoOwner = (object.owners || []).some(o => o.address === c.address);
                   const rp = resolved[c.address];
                   const displayName = rp?.urn || rp?.display_name;
                   const isObjectSelf = rp?.is_object;
@@ -1766,11 +1809,11 @@ export default function SingleObjectPage({ network, lookupByAddress }) {
             </div>
 
             {/* Listings Detail */}
-            {object.listings.length > 0 && (
+            {(object.listings || []).length > 0 && (
               <div className="bg-gray-900 border border-gray-800 rounded-xl p-6" data-testid="object-listings">
                 <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4">Active Listings</h3>
                 <div className="space-y-3">
-                  {object.listings.map((l, idx) => (
+                  {(object.listings || []).map((l, idx) => (
                     <div key={idx} className="bg-gray-800/50 rounded-lg p-3">
                       <div className="flex justify-between items-center mb-1">
                         <span className="text-sm text-gray-300 font-semibold">
