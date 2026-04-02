@@ -161,6 +161,12 @@ Build a modern, responsive frontend for a blockchain-based social media platform
 
 #### Auto-Backup Verification (CONFIRMED — April 2, 2026)
 - No auto-backup intervals exist. SEC backups are manual only (SettingsModal sign-out flow)
+
+#### Auto-Delta Indexer (DONE — April 2, 2026)
+- Background scheduler: vacuum → delta snapshot on configurable interval (5m-24hr, default 15m)
+- Skips if 0 new roots found (no wasted IPFS pins)
+- Admin endpoints: POST /api/snapshot/auto-delta/start, stop, GET status
+- Admin UI: "Auto-Delta Indexer" section with start/stop, interval, stats, live log
 ## Key Files
 - `/app/backend/routes/snapshot.py` — Vacuum, produce (full+delta), consume, hydrate-feed, auto-bootstrap, bootstrap-status, latest-cid
 - `/app/backend/p2fk_decoder.py` — P2FK Root decoder

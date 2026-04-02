@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { FiSettings, FiAlertCircle, FiMessageSquare, FiBarChart2, FiLogOut, FiLock, FiSave, FiRefreshCw, FiChevronDown, FiChevronUp, FiSend, FiTrash2, FiKey, FiActivity, FiFilm, FiCpu, FiDatabase, FiGlobe, FiMusic, FiPhone, FiZap, FiDollarSign, FiFile, FiEdit, FiCheck, FiX, FiCopy, FiUpload, FiPlus, FiExternalLink, FiLoader, FiBriefcase, FiPackage, FiHardDrive, FiDownload, FiPlay } from 'react-icons/fi';
+import { FiSettings, FiAlertCircle, FiMessageSquare, FiBarChart2, FiLogOut, FiLock, FiSave, FiRefreshCw, FiChevronDown, FiChevronUp, FiSend, FiTrash2, FiKey, FiActivity, FiFilm, FiCpu, FiDatabase, FiGlobe, FiMusic, FiPhone, FiZap, FiDollarSign, FiFile, FiEdit, FiCheck, FiX, FiCopy, FiUpload, FiPlus, FiExternalLink, FiLoader, FiBriefcase, FiPackage, FiHardDrive, FiDownload, FiPlay, FiPause } from 'react-icons/fi';
 import { getCallLogs, clearCallLogs, exportCallLogs } from '@/utils/callDebugLog';
 import AdminWalletPanel from '@/components/admin/AdminWalletPanel';
 import CheckpointPanel from '@/components/admin/CheckpointPanel';
@@ -1113,6 +1113,134 @@ function OnChainDiscoverySection({ network, latestCid }) {
 }
 
 
+// ─── Auto-Delta Scheduler Section ─────────────────────────────────────────────
+function AutoDeltaSection({ network }) {
+  const [status, setStatus] = useState(null);
+  const [interval, setInterval_] = useState(15);
+  const [toggling, setToggling] = useState(false);
+
+  const fetchStatus = useCallback(async () => {
+    try {
+      const res = await fetch(`${ROOT_API}/snapshot/auto-delta/status`);
+      if (res.ok) {
+        const data = await safeJson(res);
+        setStatus(data);
+        if (data.interval_minutes) setInterval_(data.interval_minutes);
+      }
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    fetchStatus();
+    const iv = setInterval(fetchStatus, 5000);
+    return () => clearInterval(iv);
+  }, [fetchStatus]);
+
+  const toggle = async () => {
+    setToggling(true);
+    try {
+      if (status?.enabled) {
+        await fetch(`${ROOT_API}/snapshot/auto-delta/stop`, { method: 'POST' });
+      } else {
+        await fetch(`${ROOT_API}/snapshot/auto-delta/start?interval=${interval}&network=${network}`, { method: 'POST' });
+      }
+      await fetchStatus();
+    } catch {}
+    setToggling(false);
+  };
+
+  const enabled = status?.enabled;
+
+  return (
+    <div className={`bg-gray-900/60 border rounded-xl p-5 ${enabled ? 'border-emerald-700/40' : 'border-gray-800'}`} data-testid="auto-delta-section">
+      <div className="flex items-center justify-between mb-3">
+        <div>
+          <h3 className="text-sm font-bold text-gray-200 flex items-center gap-2">
+            Auto-Delta Indexer
+            {enabled && <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />}
+          </h3>
+          <p className="text-[10px] text-gray-500">
+            Periodically vacuum new roots and produce delta snapshots. Skips if 0 new roots found.
+          </p>
+        </div>
+        <div className="flex items-center gap-3">
+          {!enabled && (
+            <div className="flex items-center gap-1.5">
+              <span className="text-[10px] text-gray-500">Every</span>
+              <select
+                value={interval}
+                onChange={e => setInterval_(Number(e.target.value))}
+                className="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs text-gray-200 focus:outline-none focus:border-cyan-500"
+                data-testid="auto-delta-interval"
+              >
+                <option value={5}>5 min</option>
+                <option value={10}>10 min</option>
+                <option value={15}>15 min</option>
+                <option value={30}>30 min</option>
+                <option value={60}>1 hr</option>
+              </select>
+            </div>
+          )}
+          <button
+            onClick={toggle}
+            disabled={toggling}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-medium transition-colors ${
+              enabled
+                ? 'bg-red-600/20 text-red-400 border border-red-700/30 hover:bg-red-600/30'
+                : 'bg-emerald-600 hover:bg-emerald-500 text-white'
+            } disabled:opacity-40`}
+            data-testid="auto-delta-toggle"
+          >
+            {enabled ? <><FiPause size={12} /> Stop</> : <><FiPlay size={12} /> Start</>}
+          </button>
+        </div>
+      </div>
+
+      {/* Stats */}
+      {status && (status.runs_total > 0 || enabled) && (
+        <div className="grid grid-cols-4 gap-2 mb-3">
+          <div className="bg-gray-800/50 rounded-lg p-2 text-center">
+            <p className="text-[9px] text-gray-500">Runs</p>
+            <p className="text-sm font-bold text-gray-200">{status.runs_total}</p>
+          </div>
+          <div className="bg-gray-800/50 rounded-lg p-2 text-center">
+            <p className="text-[9px] text-gray-500">Indexed</p>
+            <p className="text-sm font-bold text-emerald-400">{status.runs_success}</p>
+          </div>
+          <div className="bg-gray-800/50 rounded-lg p-2 text-center">
+            <p className="text-[9px] text-gray-500">Skipped</p>
+            <p className="text-sm font-bold text-amber-400">{status.runs_skipped}</p>
+          </div>
+          <div className="bg-gray-800/50 rounded-lg p-2 text-center">
+            <p className="text-[9px] text-gray-500">Interval</p>
+            <p className="text-sm font-bold text-gray-200">{status.interval_minutes}m</p>
+          </div>
+        </div>
+      )}
+
+      {/* Last Result */}
+      {status?.last_result?.cid && (
+        <div className="bg-emerald-900/15 border border-emerald-700/20 rounded-lg px-3 py-2 mb-3">
+          <p className="text-[10px] text-emerald-400">
+            Last delta: <span className="font-mono">{status.last_result.cid.slice(0, 24)}...</span>
+            {' '}({status.last_result.total_roots} roots, {status.last_result.size_human})
+          </p>
+        </div>
+      )}
+
+      {/* Log */}
+      {status?.log?.length > 0 && (
+        <div className="bg-gray-950 border border-gray-800/50 rounded-lg p-2 max-h-32 overflow-y-auto font-mono text-[10px] text-gray-500 space-y-0.5">
+          {status.log.slice(-15).map((line, i) => (
+            <div key={i}>{line}</div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+
 function SnapshotPanel({ network }) {
   const [status, setStatus] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -1379,6 +1507,9 @@ function SnapshotPanel({ network }) {
           </div>
         )}
       </div>
+
+      {/* Auto-Delta Scheduler */}
+      <AutoDeltaSection network={network} />
 
       {/* Consume Snapshot */}
       <div className="bg-gray-900/60 border border-gray-800 rounded-xl p-5">

@@ -55,6 +55,98 @@ def _vlog(msg: str):
     logger.info(f"Vacuum: {msg}")
 
 
+# ─── Auto-Delta Scheduler ────────────────────────────────────────────────────
+
+_auto_delta_state = {
+    "enabled": False,
+    "interval_minutes": 15,
+    "network": "btc-testnet",
+    "running": False,
+    "last_run": None,
+    "last_result": None,
+    "runs_total": 0,
+    "runs_skipped": 0,  # Skipped because 0 new roots
+    "runs_success": 0,
+    "log": [],
+    "_task": None,
+}
+
+
+def _adlog(msg: str):
+    """Append to auto-delta log (keep last 50 entries)."""
+    ts = datetime.now(timezone.utc).strftime('%H:%M:%S')
+    _auto_delta_state["log"].append(f"[{ts}] {msg}")
+    if len(_auto_delta_state["log"]) > 50:
+        del _auto_delta_state["log"][:25]
+    logger.info(f"AutoDelta: {msg}")
+
+
+async def _auto_delta_loop():
+    """Background loop: vacuum → delta snapshot → sleep → repeat.
+    Skips snapshot production if vacuum finds 0 new roots."""
+    state = _auto_delta_state
+    _adlog(f"Started (every {state['interval_minutes']}m on {state['network']})")
+
+    while state["enabled"]:
+        state["running"] = True
+        state["runs_total"] += 1
+        network = state["network"]
+
+        try:
+            # Phase 1: Quick vacuum (crawl known signers only)
+            _adlog("Vacuum: crawling known signers...")
+            pre_count = 0
+            conn = await get_conn()
+            async with conn.execute(
+                "SELECT COUNT(*) FROM api_cache WHERE _id LIKE 'p2fk:GetRoot%'"
+            ) as cursor:
+                row = await cursor.fetchone()
+                pre_count = row[0] if row else 0
+
+            await _run_vacuum(network)
+
+            # Wait for vacuum to finish
+            while _vacuum_state["running"]:
+                await asyncio.sleep(2)
+
+            async with conn.execute(
+                "SELECT COUNT(*) FROM api_cache WHERE _id LIKE 'p2fk:GetRoot%'"
+            ) as cursor:
+                row = await cursor.fetchone()
+                post_count = row[0] if row else 0
+
+            new_roots = post_count - pre_count
+
+            # Phase 2: Produce delta only if new roots found
+            if new_roots > 0:
+                _adlog(f"Found {new_roots} new roots → producing delta snapshot...")
+                result = await _produce_snapshot(network, delta=True)
+                state["last_result"] = result
+                if result.get("cid"):
+                    state["runs_success"] += 1
+                    _adlog(f"Delta pinned: {result['cid'][:20]}... ({result.get('total_roots', 0)} roots, {result.get('size_human', '?')})")
+                else:
+                    _adlog(f"Delta failed: {result.get('error', 'unknown')}")
+            else:
+                state["runs_skipped"] += 1
+                _adlog(f"0 new roots — skipping snapshot")
+
+        except Exception as e:
+            _adlog(f"Error: {e}")
+        finally:
+            state["running"] = False
+            state["last_run"] = datetime.now(timezone.utc).isoformat()
+
+        # Sleep for interval (check every 10s if still enabled)
+        sleep_seconds = state["interval_minutes"] * 60
+        slept = 0
+        while slept < sleep_seconds and state["enabled"]:
+            await asyncio.sleep(10)
+            slept += 10
+
+    _adlog("Stopped")
+
+
 # ─── Snapshot Schema ─────────────────────────────────────────────────────────
 
 SNAPSHOT_VERSION = 1
@@ -892,4 +984,57 @@ async def bootstrap_status():
         "users": _bootstrap_state["users"],
         "error": _bootstrap_state["error"],
         "log": _bootstrap_state["log"][-20:],
+    }
+
+
+
+# ─── Auto-Delta Endpoints ────────────────────────────────────────────────────
+
+@router.post("/auto-delta/start")
+async def start_auto_delta(
+    interval: int = Query(15, description="Minutes between delta runs"),
+    network: str = Query("btc-testnet"),
+):
+    """Start the auto-delta scheduler. Runs vacuum → delta on interval. Skips if 0 new roots."""
+    if _auto_delta_state["enabled"]:
+        return {"error": "Auto-delta already running", "state": _get_auto_delta_status()}
+
+    _auto_delta_state["enabled"] = True
+    _auto_delta_state["interval_minutes"] = max(5, min(interval, 1440))  # 5 min to 24 hr
+    _auto_delta_state["network"] = network
+    _auto_delta_state["_task"] = asyncio.create_task(_auto_delta_loop())
+    return {"started": True, **_get_auto_delta_status()}
+
+
+@router.post("/auto-delta/stop")
+async def stop_auto_delta():
+    """Stop the auto-delta scheduler."""
+    _auto_delta_state["enabled"] = False
+    task = _auto_delta_state.get("_task")
+    if task and not task.done():
+        task.cancel()
+    _auto_delta_state["_task"] = None
+    _adlog("Stopped by user")
+    return {"stopped": True, **_get_auto_delta_status()}
+
+
+@router.get("/auto-delta/status")
+async def auto_delta_status():
+    """Get auto-delta scheduler state."""
+    return _get_auto_delta_status()
+
+
+def _get_auto_delta_status():
+    s = _auto_delta_state
+    return {
+        "enabled": s["enabled"],
+        "interval_minutes": s["interval_minutes"],
+        "network": s["network"],
+        "running": s["running"],
+        "last_run": s["last_run"],
+        "last_result": s["last_result"],
+        "runs_total": s["runs_total"],
+        "runs_skipped": s["runs_skipped"],
+        "runs_success": s["runs_success"],
+        "log": s["log"][-20:],
     }
