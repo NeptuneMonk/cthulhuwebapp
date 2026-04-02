@@ -1519,7 +1519,7 @@ export default function SingleObjectPage({ network, lookupByAddress }) {
                           </span>
                         )}
                       </div>
-                      <span className="text-sm text-gray-400 font-mono">{owner.quantity.toLocaleString()} units</span>
+                      <span className="text-sm text-gray-400 font-mono">{(owner.quantity ?? 0).toLocaleString()} units</span>
                     </div>
                   );
                 })}
@@ -1571,7 +1571,7 @@ export default function SingleObjectPage({ network, lookupByAddress }) {
                   </p>
                   {(object.listings || []).length > 0 && (
                     <p className="text-xs text-gray-500 mb-6">
-                      {object.listings[0].quantity.toLocaleString()} available from{' '}
+                      {(object.listings[0].quantity ?? 0).toLocaleString()} available from{' '}
                       <AddressLabel address={object.listings[0].owner} network={network} className="text-xs" />
                     </p>
                   )}
@@ -1658,12 +1658,12 @@ export default function SingleObjectPage({ network, lookupByAddress }) {
               <div className="space-y-3 text-sm">
                 <div className="flex justify-between">
                   <span className="text-gray-500">Supply</span>
-                  <span className="text-gray-200 font-mono">{object.total_supply.toLocaleString()}</span>
+                  <span className="text-gray-200 font-mono">{(object.total_supply ?? 0).toLocaleString()}</span>
                 </div>
                 {object.maximum > 0 && (
                   <div className="flex justify-between">
                     <span className="text-gray-500">Max Supply</span>
-                    <span className="text-gray-200 font-mono">{object.maximum.toLocaleString()}</span>
+                    <span className="text-gray-200 font-mono">{(object.maximum ?? 0).toLocaleString()}</span>
                   </div>
                 )}
                 <div className="flex justify-between">
@@ -1819,7 +1819,7 @@ export default function SingleObjectPage({ network, lookupByAddress }) {
                         <span className="text-sm text-gray-300 font-semibold">
                           {l.price === 0 ? 'FREE' : `${l.price} BTC`}
                         </span>
-                        <span className="text-xs text-gray-500">{l.quantity.toLocaleString()} available</span>
+                        <span className="text-xs text-gray-500">{(l.quantity ?? 0).toLocaleString()} available</span>
                       </div>
                       <div className="text-xs text-gray-500">
                         Seller: <AddressLabel address={l.owner} network={network} className="text-xs" />
