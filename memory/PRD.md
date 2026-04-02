@@ -95,9 +95,7 @@ Build a modern, responsive frontend for a blockchain-based social media platform
 
 ## Backlog
 ### P1
-- Unofficial URN Claim Detection & Tagging (earliest creation date = official, later claims tagged "NOT OFFICIAL" with "see official @urn" link, @mentions reroute to official)
 - Ownership Cascade Transfers
-- Tauri desktop app packaging
 
 ### P2
 - Scheduled automatic snapshot production
@@ -168,6 +166,21 @@ Build a modern, responsive frontend for a blockchain-based social media platform
 - Admin endpoints: POST /api/snapshot/auto-delta/start, stop, GET status
 - Admin UI: "Auto-Delta Indexer" section with start/stop, interval, stats, live log
 ## Key Files
+
+#### Storefront: "All" Default Filter (DONE — April 2, 2026)
+- Replaced hardcoded "Featured"/"embii" search with "All" (empty search string)
+- Objects load chronologically on initial load
+- Chain filters (BTC/LTC/DOG/MZC/IPFS) maintained with strict `_blockchain` field validation
+
+#### Impersonation Protection (DONE — April 2, 2026)
+- `GET /api/urn/verify/{urn}` endpoint: finds all addresses claiming a URN, resolves `CreatedDate`, returns official (earliest) claimant
+- ProfileDetailPage: "NOT OFFICIAL" red badge appears for impersonators, clickable link to official profile
+- Single claimants correctly show no badge
+
+#### Tauri Desktop Packaging Prep (DONE — April 2, 2026)
+- Created `/app/src-tauri/` project skeleton: `tauri.conf.json`, `Cargo.toml`, `src/main.rs`, `build.rs`, `capabilities/default.json`
+- Rust host spawns Python API (PyInstaller sidecar) + Kubo IPFS daemon as child processes
+- Created `/app/TAURI_PACKAGING.md` step-by-step guide for building platform-specific installers
 - `/app/backend/routes/snapshot.py` — Vacuum, produce (full+delta), consume, hydrate-feed, auto-bootstrap, bootstrap-status, latest-cid
 - `/app/backend/p2fk_decoder.py` — P2FK Root decoder
 - `/app/backend/blockchain_api.py` — Async blockchain explorer client
