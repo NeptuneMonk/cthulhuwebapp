@@ -388,22 +388,33 @@ async def _produce_snapshot(network: str = "btc-testnet", delta: bool = False) -
                 (cid, 0, network, snap_type, len(unique_roots), size_bytes, previous_cid, datetime.now(timezone.utc).isoformat()),
             )
 
-            # For full snapshots, update the txid tracking table
+            # Get the snapshot_id we just inserted
+            cursor = await conn.execute("SELECT last_insert_rowid()")
+            snap_id_row = await cursor.fetchone()
+            snap_id_val = snap_id_row[0] if snap_id_row else 0
+
             if not delta:
+                # Full snapshot: replace all tracked txids for this chain
                 await conn.execute("DELETE FROM snapshot_txids WHERE chain = ?", (network,))
-                # Gather ALL txids (including ones from previous snapshots)
                 all_txids = set()
                 for r in roots:
                     txid = r.get("TransactionId", "") if isinstance(r, dict) else ""
                     if txid:
                         all_txids.add(txid)
-                snap_id = (await conn.execute("SELECT last_insert_rowid()")).fetchone()
-                snap_id_val = snap_id[0] if snap_id else 0
                 for txid in all_txids:
                     await conn.execute(
                         "INSERT OR IGNORE INTO snapshot_txids (txid, chain, snapshot_id) VALUES (?, ?, ?)",
                         (txid, network, snap_id_val),
                     )
+            else:
+                # Delta snapshot: add the NEW txids so future deltas skip them
+                for r in unique_roots:
+                    txid = r.get("TransactionId", "") if isinstance(r, dict) else ""
+                    if txid:
+                        await conn.execute(
+                            "INSERT OR IGNORE INTO snapshot_txids (txid, chain, snapshot_id) VALUES (?, ?, ?)",
+                            (txid, network, snap_id_val),
+                        )
 
             await conn.commit()
 
@@ -542,6 +553,10 @@ async def vacuum_status():
     async with conn.execute("SELECT COUNT(*) FROM api_cache WHERE _id LIKE 'p2fk:%'") as cursor:
         cache_count = (await cursor.fetchone())[0]
 
+    # Tracked txids for delta computation
+    async with conn.execute("SELECT COUNT(*) FROM snapshot_txids") as cursor:
+        tracked_txids = (await cursor.fetchone())[0]
+
     return {
         "vacuum": {
             "running": _vacuum_state["running"],
@@ -555,6 +570,7 @@ async def vacuum_status():
         },
         "cache": {
             "p2fk_entries": cache_count,
+            "tracked_txids": tracked_txids,
         },
         "snapshots": snapshots,
     }
@@ -686,3 +702,134 @@ async def get_latest_snapshot_cid(network: str = Query("btc-testnet")):
         "ipfs_url": f"https://ipfs.io/ipfs/{row[0]}",
     }
 
+
+
+# ─── Auto-Bootstrap: Background task ─────────────────────────────────────────
+
+_bootstrap_state = {
+    "running": False,
+    "phase": "idle",
+    "progress": 0,
+    "total": 0,
+    "imported": 0,
+    "users": 0,
+    "error": None,
+    "log": [],
+}
+
+
+def _blog(msg: str):
+    """Append to bootstrap log."""
+    _bootstrap_state["log"].append(f"[{datetime.now(timezone.utc).strftime('%H:%M:%S')}] {msg}")
+    if len(_bootstrap_state["log"]) > 50:
+        del _bootstrap_state["log"][:25]
+    logger.info(f"Bootstrap: {msg}")
+
+
+async def _run_bootstrap(network: str, start_cid: str):
+    """Background task: walk the IPFS snapshot chain and hydrate local cache."""
+    _bootstrap_state.update({
+        "running": True, "phase": "resolving_chain", "progress": 0, "total": 0,
+        "imported": 0, "users": 0, "error": None, "log": [],
+    })
+
+    try:
+        conn = await get_conn()
+
+        # Walk the daisy-chain: collect all CIDs newest → oldest
+        chain_cids = []
+        current_cid = start_cid
+        max_depth = 50
+
+        while current_cid and len(chain_cids) < max_depth:
+            chain_cids.append(current_cid)
+            _blog(f"Chain link {len(chain_cids)}: {current_cid[:20]}...")
+
+            async with conn.execute(
+                "SELECT previous_cid FROM snapshots WHERE cid = ? AND chain = ?", (current_cid, network)
+            ) as cursor:
+                row = await cursor.fetchone()
+
+            if row is not None:
+                # We have this snapshot's metadata locally
+                if row[0]:
+                    current_cid = row[0]  # Follow the chain
+                else:
+                    break  # End of chain (no previous_cid)
+            else:
+                # Unknown snapshot — try consuming to discover previous_cid
+                try:
+                    result = await _consume_snapshot(current_cid, network)
+                    if result.get("previous_cid"):
+                        current_cid = result["previous_cid"]
+                    else:
+                        break
+                except Exception:
+                    break
+
+        chain_cids.reverse()  # Chronological order (oldest first)
+        _bootstrap_state["total"] = len(chain_cids)
+        _bootstrap_state["phase"] = "consuming"
+        _blog(f"Resolved chain of {len(chain_cids)} snapshots. Consuming...")
+
+        for i, snapshot_cid in enumerate(chain_cids):
+            _bootstrap_state["progress"] = i + 1
+            _blog(f"Consuming {i+1}/{len(chain_cids)}: {snapshot_cid[:20]}...")
+            result = await _consume_snapshot(snapshot_cid, network)
+            _bootstrap_state["imported"] += result.get("imported", 0)
+            _bootstrap_state["users"] += result.get("users_registered", 0)
+            if result.get("error"):
+                _blog(f"  Warning: {result['error']}")
+
+        _blog(f"Bootstrap complete. {_bootstrap_state['imported']} entries, {_bootstrap_state['users']} users.")
+        _bootstrap_state["phase"] = "complete"
+    except Exception as e:
+        _bootstrap_state["error"] = str(e)
+        _bootstrap_state["phase"] = "error"
+        _blog(f"Bootstrap error: {e}")
+    finally:
+        _bootstrap_state["running"] = False
+
+
+@router.post("/auto-bootstrap")
+async def auto_bootstrap(
+    background_tasks: BackgroundTasks,
+    network: str = Query("btc-testnet"),
+    cid: Optional[str] = Query(None, description="Specific CID to bootstrap from. If omitted, uses latest local snapshot."),
+):
+    """Start auto-bootstrap as a background task."""
+    if _bootstrap_state["running"]:
+        return {"error": "Bootstrap already running", "phase": _bootstrap_state["phase"]}
+
+    await _ensure_snapshot_table()
+    conn = await get_conn()
+
+    start_cid = cid
+    if not start_cid:
+        async with conn.execute(
+            "SELECT cid FROM snapshots WHERE chain = ? ORDER BY id DESC LIMIT 1", (network,)
+        ) as cursor:
+            row = await cursor.fetchone()
+        if row:
+            start_cid = row[0]
+
+    if not start_cid:
+        return {"error": "No snapshot CID available. Produce a snapshot first or provide a CID."}
+
+    background_tasks.add_task(_run_bootstrap, network, start_cid)
+    return {"started": True, "network": network, "start_cid": start_cid}
+
+
+@router.get("/bootstrap-status")
+async def bootstrap_status():
+    """Get current bootstrap progress."""
+    return {
+        "running": _bootstrap_state["running"],
+        "phase": _bootstrap_state["phase"],
+        "progress": _bootstrap_state["progress"],
+        "total": _bootstrap_state["total"],
+        "imported": _bootstrap_state["imported"],
+        "users": _bootstrap_state["users"],
+        "error": _bootstrap_state["error"],
+        "log": _bootstrap_state["log"][-20:],
+    }

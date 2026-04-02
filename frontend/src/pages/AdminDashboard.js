@@ -1118,9 +1118,12 @@ function SnapshotPanel({ network }) {
   const [loading, setLoading] = useState(true);
   const [vacuumStarting, setVacuumStarting] = useState(false);
   const [producing, setProducing] = useState(false);
+  const [isDelta, setIsDelta] = useState(false);
   const [consumeCid, setConsumeCid] = useState('');
   const [consuming, setConsuming] = useState(false);
   const [consumeResult, setConsumeResult] = useState(null);
+  const [bootstrapping, setBootstrapping] = useState(false);
+  const [bootstrapResult, setBootstrapResult] = useState(null);
 
   const fetchStatus = useCallback(async () => {
     try {
@@ -1148,11 +1151,11 @@ function SnapshotPanel({ network }) {
   const produceSnapshot = async () => {
     setProducing(true);
     try {
-      const res = await fetch(`${ROOT_API}/snapshot/produce?network=${network}`, { method: 'POST' });
+      const res = await fetch(`${ROOT_API}/snapshot/produce?network=${network}&delta=${isDelta}`, { method: 'POST' });
       if (res.ok) {
         const data = await safeJson(res);
         if (data.cid) {
-          alert(`Snapshot pinned!\n\nCID: ${data.cid}\nSize: ${data.size_human}\nRoots: ${data.total_roots}\nProfiles: ${data.total_profiles}`);
+          alert(`${data.type === 'delta' ? 'Delta' : 'Full'} snapshot pinned!\n\nCID: ${data.cid}\nSize: ${data.size_human}\nRoots: ${data.total_roots}\nType: ${data.type}`);
           fetchStatus();
         } else {
           alert(`Snapshot failed: ${data.error || 'Unknown error'}`);
@@ -1160,6 +1163,49 @@ function SnapshotPanel({ network }) {
       }
     } catch (e) { alert(`Error: ${e.message}`); }
     setProducing(false);
+  };
+
+  const autoBootstrap = async () => {
+    setBootstrapping(true);
+    setBootstrapResult(null);
+    try {
+      const res = await fetch(`${ROOT_API}/snapshot/auto-bootstrap?network=${network}`, { method: 'POST' });
+      if (res.ok) {
+        const data = await safeJson(res);
+        if (data.started) {
+          setBootstrapResult({ message: 'Bootstrap started. Polling progress...' });
+          // Poll bootstrap status
+          const pollIv = setInterval(async () => {
+            try {
+              const sr = await fetch(`${ROOT_API}/snapshot/bootstrap-status`);
+              if (sr.ok) {
+                const st = await safeJson(sr);
+                if (!st.running && st.phase !== 'idle') {
+                  clearInterval(pollIv);
+                  setBootstrapping(false);
+                  setBootstrapResult(st.error
+                    ? { error: st.error }
+                    : { message: `Complete: ${st.imported} entries imported, ${st.users} users registered.`, log: st.log }
+                  );
+                  fetchStatus();
+                } else {
+                  setBootstrapResult({ message: `${st.phase}: ${st.progress}/${st.total} snapshots...`, log: st.log });
+                }
+              }
+            } catch {}
+          }, 2000);
+        } else {
+          setBootstrapResult(data);
+          setBootstrapping(false);
+        }
+      } else {
+        setBootstrapResult({ error: `HTTP ${res.status}` });
+        setBootstrapping(false);
+      }
+    } catch (e) {
+      setBootstrapResult({ error: e.message });
+      setBootstrapping(false);
+    }
   };
 
   const consumeSnapshot = async () => {
@@ -1188,7 +1234,7 @@ function SnapshotPanel({ network }) {
         <p className="text-xs text-gray-500 mb-4">
           Vacuum p2fk.io into your local cache, then snapshot it to IPFS. Any Cthulhu node can bootstrap from a snapshot CID — zero dependency on p2fk.io.
         </p>
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-4 gap-3">
           <div className="bg-gray-800/50 rounded-lg p-3">
             <p className="text-[10px] text-gray-500">Cached P2FK Entries</p>
             <p className="text-xl font-bold text-cyan-400">{cache?.p2fk_entries?.toLocaleString() || 0}</p>
@@ -1196,6 +1242,10 @@ function SnapshotPanel({ network }) {
           <div className="bg-gray-800/50 rounded-lg p-3">
             <p className="text-[10px] text-gray-500">Snapshots Produced</p>
             <p className="text-xl font-bold text-emerald-400">{snapshots.length}</p>
+          </div>
+          <div className="bg-gray-800/50 rounded-lg p-3">
+            <p className="text-[10px] text-gray-500">Tracked TXIDs</p>
+            <p className="text-xl font-bold text-amber-400">{cache?.tracked_txids?.toLocaleString() || 0}</p>
           </div>
           <div className="bg-gray-800/50 rounded-lg p-3">
             <p className="text-[10px] text-gray-500">Network</p>
@@ -1268,16 +1318,66 @@ function SnapshotPanel({ network }) {
             <h3 className="text-sm font-bold text-gray-200">Produce Snapshot</h3>
             <p className="text-[10px] text-gray-500">Serialize current cache → compress → pin to IPFS. Creates a daisy-chained CID.</p>
           </div>
+          <div className="flex items-center gap-3">
+            <label className="flex items-center gap-2 cursor-pointer" data-testid="delta-toggle">
+              <span className="text-[10px] text-gray-500">Delta</span>
+              <div
+                onClick={() => setIsDelta(!isDelta)}
+                className={`w-8 h-4 rounded-full relative transition-colors cursor-pointer ${isDelta ? 'bg-amber-500' : 'bg-gray-700'}`}
+              >
+                <div className={`absolute top-0.5 w-3 h-3 rounded-full bg-white transition-transform ${isDelta ? 'translate-x-4' : 'translate-x-0.5'}`} />
+              </div>
+            </label>
+            <button
+              onClick={produceSnapshot}
+              disabled={producing || (cache?.p2fk_entries || 0) === 0}
+              className={`flex items-center gap-2 px-4 py-2 ${isDelta ? 'bg-amber-600 hover:bg-amber-500' : 'bg-emerald-600 hover:bg-emerald-500'} text-white rounded-lg text-xs font-medium disabled:opacity-40 transition-colors`}
+              data-testid="produce-snapshot-btn"
+            >
+              <FiUpload size={12} />
+              {producing ? 'Producing...' : isDelta ? 'Delta Snapshot' : 'Full Snapshot'}
+            </button>
+          </div>
+        </div>
+        {isDelta && (
+          <div className="mt-2 bg-amber-900/10 border border-amber-700/20 rounded-lg px-3 py-2">
+            <p className="text-[10px] text-amber-400/80">Delta mode: only new roots since the last snapshot will be included. {cache?.tracked_txids || 0} txids already tracked.</p>
+          </div>
+        )}
+      </div>
+
+      {/* Auto-Bootstrap */}
+      <div className="bg-gray-900/60 border border-gray-800 rounded-xl p-5">
+        <div className="flex items-center justify-between mb-2">
+          <div>
+            <h3 className="text-sm font-bold text-gray-200">Auto-Bootstrap</h3>
+            <p className="text-[10px] text-gray-500">Walk the IPFS snapshot daisy-chain and hydrate all cached data into this node.</p>
+          </div>
           <button
-            onClick={produceSnapshot}
-            disabled={producing || (cache?.p2fk_entries || 0) === 0}
-            className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-medium disabled:opacity-40 transition-colors"
-            data-testid="produce-snapshot-btn"
+            onClick={autoBootstrap}
+            disabled={bootstrapping || snapshots.length === 0}
+            className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-lg text-xs font-medium disabled:opacity-40 transition-colors"
+            data-testid="auto-bootstrap-btn"
           >
-            <FiUpload size={12} />
-            {producing ? 'Producing...' : 'Produce & Pin'}
+            <FiDownload size={12} />
+            {bootstrapping ? 'Bootstrapping...' : 'Bootstrap from Chain'}
           </button>
         </div>
+        {bootstrapResult && (
+          <div className={`mt-2 p-3 rounded-lg text-xs ${bootstrapResult.error ? 'bg-red-900/20 text-red-400' : 'bg-emerald-900/20 text-emerald-400'}`}>
+            {bootstrapResult.error
+              ? `Error: ${bootstrapResult.error}`
+              : bootstrapResult.message
+            }
+            {bootstrapResult.log?.length > 0 && (
+              <div className="mt-2 bg-gray-950 border border-gray-800/50 rounded p-2 max-h-24 overflow-y-auto font-mono text-[10px] text-gray-500 space-y-0.5">
+                {bootstrapResult.log.slice(-10).map((line, i) => (
+                  <div key={i}>{line}</div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Consume Snapshot */}
@@ -1330,12 +1430,17 @@ function SnapshotPanel({ network }) {
               <div key={i} className="flex items-start gap-3">
                 {/* Chain connector */}
                 <div className="flex flex-col items-center pt-1">
-                  <div className="w-3 h-3 rounded-full bg-emerald-500 border-2 border-emerald-300/30" />
+                  <div className={`w-3 h-3 rounded-full border-2 ${s.type === 'delta' ? 'bg-amber-500 border-amber-300/30' : 'bg-emerald-500 border-emerald-300/30'}`} />
                   {i < snapshots.length - 1 && <div className="w-0.5 h-8 bg-gray-700 mt-0.5" />}
                 </div>
                 <div className="flex-1 bg-gray-800/40 rounded-lg p-3">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-mono text-emerald-400 truncate max-w-[250px]" title={s.cid}>{s.cid}</span>
+                    <div className="flex items-center gap-2">
+                      <span className={`text-[9px] px-1.5 py-0.5 rounded font-medium ${s.type === 'delta' ? 'bg-amber-900/30 text-amber-400' : 'bg-emerald-900/30 text-emerald-400'}`}>
+                        {s.type || 'full'}
+                      </span>
+                      <span className="text-xs font-mono text-emerald-400 truncate max-w-[220px]" title={s.cid}>{s.cid}</span>
+                    </div>
                     <button
                       onClick={() => { navigator.clipboard.writeText(s.cid); }}
                       className="text-gray-600 hover:text-gray-300 p-1"
