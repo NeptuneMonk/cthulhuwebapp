@@ -133,7 +133,13 @@ Build a modern, responsive frontend for a blockchain-based social media platform
 - Featured (embii) has no chain match — shows all results as before
 - BTC/LTC/DOG/MZC/IPFS filters now strictly validate the `_blockchain` field
 
-#### BlockList Crash Fix (DONE)
+#### Proactive IPFS Pinning for Feed Posts (DONE — April 2, 2026)
+- Root cause of lost images: IPFS content was never pinned when posts were viewed. Public gateways GC'd the content and it was lost forever.
+- `_proactive_pin_feed_cids()` in `data.py`: extracts ALL IPFS CIDs from feed messages (post images, profile pics, file attachments) and pins them to local Kubo
+- Triggers on: feed page load (current page), background feed refresh (all messages), and feed built from scratch
+- Deduplicates pin requests to avoid hammering Kubo
+- Result: node went from 1 pin (default) to 33+ pins after a single feed load
+- This ensures our node has a local copy of all content it has ever seen — true "pinning node" behavior
 - Fixed `ReferenceError: blockList is not defined` in `AppLayout`
 - Added `useBlockList(network)` hook to `AppLayout` function
 - Changed `blockUser={blockUser} isBlocked={isBlocked}` to `blockUser={blockList.blockUser} isBlocked={blockList.isBlocked}` on ProfileDetailPage route

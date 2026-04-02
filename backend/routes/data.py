@@ -18,6 +18,62 @@ from utils.helpers import (
 from utils.p2fk import txid_to_reply_address, derive_address_from_pkxy
 
 logger = logging.getLogger(__name__)
+import re as _re
+
+# ─── Proactive IPFS Pinning ───
+# When feed posts are loaded, extract all IPFS CIDs and pin them
+# so this node acts as a pinning node for viewed content.
+
+_pinning_in_progress = set()  # Avoid duplicate pin requests
+
+async def _proactive_pin_feed_cids(messages: list):
+    """Extract all IPFS CIDs from feed messages and pin them to local Kubo.
+    This ensures our node has a copy of every image/file referenced in posts."""
+    cids_to_pin = set()
+    for msg in messages:
+        content = msg.get('content', '')
+        # Extract IPFS:CID from <<IPFS:CID/filename>> patterns
+        for match in _re.finditer(r'IPFS:([A-Za-z0-9]{46,})', content):
+            cids_to_pin.add(match.group(1))
+        # Extract from sender_image field (profile pics)
+        sender_img = msg.get('sender_image', '') or ''
+        for match in _re.finditer(r'IPFS:([A-Za-z0-9]{46,})', sender_img):
+            cids_to_pin.add(match.group(1))
+        # Extract from files dict keys
+        files = msg.get('files') or {}
+        for fname in files:
+            if fname.startswith('Qm') or fname.startswith('bafy'):
+                cids_to_pin.add(fname.split('/')[0])
+
+    # Deduplicate against in-progress pins
+    new_cids = cids_to_pin - _pinning_in_progress
+    if not new_cids:
+        return
+
+    _pinning_in_progress.update(new_cids)
+    logger.info(f"Proactive IPFS pin: queueing {len(new_cids)} CIDs from feed")
+
+    try:
+        from utils.http_pool import get_client
+        client = get_client()
+        for cid in new_cids:
+            try:
+                # First try to pin (if already in Kubo, this is instant)
+                resp = await client.post(
+                    f"http://127.0.0.1:5001/api/v0/pin/add?arg={cid}",
+                    timeout=120.0
+                )
+                if resp.status_code == 200:
+                    logger.info(f"Proactive pin OK: {cid[:20]}...")
+                else:
+                    logger.debug(f"Proactive pin skip {cid[:20]}: {resp.status_code}")
+            except Exception as e:
+                logger.debug(f"Proactive pin failed {cid[:20]}: {e}")
+            finally:
+                _pinning_in_progress.discard(cid)
+    except Exception as e:
+        logger.warning(f"Proactive pin batch error: {e}")
+        _pinning_in_progress.difference_update(new_cids)
 router = APIRouter(prefix="/api")
 
 # Import rate limiter from app
@@ -192,6 +248,8 @@ async def _refresh_feed_cache(network: str, is_mainnet: bool, cache_key: str):
             upsert=True
         )
         logger.info(f"Feed cache refreshed for {network}: {len(all_messages)} messages")
+        # Proactive IPFS pin: pin all CIDs from the refreshed feed
+        asyncio.create_task(_proactive_pin_feed_cids(all_messages))
     except Exception as e:
         logger.warning(f"Background feed refresh failed for {network}: {e}")
     finally:
@@ -373,6 +431,9 @@ async def get_feed(network: str, skip: int = 0, limit: int = 5, mode: str = 'glo
                 asyncio.create_task(_refresh_feed_cache(network, is_mainnet, f"feed:{network}"))
                 refreshing = True
 
+            # Proactive IPFS pin: pin all CIDs referenced in the feed page
+            asyncio.create_task(_proactive_pin_feed_cids(page))
+
             return {
                 "feed": page, "network": network, "count": len(page),
                 "total": total, "skip": skip, "limit": limit,
@@ -401,6 +462,10 @@ async def get_feed(network: str, skip: int = 0, limit: int = 5, mode: str = 'glo
 
         total = len(all_messages)
         page = all_messages[skip:skip + limit]
+
+        # Proactive IPFS pin for freshly built feed
+        asyncio.create_task(_proactive_pin_feed_cids(page))
+
         return {
             "feed": page, "network": network, "count": len(page),
             "total": total, "skip": skip, "limit": limit,
