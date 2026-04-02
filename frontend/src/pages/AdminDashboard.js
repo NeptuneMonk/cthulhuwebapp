@@ -1504,11 +1504,13 @@ function DecoderHealthPanel() {
     p2fk_io: { text: 'text-red-400', bg: 'bg-red-900/20', label: 'p2fk.io' },
     cache_fresh: { text: 'text-cyan-400', bg: 'bg-cyan-900/20', label: 'Fresh Cache' },
     cache_stale: { text: 'text-amber-400', bg: 'bg-amber-900/20', label: 'Stale Cache' },
+    ipfs_snapshot: { text: 'text-purple-400', bg: 'bg-purple-900/20', label: 'IPFS Snapshot' },
   };
 
   // Calculate bar widths for independence meter
   const localPct = sources?.local_decoder ? (sources.local_decoder.total / Math.max(1, total_requests) * 100) : 0;
   const cachePct = sources ? ((sources.cache_fresh?.total || 0) + (sources.cache_stale?.total || 0)) / Math.max(1, total_requests) * 100 : 0;
+  const snapshotPct = sources?.ipfs_snapshot ? (sources.ipfs_snapshot.total / Math.max(1, total_requests) * 100) : 0;
   const p2fkPct = sources?.p2fk_io ? (sources.p2fk_io.total / Math.max(1, total_requests) * 100) : 0;
 
   return (
@@ -1530,11 +1532,13 @@ function DecoderHealthPanel() {
         {/* Source distribution bar */}
         <div className="h-3 rounded-full bg-gray-800 overflow-hidden flex">
           {localPct > 0 && <div className="bg-emerald-500 transition-all" style={{ width: `${localPct}%` }} title={`Local: ${localPct.toFixed(1)}%`} />}
+          {snapshotPct > 0 && <div className="bg-purple-500 transition-all" style={{ width: `${snapshotPct}%` }} title={`IPFS Snapshot: ${snapshotPct.toFixed(1)}%`} />}
           {cachePct > 0 && <div className="bg-cyan-500 transition-all" style={{ width: `${cachePct}%` }} title={`Cache: ${cachePct.toFixed(1)}%`} />}
           {p2fkPct > 0 && <div className="bg-red-500 transition-all" style={{ width: `${p2fkPct}%` }} title={`p2fk.io: ${p2fkPct.toFixed(1)}%`} />}
         </div>
         <div className="flex gap-4 mt-2 text-[10px]">
           <span className="text-emerald-400">Local Decoder</span>
+          <span className="text-purple-400">IPFS Snapshot</span>
           <span className="text-cyan-400">Cache</span>
           <span className="text-red-400">p2fk.io</span>
         </div>
@@ -1562,7 +1566,7 @@ function DecoderHealthPanel() {
       {/* Source Breakdown */}
       <div>
         <h3 className="text-sm font-bold text-gray-200 mb-3">Source Breakdown</h3>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
           {Object.entries(sourceColors).map(([key, cfg]) => {
             const s = sources?.[key] || { total: 0, success: 0, fail: 0, success_rate: 0, avg_ms: 0 };
             return (

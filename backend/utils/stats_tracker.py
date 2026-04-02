@@ -22,6 +22,7 @@ _decoder_stats = {
     "p2fk_io": {"success": 0, "fail": 0, "total_ms": 0},
     "cache_fresh": {"success": 0, "fail": 0, "total_ms": 0},
     "cache_stale": {"success": 0, "fail": 0, "total_ms": 0},
+    "ipfs_snapshot": {"success": 0, "fail": 0, "total_ms": 0},
 }
 _decoder_path_sources = defaultdict(lambda: defaultdict(int))  # { path_prefix: { source: count } }
 _decoder_recent = []  # Last 50 decoder events: [{ path, source, ms, ts }, ...]
@@ -133,6 +134,7 @@ def get_decoder_stats():
     p2fk_total = _decoder_stats["p2fk_io"]["success"] + _decoder_stats["p2fk_io"]["fail"]
 
     # Independence score: % of requests served without p2fk.io
+    # local_decoder, cache_fresh, cache_stale, and ipfs_snapshot all count as independent
     non_p2fk = total_decoder - p2fk_total
     independence = round(non_p2fk / max(1, total_decoder) * 100, 1)
 

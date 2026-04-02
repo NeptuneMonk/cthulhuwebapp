@@ -65,6 +65,18 @@ Build a modern, responsive frontend for a blockchain-based social media platform
 - **Backend**: `GET /api/feed/{network}?mode=following&followed=addr1,addr2,...` filters to only followed addresses' posts
 - **Empty states**: Distinct messages for "no follows yet" vs "no posts from followed"
 
+### Poll System Refactor — On-Chain Source of Truth (DONE — April 2, 2026)
+- **Vote counts**: Now sourced from on-chain data via `GetInquiryByTransactionID` (p2fk.io indexer). Local DB no longer increments fake counters.
+- **Local registry**: Demoted to speed cache only. Used for instant feed visibility of unconfirmed polls and "already voted" detection.
+- **PollCard**: Fetches live on-chain data on mount, merges with local vote records for optimistic UX.
+- **Architecture principle**: "The blockchain is the database. IPFS is the file system. Our server is just a read cache."
+- **Local-only data** (acknowledged): follow lists, favorites, playlists, audience chats — these are user preferences, not protocol data.
+
+### IPFS Snapshot in Dependency Gauge (DONE — April 2, 2026)
+- Added `ipfs_snapshot` as 5th tracked source in decoder health stats (purple in bar chart)
+- Snapshot hydration imports are now tracked in the independence score (counts as independent from p2fk.io)
+- Source breakdown grid expanded to 5 columns: Local Decoder, IPFS Snapshot, Fresh Cache, Stale Cache, p2fk.io
+
 ### Storefront Speed Optimization (DONE — April 2, 2026)
 - Objects page now uses `cachedFetch` (stale-while-revalidate) for all search results
 - 5-minute TTL with background refresh — instant loads on back-navigation (0.06s vs 2-3s)

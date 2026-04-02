@@ -18,16 +18,35 @@ export default function PollCard({ poll, network, onVoted }) {
 
   const [voting, setVoting] = useState(null);
   const [votedFor, setVotedFor] = useState(null);
+  const [livePoll, setLivePoll] = useState(null);
 
-  const isGated = (poll.own_gate?.length > 0 || poll.cre_gate?.length > 0);
-  const isClosed = poll.status === 'closed';
-  const isPending = poll.status === 'mempool';
+  // Use livePoll (from p2fk.io) if available, otherwise use prop data
+  const activePoll = livePoll || poll;
+
+  const isGated = (activePoll.own_gate?.length > 0 || activePoll.cre_gate?.length > 0);
+  const isClosed = activePoll.status === 'closed';
+  const isPending = activePoll.status === 'mempool';
+
+  // Fetch fresh on-chain vote data from p2fk.io
+  useEffect(() => {
+    if (!poll.txid || isPending) return;
+    let cancelled = false;
+    fetch(`${API}/polls/by-txid/${poll.txid}?network=${network}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(d => {
+        if (!cancelled && d && d.question && !d.error) {
+          setLivePoll(d);
+        }
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [poll.txid, network, isPending]);
 
   // On mount, check if user already voted (from poll_data.votes or API)
   useEffect(() => {
     if (!myAddress || !poll.txid) return;
     // Check votes map embedded in poll data first
-    const existingVote = (poll.votes || {})[myAddress];
+    const existingVote = (activePoll.votes || {})[myAddress];
     if (existingVote) {
       setVotedFor(existingVote);
       return;
@@ -37,12 +56,11 @@ export default function PollCard({ poll, network, onVoted }) {
       .then(r => r.ok ? r.json() : null)
       .then(d => { if (d?.voted_for) setVotedFor(d.voted_for); })
       .catch(() => {});
-  }, [myAddress, poll.txid, poll.votes]);
+  }, [myAddress, poll.txid, activePoll.votes]);
 
-  // Compute display data — use poll's persisted counts (no optimistic needed if backend updates)
+  // Compute display data — use on-chain counts when available
   const { answers, totalVotes } = useMemo(() => {
-    // poll.answers may be an array or a dict {address: answer_text} — normalize to array
-    let rawAnswers = poll.answers || [];
+    let rawAnswers = activePoll.answers || [];
     if (!Array.isArray(rawAnswers)) {
       rawAnswers = Object.entries(rawAnswers).map(([addr, text]) => ({
         address: addr,
@@ -52,10 +70,10 @@ export default function PollCard({ poll, network, onVoted }) {
       }));
     }
     const base = rawAnswers.map(a => ({ ...a }));
-    let total = poll.total_votes || base.reduce((s, a) => s + (a.total_votes || 0), 0);
+    let total = activePoll.total_votes || base.reduce((s, a) => s + (a.total_votes || 0), 0);
 
     // If we just voted locally but the data hasn't refreshed yet, apply optimistic +1
-    if (votedFor && !(poll.votes || {})[myAddress]) {
+    if (votedFor && !(activePoll.votes || {})[myAddress]) {
       const voted = base.find(a => a.address === votedFor);
       if (voted) {
         voted.total_votes = (voted.total_votes || 0) + 1;
@@ -63,7 +81,7 @@ export default function PollCard({ poll, network, onVoted }) {
       }
     }
     return { answers: base, totalVotes: total };
-  }, [poll.answers, poll.total_votes, poll.votes, votedFor, myAddress]);
+  }, [activePoll.answers, activePoll.total_votes, activePoll.votes, votedFor, myAddress]);
 
   const handleVote = useCallback(async (answerAddress) => {
     if (!activeWif || voting || votedFor || isClosed || isPending) return;

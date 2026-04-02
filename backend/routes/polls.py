@@ -35,7 +35,12 @@ class PollVoteRequest(BaseModel):
 
 @router.post("/polls/register")
 async def register_poll(req: PollRegisterRequest):
-    """Register a newly created poll so it appears in the feed."""
+    """Register a newly created poll for instant feed visibility (speed cache).
+    
+    The poll transaction is on-chain — this local record exists ONLY so the
+    feed can display the poll immediately before the indexer has caught up.
+    Once confirmed, on-chain data from GetInquiryByTransactionID takes precedence.
+    """
     await poll_registry_col.update_one(
         {'txid': req.txid},
         {'$set': {
@@ -112,32 +117,18 @@ async def register_poll(req: PollRegisterRequest):
 
 @router.post("/polls/vote")
 async def record_vote(req: PollVoteRequest):
-    """Record a vote locally after on-chain broadcast."""
-    # Store vote: votes.{voter_address} = answer_address
-    # Also increment the answer's total_votes
-    poll = await poll_registry_col.find_one({'txid': req.txid}, {'_id': 0})
-    if not poll:
-        return {"error": "Poll not found"}
-
-    # Update votes map
+    """Record a vote locally for 'already voted' detection only.
+    
+    The ACTUAL vote is the on-chain transaction (broadcast by the client).
+    This endpoint is a local cache — vote COUNTS come from the chain via
+    GetInquiryByTransactionID, not from this registry.
+    """
+    # Store only which answer the voter chose (for dedup / "you already voted" UI)
     await poll_registry_col.update_one(
         {'txid': req.txid},
-        {'$set': {f'votes.{req.voter_address}': req.answer_address}}
+        {'$set': {f'votes.{req.voter_address}': req.answer_address}},
+        upsert=True,
     )
-
-    # Increment the matching answer's total_votes
-    answers = poll.get('answers', [])
-    for i, ans in enumerate(answers):
-        if ans.get('address') == req.answer_address:
-            await poll_registry_col.update_one(
-                {'txid': req.txid},
-                {'$inc': {
-                    f'answers.{i}.total_votes': 1,
-                    'total_votes': 1,
-                }}
-            )
-            break
-
     return {"ok": True}
 
 
@@ -176,17 +167,25 @@ async def get_poll_by_address(address: str, network: str = 'btc-testnet'):
 @router.get("/polls/by-txid/{txid}")
 async def get_poll_by_txid(txid: str, network: str = 'btc-testnet'):
     """Get a poll/inquiry by transaction ID.
-    Tries P2FK API first, falls back to local registry for unconfirmed polls."""
+    
+    Source of truth: on-chain data via GetInquiryByTransactionID.
+    Local registry is ONLY used as a fallback for unconfirmed (mempool) polls
+    before the indexer has seen them. Vote counts from the local registry are
+    NOT authoritative — only on-chain counts are.
+    """
     mainnet = _is_mainnet(network)
     data = await p2fk_get(f"GetInquiryByTransactionID/{txid}", mainnet)
     if data and isinstance(data, dict) and data.get("Question"):
-        return _format_poll(data)
+        formatted = _format_poll(data)
+        # Merge local "already voted" info for the current user
+        local = await poll_registry_col.find_one({'txid': txid}, {'_id': 0, 'votes': 1})
+        if local and local.get('votes'):
+            formatted['votes'] = local['votes']
+        return formatted
 
-    # P2FK returned no data (unconfirmed or indexer lag) — check local registry
+    # On-chain data unavailable (unconfirmed or indexer lag) — show local as pending
     local = await poll_registry_col.find_one({'txid': txid}, {'_id': 0})
     if local and local.get('question'):
-        # Check if the tx is actually confirmed on-chain even though the indexer
-        # hasn't processed it yet
         poll_status = "mempool"
         try:
             base = "https://mempool.space/api" if mainnet else "https://mempool.space/testnet/api"
@@ -202,17 +201,18 @@ async def get_poll_by_txid(txid: str, network: str = 'btc-testnet'):
             "answers": local.get('answers', []),
             "own_gate": local.get('own_gate', []),
             "cre_gate": local.get('cre_gate', []),
-            "total_votes": local.get('total_votes', 0),
-            "total_gated_votes": local.get('total_gated_votes', 0),
+            "total_votes": 0,  # No on-chain data yet — don't show fake counts
+            "total_gated_votes": 0,
             "votes": local.get('votes', {}),
             "status": poll_status,
             "require_signature": True,
             "created_by": local.get('creator_address'),
             "created_date": local.get('created_at'),
+            "source": "local_cache",
         }
 
     # Nothing found
-    if data and isinstance(data, dict):
+    if data and isinstance(data, dict) and data.get("Question"):
         return _format_poll(data)
     return {"error": "Poll not found or API unavailable"}
 
@@ -253,7 +253,11 @@ async def search_polls(q: str = Query(..., min_length=1), network: str = 'btc-te
 
 
 def _format_poll(data: dict) -> dict:
-    """Normalize P2FK INQState into a clean JSON response."""
+    """Normalize P2FK INQState into a clean JSON response.
+    
+    Vote counts here come directly from the on-chain indexer — these are
+    the authoritative counts (not local DB tallies).
+    """
     answers = []
     for a in (data.get("AnswerData") or []):
         answers.append({
@@ -283,4 +287,5 @@ def _format_poll(data: dict) -> dict:
         "created_by": data.get("CreatedBy"),
         "created_date": data.get("CreatedDate"),
         "changed_date": data.get("ChangedDate"),
+        "source": "on_chain",
     }

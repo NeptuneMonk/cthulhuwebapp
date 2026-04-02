@@ -489,6 +489,7 @@ async def _produce_snapshot(network: str = "btc-testnet", delta: bool = False) -
 
 async def _consume_snapshot(cid: str, network: str = "btc-testnet") -> dict:
     """Fetch a snapshot from IPFS and hydrate the local cache."""
+    from utils.stats_tracker import track_decoder_source
     try:
         client = get_client()
         # Fetch from our local Kubo node (or public gateway)
@@ -552,6 +553,10 @@ async def _consume_snapshot(cid: str, network: str = "btc-testnet") -> dict:
             imported += 1
 
         await conn.commit()
+
+        # Track snapshot imports in the decoder stats
+        for _ in range(imported):
+            track_decoder_source("snapshot_hydrate", "ipfs_snapshot", 0, success=True)
 
         # Auto-register discovered signers as known users (populates feed)
         registered = 0
