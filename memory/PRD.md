@@ -172,9 +172,12 @@ Build a modern, responsive frontend for a blockchain-based social media platform
 - **Endpoints**: `GET /api/snapshot/announce/status`, `POST /api/snapshot/announce/config`, `POST /api/snapshot/announce/trigger`
 - **Admin UI**: AutoDeltaSection now shows multi-chain label, On-Chain CID Announce status with broadcast count and last txid link
 
-#### Burned Object 502 Fix (DONE — April 2, 2026)
-- Backend: `get_object_by_address()` in `objects.py` now checks for BRN transactions BEFORE returning 404, so fully burned objects return a synthetic response with `is_burned=true` instead of crashing
-- Frontend: Existing burn banner UI now receives proper data instead of hanging on infinite spinner
+#### Burned Object Storefront Filtering (DONE — April 2, 2026)
+- Created `burned_objects` SQLite table populated at boot via `scan_cached_roots_for_burns()` and incrementally during vacuum crawls
+- Backend: `proxy_search_objects()` and storefront endpoints filter out burned addresses from results
+- Frontend: ObjectsPage adds safety filter for `is_burned`/`burn_status` fields
+- Detail page still accessible via direct URL — shows burn banner with transaction info
+- 41 burned objects detected and registered from cached roots on initial scan
 
 #### Mesh Snapshot Gossip + Status Dot (DONE — April 2, 2026)
 - **Backend gossip broadcast**: After producing a delta snapshot, `broadcast_snapshot_gossip()` pushes the CID to ALL connected WebSocket signaling clients instantly
