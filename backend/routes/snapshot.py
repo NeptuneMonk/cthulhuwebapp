@@ -202,7 +202,49 @@ async def _run_vacuum_inner(network: str):
 
     _vlog(f"Total addresses to crawl: {len(discovered_addresses)} (after adding {len(known)} known users)")
 
-    # Phase 3: Crawl discovered addresses (profiles + roots)
+    # Phase 3: Deep root crawl — get roots for ALL discovered addresses (not just seeds)
+    # This catches roots signed by objects, non-profile addresses, etc.
+    _vacuum_state["phase"] = "crawling_deep_roots"
+    disc_for_roots = list(discovered_addresses)
+    _vacuum_state["total"] = len(disc_for_roots)
+    _vacuum_state["progress"] = 0
+    deep_discovered = set()
+    roots_found = 0
+
+    for i, addr in enumerate(disc_for_roots):
+        _vacuum_state["progress"] = i + 1
+        if i % 50 == 0:
+            _vlog(f"Deep roots: {i}/{len(disc_for_roots)} (+{len(deep_discovered)} new addresses)")
+
+        try:
+            roots = await p2fk_get(f"GetRootsByAddress/{addr}", mainnet)
+            if isinstance(roots, list):
+                roots_found += len(roots)
+                for root in roots:
+                    outputs = root.get("Output", {})
+                    if isinstance(outputs, dict):
+                        for out_addr in outputs.keys():
+                            if out_addr not in discovered_addresses and out_addr not in seeds:
+                                deep_discovered.add(out_addr)
+                    signed_by = root.get("SignedBy", "")
+                    if signed_by and signed_by not in discovered_addresses and signed_by not in seeds:
+                        deep_discovered.add(signed_by)
+        except Exception:
+            _vacuum_state["errors"] += 1
+
+        _vacuum_state["crawled"] += 1
+        await asyncio.sleep(_RATE_INTERVAL)
+
+    # Merge deep-discovered addresses (cap to prevent explosion)
+    MAX_DEEP = 500
+    if len(deep_discovered) > MAX_DEEP:
+        _vlog(f"Capping deep discovery to {MAX_DEEP} (found {len(deep_discovered)})")
+        deep_discovered = set(list(deep_discovered)[:MAX_DEEP])
+
+    discovered_addresses.update(deep_discovered)
+    _vlog(f"Deep root crawl complete: {roots_found} roots found, {len(deep_discovered)} new addresses discovered. Total: {len(discovered_addresses)}")
+
+    # Phase 4: Crawl discovered addresses (profiles)
     _vacuum_state["phase"] = "crawling_profiles"
     disc_list = list(discovered_addresses)
     _vacuum_state["total"] = len(disc_list)
@@ -230,7 +272,7 @@ async def _run_vacuum_inner(network: str):
         _vacuum_state["crawled"] += 1
         await asyncio.sleep(_RATE_INTERVAL)
 
-    # Phase 4: Crawl objects owned/created by known users
+    # Phase 5: Crawl objects owned/created by discovered addresses
     _vacuum_state["phase"] = "crawling_objects"
     _vacuum_state["progress"] = 0
     _vacuum_state["total"] = len(disc_list)
@@ -248,7 +290,7 @@ async def _run_vacuum_inner(network: str):
         _vacuum_state["crawled"] += 1
         await asyncio.sleep(_RATE_INTERVAL)
 
-    # Phase 5: Search for common keywords
+    # Phase 6: Search for common keywords
     _vacuum_state["phase"] = "crawling_keywords"
     common_keywords = ["SUP", "hello", "test", "music", "art", "nft", "bitcoin", "doge", "gif"]
     _vacuum_state["total"] = len(common_keywords)
