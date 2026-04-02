@@ -134,6 +134,16 @@ async def _run_vacuum(network: str = "btc-testnet"):
         "log": [],
     })
 
+    try:
+        await _run_vacuum_inner(network)
+    except Exception as e:
+        _vlog(f"VACUUM CRASHED: {e}")
+        _vacuum_state["phase"] = "error"
+    finally:
+        _vacuum_state["running"] = False
+
+
+async def _run_vacuum_inner(network: str):
     mainnet = "mainnet" in network
     seed_key = "btc-mainnet" if mainnet else "btc-testnet"
     seeds = SEED_ADDRESSES.get(seed_key, [])
@@ -180,8 +190,12 @@ async def _run_vacuum(network: str = "btc-testnet"):
     # Phase 2: Crawl known users from our DB
     _vacuum_state["phase"] = "crawling_known_users"
     conn = await get_conn()
-    async with conn.execute("SELECT address FROM known_users") as cursor:
-        known = [row[0] for row in await cursor.fetchall()]
+    try:
+        async with conn.execute("SELECT json_extract(data, '$.address') FROM known_users WHERE json_extract(data, '$.address') IS NOT NULL") as cursor:
+            known = [row[0] for row in await cursor.fetchall()]
+    except Exception as e:
+        _vlog(f"Warning reading known_users: {e}")
+        known = []
 
     for addr in known:
         discovered_addresses.add(addr)
@@ -252,7 +266,6 @@ async def _run_vacuum(network: str = "btc-testnet"):
     elapsed = time.time() - _vacuum_state["started_at"]
     _vlog(f"Vacuum complete in {elapsed:.0f}s. Crawled: {_vacuum_state['crawled']}, Errors: {_vacuum_state['errors']}")
     _vacuum_state["phase"] = "complete"
-    _vacuum_state["running"] = False
 
 
 # ─── Snapshot: Serialize → IPFS ──────────────────────────────────────────────
