@@ -265,6 +265,15 @@ async def _auto_delta_loop():
         if latest_cid and _announce_state["enabled"]:
             await _announce_cid_onchain(latest_cid, latest_network, latest_type, latest_root_count)
 
+        # Mesh gossip broadcast — instant CID delivery to all connected peers
+        if latest_cid:
+            try:
+                from routes.mesh import broadcast_snapshot_gossip
+                result = await broadcast_snapshot_gossip(latest_cid, latest_network, latest_type, latest_root_count)
+                _adlog(f"Gossip broadcast: {result.get('sent', 0)} peers notified")
+            except Exception as e:
+                _adlog(f"Gossip broadcast error: {e}")
+
         state["running"] = False
         state["last_run"] = datetime.now(timezone.utc).isoformat()
 

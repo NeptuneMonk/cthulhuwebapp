@@ -43,6 +43,26 @@ function notifyImmediate() {
   _listeners.forEach(fn => fn());
 }
 
+// ── Snapshot gossip handler — auto-consume incoming snapshot CIDs ──
+let _onSnapshotGossipGlobal = null;
+export function setOnSnapshotGossip(fn) { _onSnapshotGossipGlobal = fn; }
+
+function _handleSnapshotGossip(msg) {
+  console.log(`[MeshGossip] Received snapshot CID: ${msg.cid?.slice(0, 20)}... (${msg.network}, ${msg.root_count} roots)`);
+  if (_onSnapshotGossipGlobal) _onSnapshotGossipGlobal(msg);
+  // Auto-consume: trigger a snapshot consumption via API
+  if (msg.cid) {
+    const API = process.env.REACT_APP_BACKEND_URL;
+    fetch(`${API}/api/snapshot/consume?cid=${encodeURIComponent(msg.cid)}&network=${encodeURIComponent(msg.network || 'btc-testnet')}`, {
+      method: 'POST',
+    }).then(r => r.json()).then(result => {
+      if (result.cached_roots > 0) {
+        console.log(`[MeshGossip] Auto-consumed ${result.cached_roots} roots from ${msg.cid.slice(0, 16)}...`);
+      }
+    }).catch(e => console.warn('[MeshGossip] Auto-consume failed:', e.message));
+  }
+}
+
 /**
  * useMeshRelayInit — Side effects only, NO state subscription.
  * Use in Layout/App.js to auto-restore node mode and connect client
@@ -71,6 +91,8 @@ export function useMeshRelayInit(network) {
       node._onInkNotify = (msg) => {
         if (_onInkNotifyGlobal) _onInkNotifyGlobal(msg);
       };
+      // Wire snapshot gossip callback
+      node.setOnSnapshotGossip(_handleSnapshotGossip);
       _nodeInstance = node;
       setGlobalMeshNode(node);
       node.start();
@@ -85,6 +107,8 @@ export function useMeshRelayInit(network) {
     let cancelled = false;
     (async () => {
       const client = new MeshClient(address, network);
+      // Wire snapshot gossip callback
+      client.setOnSnapshotGossip(_handleSnapshotGossip);
       clientRef.current = client;
       _clientInstance = client;
       setGlobalMeshClient(client);

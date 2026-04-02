@@ -29,7 +29,7 @@ MAX_WS_MESSAGE_SIZE = 65536  # 64KB max per signaling message
 MAX_SIGNAL_RATE = 30  # Max signals per 10s window per connection
 VALID_SIGNAL_TYPES = {'offer', 'answer', 'ice-candidate', 'ping', 'pong',
                       'call-ring', 'call-answer', 'call-reject', 'call-end',
-                      'call-ice', 'call-busy', 'audio-relay'}
+                      'call-ice', 'call-busy', 'audio-relay', 'snapshot-gossip'}
 ADDRESS_PATTERN = re.compile(r'^[a-zA-Z0-9]{20,90}$')
 
 
@@ -461,3 +461,35 @@ async def get_notifications(address: str, network: str = "btc-testnet"):
         )
     total = sum(h.get("count", 0) for h in hints)
     return {"hints": hints, "total": total}
+
+
+# ─── Snapshot Gossip Broadcast ───
+
+async def broadcast_snapshot_gossip(cid: str, network: str, snap_type: str, root_count: int):
+    """Broadcast a snapshot CID to ALL connected WebSocket signaling clients.
+    This enables instant snapshot discovery for mesh-connected peers
+    without waiting for the on-chain announcement cooldown."""
+    import json
+    msg = json.dumps({
+        "type": "snapshot-gossip",
+        "cid": cid,
+        "network": network,
+        "snap_type": snap_type,
+        "root_count": root_count,
+        "ts": datetime.now(timezone.utc).isoformat(),
+    })
+    sent = 0
+    failed = 0
+    dead = []
+    for addr, ws in list(_ws_connections.items()):
+        try:
+            await ws.send_text(msg)
+            sent += 1
+        except Exception:
+            dead.append(addr)
+            failed += 1
+    # Clean up dead connections
+    for addr in dead:
+        _ws_connections.pop(addr, None)
+    logger.info(f"[SnapshotGossip] Broadcast CID {cid[:20]}... to {sent} peers ({failed} failed)")
+    return {"sent": sent, "failed": failed}

@@ -118,6 +118,12 @@ export class MeshNode {
       try {
         const msg = JSON.parse(event.data);
         if (msg.type === 'ping') return;
+        if (msg.type === 'snapshot-gossip' || msg.type === 'snapshot_gossip') {
+          if (this._onSnapshotGossip) this._onSnapshotGossip(msg);
+          // Relay to all connected peers
+          this._relaySnapshotGossip(msg);
+          return;
+        }
         if (msg.type?.startsWith('call-') && this._phoneDispatch) {
           this._phoneDispatch(msg);
           return;
@@ -325,6 +331,9 @@ export class MeshNode {
         this._relayRoomMessage(fromAddress, request);
       } else if (request.type === 'gossip_notify') {
         this._relayGossipNotify(fromAddress, request);
+      } else if (request.type === 'snapshot_gossip' || request.type === 'snapshot-gossip') {
+        this._relaySnapshotGossip(request);
+        if (this._onSnapshotGossip) this._onSnapshotGossip(request);
       } else if (request.type === 'ink_notify') {
         this._relayInkNotify(fromAddress, request);
       }
@@ -673,6 +682,7 @@ export class MeshNode {
 
   setOnRoomMessage(cb) { this._onRoomMessage = cb; }
   setOnGossipNotify(cb) { this._onGossipNotify = cb; }
+  setOnSnapshotGossip(cb) { this._onSnapshotGossip = cb; }
 
   broadcastRoomMessage(msg) {
     const payload = JSON.stringify(msg);
@@ -717,5 +727,16 @@ export class MeshNode {
     // Notify the UI
     if (this._onInkNotify) this._onInkNotify(msg);
     this.stats.requestsServed++;
+  }
+
+  _relaySnapshotGossip(msg) {
+    // Relay snapshot gossip to all connected peers (server→node→peers propagation)
+    const payload = JSON.stringify({ ...msg, type: 'snapshot_gossip' });
+    let relayed = 0;
+    for (const [, peer] of this.peers) {
+      if (!peer.channel || peer.channel.readyState !== 'open') continue;
+      try { peer.channel.send(payload); relayed++; } catch {}
+    }
+    if (relayed > 0) console.log(`[MeshNode] Relayed snapshot gossip to ${relayed} peers`);
   }
 }

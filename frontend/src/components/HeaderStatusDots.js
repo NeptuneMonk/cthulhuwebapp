@@ -1,12 +1,27 @@
 import React from 'react';
 import { useIpfsStatus } from '@/hooks/useIpfsStatus';
+import { getGlobalMeshClient, getGlobalMeshNode } from '@/utils/meshRelay';
+import { useState, useEffect } from 'react';
 
 /**
- * Compact status dots for IPFS and Walkie-Talkie, designed for the mobile header.
+ * Compact status dots for IPFS, Mesh Relay, and Walkie-Talkie.
  * Uses the singleton useIpfsStatus hook (no duplicate polling).
  */
 export function HeaderStatusDots({ walkieActive, walkieChannel }) {
   const { online: ipfsOnline } = useIpfsStatus();
+  const [meshConnected, setMeshConnected] = useState(false);
+
+  // Poll mesh status every 3s (lightweight — just checks singleton refs)
+  useEffect(() => {
+    const check = () => {
+      const client = getGlobalMeshClient();
+      const node = getGlobalMeshNode();
+      setMeshConnected(!!(client?.connected || node?._running));
+    };
+    check();
+    const iv = setInterval(check, 3000);
+    return () => clearInterval(iv);
+  }, []);
 
   return (
     <div className="flex items-center gap-1.5" data-testid="header-status-dots">
@@ -17,6 +32,17 @@ export function HeaderStatusDots({ walkieActive, walkieChannel }) {
         }`} />
         <div className="pointer-events-none absolute -bottom-6 right-0 px-1.5 py-0.5 rounded bg-gray-900/95 border border-gray-700/40 text-[8px] text-gray-400 whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity z-30">
           IPFS {ipfsOnline ? 'Online' : 'Offline'}
+        </div>
+      </div>
+      {/* Mesh Relay dot */}
+      <div className="relative group" data-testid="header-mesh-status">
+        <div className={`w-2 h-2 rounded-full transition-colors ${
+          meshConnected ? 'bg-cyan-400' : 'bg-gray-700'
+        }`}
+        style={meshConnected ? { boxShadow: '0 0 4px rgba(34,211,238,0.4)' } : {}}
+        />
+        <div className="pointer-events-none absolute -bottom-6 right-0 px-1.5 py-0.5 rounded bg-gray-900/95 border border-gray-700/40 text-[8px] text-gray-400 whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity z-30">
+          Mesh {meshConnected ? 'Connected' : 'Off'}
         </div>
       </div>
       {/* Walkie-Talkie dot */}

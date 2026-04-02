@@ -146,6 +146,10 @@ export class MeshClient {
         try {
           const msg = JSON.parse(event.data);
           if (msg.type === 'ping') return;
+          if (msg.type === 'snapshot-gossip' || msg.type === 'snapshot_gossip') {
+            if (this._onSnapshotGossip) this._onSnapshotGossip(msg);
+            return;
+          }
           if (msg.type === 'answer') {
             if (this.pc.signalingState !== 'have-local-offer') return;
             await this.pc.setRemoteDescription(new RTCSessionDescription(JSON.parse(msg.payload)));
@@ -331,6 +335,8 @@ export class MeshClient {
         if (this._onRoomMessage) this._onRoomMessage(msg);
       } else if (msg.type === 'gossip_notify') {
         if (this._onGossipNotify) this._onGossipNotify(msg);
+      } else if (msg.type === 'snapshot_gossip' || msg.type === 'snapshot-gossip') {
+        if (this._onSnapshotGossip) this._onSnapshotGossip(msg);
       }
     } catch {}
   }
@@ -380,6 +386,7 @@ export class MeshClient {
 
   setOnRoomMessage(cb) { this._onRoomMessage = cb; }
   setOnGossipNotify(cb) { this._onGossipNotify = cb; }
+  setOnSnapshotGossip(cb) { this._onSnapshotGossip = cb; }
 
   sendRoomMessage(msg) {
     if (!this.connected || !this.channel || this.channel.readyState !== 'open') return false;
