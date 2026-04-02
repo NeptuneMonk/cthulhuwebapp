@@ -150,6 +150,11 @@ function collectNetworkState(address, network) {
     const idx = localStorage.getItem(`p2fk_obj_idx_${address}`);
     if (idx) state.objectIndex = parseInt(idx, 10);
   } catch {}
+  // Blocklist
+  try {
+    const blocked = localStorage.getItem(`cthulhu_blocked_${network}`);
+    if (blocked) state.blockedUsers = JSON.parse(blocked);
+  } catch {}
   state.address = address;
   return state;
 }
@@ -412,6 +417,24 @@ function restoreNetworkState(addr, net, data) {
     const k = `p2fk_obj_idx_${addr}`;
     const cur = parseInt(localStorage.getItem(k) || '0', 10);
     if (data.objectIndex > cur) { localStorage.setItem(k, String(data.objectIndex)); counts.objectIndex = true; }
+  }
+
+  // Blocklist restore
+  if (data.blockedUsers?.length) {
+    try {
+      const blKey = `cthulhu_blocked_${net}`;
+      const local = JSON.parse(localStorage.getItem(blKey) || '[]');
+      const existing = new Set(local.map(b => b.address));
+      let added = 0;
+      const merged = [...local];
+      for (const item of data.blockedUsers) {
+        if (!existing.has(item.address)) { merged.push(item); added++; }
+      }
+      if (added > 0) {
+        localStorage.setItem(blKey, JSON.stringify(merged));
+        counts.blockedUsers = added;
+      }
+    } catch {}
   }
 
   // Object merge restores (unread, dmLastSeen, etc.)

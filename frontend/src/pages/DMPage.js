@@ -8,7 +8,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useBlockList } from '@/hooks/useBlockList';
 import { useTheme } from '@/hooks/useTheme';
 import { useMyKeys } from '@/hooks/useMyKeys';
-import { FiLock, FiSend, FiArrowLeft, FiMoreVertical, FiUser, FiClock, FiTrash2, FiCheck, FiShield, FiSlash, FiPlay, FiRadio, FiMic, FiPhone, FiPause, FiUploadCloud } from 'react-icons/fi';
+import { FiLock, FiSend, FiArrowLeft, FiMoreVertical, FiUser, FiClock, FiTrash2, FiCheck, FiShield, FiSlash, FiPlay, FiRadio, FiMic, FiPhone, FiPause, FiUploadCloud, FiRotateCcw } from 'react-icons/fi';
 import axios from 'axios';
 import { ProfileThumb } from '@/components/ProfileThumb';
 import ComposeToolbar from '@/components/ComposeToolbar';
@@ -26,7 +26,7 @@ import {
   getCachedDecryptBatch, cacheDecryptResult,
   getConversationCache, saveConversationCache,
   clearConversationCache, clearDecryptCacheForConversation,
-  getClearedBefore, setClearedBefore,
+  getClearedBefore, setClearedBefore, removeClearedBefore,
 } from '@/utils/dmDb';
 import { ECPairFactory } from 'ecpair';
 import { ecc } from '@/utils/ecc';
@@ -824,16 +824,12 @@ export default function DMPage({ network }) {
                 className="flex items-center gap-2 w-full px-3 py-2 text-sm text-red-400 hover:bg-gray-700/50"
                 onClick={async () => {
                   if (myAddress && partnerAddr) {
-                    // Save the last visible message timestamp as the cutoff
-                    const lastMsg = messages[messages.length - 1];
-                    const cutoffTs = lastMsg?.timestamp || new Date().toISOString();
+                    // Timestamped soft-delete — recoverable (messages remain on-chain)
+                    const cutoffTs = new Date().toISOString();
                     try {
                       await axios.post(`${API}/dm/clear/${myAddress}`, { partner: partnerAddr, network });
                     } catch { /* backend clear is best-effort */ }
                     await setClearedBefore(myAddress, partnerAddr, network, cutoffTs);
-                    await clearSentMessages(myAddress, partnerAddr, network);
-                    await clearConversationCache(myAddress, partnerAddr, network);
-                    await clearDecryptCacheForConversation(myAddress, partnerAddr, network);
                     cachedTimestampRef.current = null;
                     setMessages([]);
                     setHasMore(false);
@@ -844,6 +840,22 @@ export default function DMPage({ network }) {
                 data-testid="dm-clear-chat"
               >
                 <FiTrash2 size={14} /> Clear Chat
+              </button>
+              <button
+                className="flex items-center gap-2 w-full px-3 py-2 text-sm text-emerald-400 hover:bg-gray-700/50"
+                onClick={async () => {
+                  if (myAddress && partnerAddr) {
+                    await removeClearedBefore(myAddress, partnerAddr, network);
+                    cachedTimestampRef.current = null;
+                    setMessages([]);
+                    setHasMore(true);
+                    setLoadMoreSkip(0);
+                  }
+                  setMenuOpen(false);
+                }}
+                data-testid="dm-recover-chat"
+              >
+                <FiRotateCcw size={14} /> Recover Chat
               </button>
             </div>
           )}

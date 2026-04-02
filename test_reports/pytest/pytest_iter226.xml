@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="14" skipped="0" tests="14" time="770.989" timestamp="2026-04-02T07:12:00.782963+00:00" hostname="agent-env-ae3e0cd5-ad72-4b84-93b6-e8db8b514a93"><testcase classname="backend.tests.test_iter226_features.TestHealthAndBasicEndpoints" name="test_health_endpoint" time="60.182"><failure message="assert 502 == 200&#10; +  where 502 = &lt;Response [502]&gt;.status_code">backend/tests/test_iter226_features.py:26: in test_health_endpoint
+    assert response.status_code == 200
+E   assert 502 == 200
+E    +  where 502 = &lt;Response [502]&gt;.status_code</failure></testcase><testcase classname="backend.tests.test_iter226_features.TestHealthAndBasicEndpoints" name="test_root_endpoint" time="60.190"><failure message="assert 502 == 200&#10; +  where 502 = &lt;Response [502]&gt;.status_code">backend/tests/test_iter226_features.py:35: in test_root_endpoint
+    assert response.status_code == 200
+E   assert 502 == 200
+E    +  where 502 = &lt;Response [502]&gt;.status_code</failure></testcase><testcase classname="backend.tests.test_iter226_features.TestReactionsEndpoint" name="test_get_reactions_structure" time="60.135"><failure message="assert 502 == 200&#10; +  where 502 = &lt;Response [502]&gt;.status_code">backend/tests/test_iter226_features.py:50: in test_get_reactions_structure
+    assert response.status_code == 200
+E   assert 502 == 200
+E    +  where 502 = &lt;Response [502]&gt;.status_code</failure></testcase><testcase classname="backend.tests.test_iter226_features.TestReactionsEndpoint" name="test_post_reaction_delete_type" time="60.135"><failure message="assert 502 == 200&#10; +  where 502 = &lt;Response [502]&gt;.status_code">backend/tests/test_iter226_features.py:88: in test_post_reaction_delete_type
+    assert response.status_code == 200
+E   assert 502 == 200
+E    +  where 502 = &lt;Response [502]&gt;.status_code</failure></testcase><testcase classname="backend.tests.test_iter226_features.TestReactionsEndpoint" name="test_post_reaction_like_type" time="60.160"><failure message="assert 502 == 200&#10; +  where 502 = &lt;Response [502]&gt;.status_code">backend/tests/test_iter226_features.py:107: in test_post_reaction_like_type
+    assert response.status_code == 200
+E   assert 502 == 200
+E    +  where 502 = &lt;Response [502]&gt;.status_code</failure></testcase><testcase classname="backend.tests.test_iter226_features.TestReactionsEndpoint" name="test_post_reaction_requires_from_address" time="60.197"><failure message="assert 502 == 200&#10; +  where 502 = &lt;Response [502]&gt;.status_code">backend/tests/test_iter226_features.py:123: in test_post_reaction_requires_from_address
+    assert response.status_code == 200
+E   assert 502 == 200
+E    +  where 502 = &lt;Response [502]&gt;.status_code</failure></testcase><testcase classname="backend.tests.test_iter226_features.TestFeedEndpoint" name="test_feed_loads" time="60.160"><failure message="assert 502 == 200&#10; +  where 502 = &lt;Response [502]&gt;.status_code">backend/tests/test_iter226_features.py:136: in test_feed_loads
+    assert response.status_code == 200
+E   assert 502 == 200
+E    +  where 502 = &lt;Response [502]&gt;.status_code</failure></testcase><testcase classname="backend.tests.test_iter226_features.TestFeedEndpoint" name="test_feed_mode_global" time="60.185"><failure message="assert 502 == 200&#10; +  where 502 = &lt;Response [502]&gt;.status_code">backend/tests/test_iter226_features.py:150: in test_feed_mode_global
+    assert response.status_code == 200
+E   assert 502 == 200
+E    +  where 502 = &lt;Response [502]&gt;.status_code</failure></testcase><testcase classname="backend.tests.test_iter226_features.TestFeedEndpoint" name="test_feed_mode_following" time="60.198"><failure message="assert 502 == 200&#10; +  where 502 = &lt;Response [502]&gt;.status_code">backend/tests/test_iter226_features.py:159: in test_feed_mode_following
+    assert response.status_code == 200
+E   assert 502 == 200
+E    +  where 502 = &lt;Response [502]&gt;.status_code</failure></testcase><testcase classname="backend.tests.test_iter226_features.TestProfileEndpoint" name="test_profile_by_address" time="60.149"><failure message="assert 502 == 200&#10; +  where 502 = &lt;Response [502]&gt;.status_code">backend/tests/test_iter226_features.py:174: in test_profile_by_address
+    assert response.status_code == 200
+E   assert 502 == 200
+E    +  where 502 = &lt;Response [502]&gt;.status_code</failure></testcase><testcase classname="backend.tests.test_iter226_features.TestStorefrontEndpoint" name="test_objects_search_embii" time="60.195"><failure message="assert 502 == 200&#10; +  where 502 = &lt;Response [502]&gt;.status_code">backend/tests/test_iter226_features.py:188: in test_objects_search_embii
+    assert response.status_code == 200
+E   assert 502 == 200
+E    +  where 502 = &lt;Response [502]&gt;.status_code</failure></testcase><testcase classname="backend.tests.test_iter226_features.TestStorefrontEndpoint" name="test_objects_search_btc" time="60.186"><failure message="assert 502 == 200&#10; +  where 502 = &lt;Response [502]&gt;.status_code">backend/tests/test_iter226_features.py:203: in test_objects_search_btc
+    assert response.status_code == 200
+E   assert 502 == 200
+E    +  where 502 = &lt;Response [502]&gt;.status_code</failure></testcase><testcase classname="backend.tests.test_iter226_features.TestDMEndpoint" name="test_dm_clear_endpoint" time="48.604"><failure message="assert 502 in [200, 404]&#10; +  where 502 = &lt;Response [502]&gt;.status_code">backend/tests/test_iter226_features.py:221: in test_dm_clear_endpoint
+    assert response.status_code in [200, 404]
+E   assert 502 in [200, 404]
+E    +  where 502 = &lt;Response [502]&gt;.status_code</failure></testcase><testcase classname="backend.tests.test_iter226_features.TestSurgicalDeleteLogic" name="test_surgical_delete_triggers_on_delete_reaction" time="0.146"><failure message="assert 502 == 200&#10; +  where 502 = &lt;Response [502]&gt;.status_code">backend/tests/test_iter226_features.py:244: in test_surgical_delete_triggers_on_delete_reaction
+    assert response.status_code == 200
+E   assert 502 == 200
+E    +  where 502 = &lt;Response [502]&gt;.status_code</failure></testcase></testsuite></testsuites>

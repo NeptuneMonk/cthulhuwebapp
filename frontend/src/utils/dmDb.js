@@ -381,8 +381,38 @@ export async function setClearedBefore(myAddr, partnerAddr, network, timestamp) 
     return new Promise((resolve) => {
       req.onsuccess = () => {
         const existing = req.result || { key };
+        // Preserve clear history for recovery
+        const history = existing.clearHistory || [];
+        history.push({ clearedAt: new Date().toISOString(), cutoff: timestamp });
         existing.clearedBefore = timestamp;
+        existing.clearHistory = history.slice(-10); // keep last 10 clears
         store.put(existing);
+        tx.oncomplete = resolve;
+      };
+      req.onerror = () => resolve();
+    });
+  } catch { /* ignore */ }
+}
+
+/**
+ * Remove the clearedBefore timestamp to recover hidden messages.
+ * Messages will reappear on next fetch from chain.
+ */
+export async function removeClearedBefore(myAddr, partnerAddr, network) {
+  try {
+    const db = await openDMDB();
+    if (!hasStore(db, CONVERSATIONS_STORE)) return;
+    const tx = db.transaction(CONVERSATIONS_STORE, 'readwrite');
+    const store = tx.objectStore(CONVERSATIONS_STORE);
+    const key = conversationKey(myAddr, partnerAddr, network);
+    const req = store.get(key);
+    return new Promise((resolve) => {
+      req.onsuccess = () => {
+        const existing = req.result;
+        if (existing) {
+          delete existing.clearedBefore;
+          store.put(existing);
+        }
         tx.oncomplete = resolve;
       };
       req.onerror = () => resolve();

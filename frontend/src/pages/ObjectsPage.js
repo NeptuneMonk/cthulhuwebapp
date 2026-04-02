@@ -144,12 +144,12 @@ function CrossNetworkModal({ object, userNetwork, onClose, navigate }) {
 }
 
 const CHAIN_FILTERS = [
-  { key: 'embii', label: 'Featured', color: 'bg-purple-600/20 text-purple-400 border-purple-500/50' },
-  { key: 'BTC',   label: 'BTC',      color: 'bg-amber-600/20 text-amber-400 border-amber-500/50' },
-  { key: 'LTC',   label: 'LTC',      color: 'bg-gray-600/20 text-gray-300 border-gray-400/50' },
-  { key: 'DOG',   label: 'DOG',      color: 'bg-yellow-600/20 text-yellow-400 border-yellow-500/50' },
-  { key: 'MZC',   label: 'MZC',      color: 'bg-green-600/20 text-green-400 border-green-500/50' },
-  { key: 'IPFS',  label: 'IPFS',     color: 'bg-blue-600/20 text-blue-400 border-blue-500/50' },
+  { key: 'embii', label: 'Featured', color: 'bg-purple-600/20 text-purple-400 border-purple-500/50', match: null },
+  { key: 'BTC',   label: 'BTC',      color: 'bg-amber-600/20 text-amber-400 border-amber-500/50', match: 'BTC' },
+  { key: 'LTC',   label: 'LTC',      color: 'bg-gray-600/20 text-gray-300 border-gray-400/50', match: 'LTC' },
+  { key: 'DOG',   label: 'DOG',      color: 'bg-yellow-600/20 text-yellow-400 border-yellow-500/50', match: 'DOG' },
+  { key: 'MZC',   label: 'MZC',      color: 'bg-green-600/20 text-green-400 border-green-500/50', match: 'MZC' },
+  { key: 'IPFS',  label: 'IPFS',     color: 'bg-blue-600/20 text-blue-400 border-blue-500/50', match: 'IPFS' },
 ];
 
 export default function ObjectsPage({ network }) {
@@ -212,7 +212,13 @@ export default function ObjectsPage({ network }) {
           .map(item => ({ ...item.object, _blockchain: item.blockchain || '' }))
           .filter(o => !(o.License || '').toLowerCase().startsWith('cthulhu:tether'))
           .filter(o => (o.Name && o.Name !== 'Unnamed Object') || o.Image);
-        setObjects(normalized);
+        // Apply strict blockchain filter
+        const activeChainFilter = CHAIN_FILTERS.find(f => f.key === activeFilter);
+        const chainMatch = activeChainFilter?.match;
+        const finalObjects = chainMatch
+          ? normalized.filter(o => (o._blockchain || '').toUpperCase().includes(chainMatch))
+          : normalized;
+        setObjects(finalObjects);
         setHasMore(freshItems.length >= qty);
       });
 
@@ -222,7 +228,14 @@ export default function ObjectsPage({ network }) {
         .filter(o => !(o.License || '').toLowerCase().startsWith('cthulhu:tether'))
         .filter(o => (o.Name && o.Name !== 'Unnamed Object') || o.Image);
 
-      setObjects(normalized);
+      // Apply strict blockchain filter when a chain filter is active
+      const activeChainFilter = CHAIN_FILTERS.find(f => f.key === activeFilter);
+      const chainMatch = activeChainFilter?.match;
+      const finalObjects = chainMatch
+        ? normalized.filter(o => (o._blockchain || '').toUpperCase().includes(chainMatch))
+        : normalized;
+
+      setObjects(finalObjects);
       setHasMore(items.length >= qty);
       setCurrentSkip(skip);
       skipRef.current = skip + qty;

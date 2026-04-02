@@ -1122,6 +1122,7 @@ function AppLayout({ network, setNetwork, claimed, claimProfile, unclaimProfile,
   const { wallet } = useWallet();
   const myAddress = authUser?.address || wallet?.address || '';
   const { follows, isFollowing, toggleFollow } = useFollows(network, myAddress);
+  const blockList = useBlockList(network);
   const [paywallPassed, setPaywallPassed] = useState(false);
   const [paywallLoading, setPaywallLoading] = useState(true);
 
@@ -1170,7 +1171,7 @@ function AppLayout({ network, setNetwork, claimed, claimProfile, unclaimProfile,
             <Route path="/profiles" element={<ProfilesPage network={network} myAddress={myAddress} follows={follows} blockList={blockList} />} />
             <Route path="/profile/:address/objects" element={<UserObjectsPage network={network} myAddress={myAddress} />} />
             <Route path="/profile/:address" element={
-              <ProfileDetailPage network={network} isFollowing={isFollowing} toggleFollow={toggleFollow} myAddress={myAddress} blockUser={blockUser} isBlocked={isBlocked} />
+              <ProfileDetailPage network={network} isFollowing={isFollowing} toggleFollow={toggleFollow} myAddress={myAddress} blockUser={blockList.blockUser} isBlocked={blockList.isBlocked} />
             } />
             <Route path="/search" element={<SearchPage network={network} follows={follows} toggleFollow={toggleFollow} myAddress={myAddress} />} />
             <Route path="/discover" element={<DiscoverPage network={network} />} />

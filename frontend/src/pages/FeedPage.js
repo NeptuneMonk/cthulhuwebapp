@@ -131,6 +131,18 @@ export default function FeedPage({ network, follows = [] }) {
     return () => clearInterval(interval);
   }, [network, refreshPending]);
 
+  // Listen for surgical post deletion events
+  useEffect(() => {
+    const handler = (e) => {
+      const deletedTxid = e.detail?.txid;
+      if (deletedTxid) {
+        setFeed(prev => prev.filter(p => p.transaction_id !== deletedTxid));
+      }
+    };
+    window.addEventListener('cthulhu-post-deleted', handler);
+    return () => window.removeEventListener('cthulhu-post-deleted', handler);
+  }, []);
+
   const fetchPageRef = useRef(null);
   const fetchPage = useCallback(async (skip, isReset = false) => {
     if (loadingRef.current) return;

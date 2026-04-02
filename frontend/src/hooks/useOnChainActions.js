@@ -129,7 +129,11 @@ export function useOnChainActions(network) {
 
   const performDelete = useCallback(async (txid) => {
     const r = await dustAction(txid, `<<-delete>><<${Math.floor(Math.random() * -99999)}>>`, 'Delete');
-    if (r?.success) savePendingReaction(txid, 'delete', user?.address, network, r.txid);
+    if (r?.success) {
+      savePendingReaction(txid, 'delete', user?.address, network, r.txid);
+      // Emit event so feed components can surgically remove this post
+      window.dispatchEvent(new CustomEvent('cthulhu-post-deleted', { detail: { txid } }));
+    }
     return r;
   }, [dustAction, user?.address, network]);
 

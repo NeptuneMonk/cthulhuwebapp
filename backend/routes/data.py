@@ -412,6 +412,68 @@ async def get_feed(network: str, skip: int = 0, limit: int = 5, mode: str = 'glo
         return {"feed": [], "network": network, "count": 0, "total": 0, "has_more": False}
 
 
+async def _surgical_cache_purge(txid: str, network: str):
+    """Remove a single post (by txid) from the feed cache and unpin its IPFS CIDs.
+    This is a SURGICAL delete — only the specific item is removed, not the whole cache."""
+    try:
+        cache_key = f"feed:{network}"
+        cached = await conversation_cache_col.find_one(
+            {'cache_key': cache_key}, {'_id': 0}
+        )
+        if not cached or not cached.get('messages'):
+            return
+
+        messages = cached['messages']
+        original_count = len(messages)
+
+        # Find the message to extract any IPFS CIDs before removing
+        cids_to_unpin = set()
+        for msg in messages:
+            if msg.get('transaction_id') == txid:
+                # Extract IPFS CIDs from the message content and files
+                content = msg.get('content', '')
+                import re
+                ipfs_refs = re.findall(r'IPFS:([A-Za-z0-9]{46,})', content)
+                for ref in ipfs_refs:
+                    cid = ref.split('/')[0].split('\\')[0]
+                    if len(cid) >= 46:
+                        cids_to_unpin.add(cid)
+                # Check files dict
+                files = msg.get('files') or {}
+                for fname in files:
+                    if fname.startswith('Qm') or fname.startswith('bafy'):
+                        cids_to_unpin.add(fname.split('/')[0])
+
+        # Filter out the deleted message
+        filtered = [m for m in messages if m.get('transaction_id') != txid]
+
+        if len(filtered) < original_count:
+            await conversation_cache_col.update_one(
+                {'cache_key': cache_key},
+                {'$set': {'messages': filtered}},
+            )
+            logger.info(f"Surgical delete: removed txid {txid[:16]}... from feed cache ({original_count} → {len(filtered)})")
+
+            # Unpin IPFS CIDs from local Kubo daemon (best-effort)
+            if cids_to_unpin:
+                try:
+                    from utils.http_pool import get_client
+                    client = get_client()
+                    for cid in cids_to_unpin:
+                        try:
+                            await client.post(f"http://127.0.0.1:5001/api/v0/pin/rm?arg={cid}", timeout=5.0)
+                            logger.info(f"Unpinned IPFS CID: {cid[:16]}...")
+                        except Exception as e:
+                            logger.debug(f"IPFS unpin skipped for {cid[:16]}: {e}")
+                except Exception as e:
+                    logger.debug(f"IPFS unpin batch failed: {e}")
+        else:
+            logger.debug(f"Surgical delete: txid {txid[:16]}... not found in feed cache")
+
+    except Exception as e:
+        logger.warning(f"Surgical cache purge error for {txid[:16]}: {e}")
+
+
 @router.post("/reactions/{txid}")
 async def store_pending_reaction(txid: str, network: str = 'btc-testnet', body: dict = {}):
     """Store a pending reaction in MongoDB so it shows across browsers/devices
@@ -438,6 +500,11 @@ async def store_pending_reaction(txid: str, network: str = 'btc-testnet', body: 
             {"$set": doc},
             upsert=True,
         )
+
+        # ── Surgical delete: remove ONLY this specific txid from feed cache ──
+        if reaction_type == "delete":
+            asyncio.create_task(_surgical_cache_purge(txid, network))
+
         return {"ok": True}
     except Exception as e:
         logger.error(f"Store reaction error: {e}")
@@ -514,6 +581,10 @@ async def get_reactions(txid: str, network: str = 'btc-testnet'):
                 original_author = signed_by if signed_by else ''
             if original_author:
                 deleted_by_author = any(d["from"] == original_author for d in deletes)
+
+        # If confirmed delete by author, surgically purge from cache
+        if deleted_by_author:
+            asyncio.create_task(_surgical_cache_purge(txid, network))
 
         return {
             "txid": txid,
