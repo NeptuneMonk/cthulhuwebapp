@@ -98,7 +98,6 @@ Build a modern, responsive frontend for a blockchain-based social media platform
 - Ownership Cascade Transfers
 
 ### P2
-- Scheduled automatic snapshot production
 - Object count discrepancies
 - "Ink Log" wallet history, Venue & Seat Sales
 
@@ -165,6 +164,17 @@ Build a modern, responsive frontend for a blockchain-based social media platform
 - Skips if 0 new roots found (no wasted IPFS pins)
 - Admin endpoints: POST /api/snapshot/auto-delta/start, stop, GET status
 - Admin UI: "Auto-Delta Indexer" section with start/stop, interval, stats, live log
+
+#### Multi-Chain Vacuum + Auto-Boot + On-Chain CID Announce (DONE — April 2, 2026)
+- **Multi-chain sweep**: Auto-delta now iterates over ALL configured networks (btc-testnet + btc-mainnet) each cycle, not just one
+- **Auto-start on boot**: `start_auto_delta_on_boot()` called from `server.py` startup — no admin action needed, desktop apps start crawling immediately
+- **On-chain CID announce**: After producing a snapshot, treasury wallet publishes CID as a P2FK root on BTC testnet via `CTHULHU-SNAPSHOT` keyword. Configurable cooldown (default 6h), balance guard (min 50k sats), automatic discovery for any desktop app reading treasury roots
+- **Endpoints**: `GET /api/snapshot/announce/status`, `POST /api/snapshot/announce/config`, `POST /api/snapshot/announce/trigger`
+- **Admin UI**: AutoDeltaSection now shows multi-chain label, On-Chain CID Announce status with broadcast count and last txid link
+
+#### Burned Object 502 Fix (DONE — April 2, 2026)
+- Backend: `get_object_by_address()` in `objects.py` now checks for BRN transactions BEFORE returning 404, so fully burned objects return a synthetic response with `is_burned=true` instead of crashing
+- Frontend: Existing burn banner UI now receives proper data instead of hanging on infinite spinner
 ## Key Files
 
 #### Storefront: "All" Default Filter (DONE — April 2, 2026)
