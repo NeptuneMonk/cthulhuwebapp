@@ -60,7 +60,7 @@ def _vlog(msg: str):
 _auto_delta_state = {
     "enabled": False,
     "interval_minutes": 15,
-    "network": "btc-testnet",
+    "networks": ["btc-testnet", "btc-mainnet"],  # Multi-chain sweep
     "running": False,
     "last_run": None,
     "last_result": None,
@@ -69,6 +69,17 @@ _auto_delta_state = {
     "runs_success": 0,
     "log": [],
     "_task": None,
+}
+
+# On-chain CID announcement state
+_announce_state = {
+    "enabled": True,
+    "min_interval_hours": 6,
+    "last_announced_at": None,
+    "last_announced_cid": None,
+    "last_txid": None,
+    "total_announcements": 0,
+    "min_treasury_balance_sats": 50000,  # Don't drain below this
 }
 
 
@@ -81,61 +92,181 @@ def _adlog(msg: str):
     logger.info(f"AutoDelta: {msg}")
 
 
+async def _announce_cid_onchain(cid: str, network_indexed: str, snap_type: str, root_count: int):
+    """Publish a snapshot CID on-chain via treasury wallet on BTC testnet.
+    This allows any desktop app to discover the latest snapshot by reading
+    the treasury address's roots for CTHULHU-SNAPSHOT keyword posts."""
+    import os
+    from bit import PrivateKeyTestnet
+    from utils.p2fk import (
+        build_signed_payload, build_post_payload,
+        encode_payload_to_addresses, get_keyword_address,
+    )
+    from utils.blockchain import fetch_utxos_mempool, broadcast_raw_tx
+
+    state = _announce_state
+
+    # Check cooldown — max once per min_interval_hours
+    if state["last_announced_at"]:
+        elapsed_hours = (time.time() - state["last_announced_at"]) / 3600
+        if elapsed_hours < state["min_interval_hours"]:
+            _adlog(f"CID announce skipped — {elapsed_hours:.1f}h since last (min {state['min_interval_hours']}h)")
+            return {"skipped": True, "reason": "cooldown"}
+
+    # Check treasury WIF
+    wif = os.environ.get("TREASURY_TESTNET_WIF", "")
+    if not wif:
+        _adlog("CID announce skipped — no TREASURY_TESTNET_WIF configured")
+        return {"skipped": True, "reason": "no_wif"}
+
+    try:
+        key = PrivateKeyTestnet(wif)
+        treasury_address = key.address
+
+        # Check balance — don't drain the wallet
+        from routes.treasury import _fetch_balance
+        balance = await _fetch_balance(treasury_address, False)
+        if balance < state["min_treasury_balance_sats"]:
+            _adlog(f"CID announce skipped — treasury balance too low ({balance} sats < {state['min_treasury_balance_sats']})")
+            return {"skipped": True, "reason": "low_balance", "balance": balance}
+
+        # Build P2FK post: the content any node can parse
+        post_content = f"CTHULHU_SNAPSHOT cid:{cid} chain:{network_indexed} type:{snap_type} roots:{root_count}"
+        msg_payload = build_post_payload(post_content)
+        signed_payload = build_signed_payload(msg_payload, wif, is_mainnet=False)
+        version_byte = 111  # testnet
+        encoded_addresses = encode_payload_to_addresses(signed_payload, version_byte)
+
+        # Add CTHULHU-SNAPSHOT keyword for discovery
+        kw_addr = get_keyword_address("CTHULHU-SNAPSHOT", version_byte)
+        full_list = list(encoded_addresses)
+        if kw_addr not in full_list:
+            full_list.append(kw_addr)
+
+        # Sender last (P2FK protocol)
+        while treasury_address in full_list:
+            full_list.remove(treasury_address)
+        full_list.append(treasury_address)
+
+        outputs = [(addr, 546, "satoshi") for addr in full_list]
+
+        # Fetch UTXOs and build tx
+        utxos = await fetch_utxos_mempool(treasury_address, is_mainnet=False)
+        if not utxos:
+            _adlog("CID announce skipped — no UTXOs for treasury")
+            return {"skipped": True, "reason": "no_utxos"}
+        key._unspents = utxos
+
+        tx_hex = key.create_transaction(outputs)
+
+        # Broadcast
+        result = await broadcast_raw_tx(tx_hex, is_mainnet=False)
+        if not result.get("success"):
+            _adlog(f"CID announce broadcast failed: {result.get('error', 'unknown')}")
+            return {"error": result.get("error", "broadcast_failed")}
+
+        txid = result["txid"]
+        dust_cost = len(full_list) * 546
+
+        # Record in treasury ledger
+        try:
+            from routes.treasury import record_ledger_entry
+            await record_ledger_entry(
+                "snapshot_announce", dust_cost, "btc-testnet",
+                txid=txid, details=f"CID announce: {cid[:20]}... chain={network_indexed} type={snap_type}"
+            )
+        except Exception as e:
+            logger.warning(f"Ledger recording failed for CID announce: {e}")
+
+        # Update state
+        state["last_announced_at"] = time.time()
+        state["last_announced_cid"] = cid
+        state["last_txid"] = txid
+        state["total_announcements"] += 1
+
+        _adlog(f"CID announced on-chain! txid={txid[:16]}... cid={cid[:20]}... cost={dust_cost} sats")
+        return {"success": True, "txid": txid, "cid": cid, "cost_sats": dust_cost}
+
+    except Exception as e:
+        _adlog(f"CID announce error: {e}")
+        return {"error": str(e)}
+
+
 async def _auto_delta_loop():
     """Background loop: vacuum → delta snapshot → sleep → repeat.
+    Multi-chain: sweeps ALL configured networks each cycle.
     Skips snapshot production if vacuum finds 0 new roots."""
     state = _auto_delta_state
-    _adlog(f"Started (every {state['interval_minutes']}m on {state['network']})")
+    networks = state["networks"]
+    _adlog(f"Started (every {state['interval_minutes']}m, networks: {', '.join(networks)})")
 
     while state["enabled"]:
         state["running"] = True
         state["runs_total"] += 1
-        network = state["network"]
+        total_new_roots = 0
+        latest_cid = None
+        latest_network = None
+        latest_type = None
+        latest_root_count = 0
 
-        try:
-            # Phase 1: Quick vacuum (crawl known signers only)
-            _adlog("Vacuum: crawling known signers...")
-            pre_count = 0
-            conn = await get_conn()
-            async with conn.execute(
-                "SELECT COUNT(*) FROM api_cache WHERE _id LIKE 'p2fk:GetRoot%'"
-            ) as cursor:
-                row = await cursor.fetchone()
-                pre_count = row[0] if row else 0
+        for network in networks:
+            try:
+                _adlog(f"[{network}] Vacuum: crawling known signers...")
+                conn = await get_conn()
 
-            await _run_vacuum(network)
+                # Count roots before vacuum
+                async with conn.execute(
+                    "SELECT COUNT(*) FROM api_cache WHERE _id LIKE ?",
+                    (f"p2fk:GetRoot%:{('mainnet' in network)}:%",)
+                ) as cursor:
+                    row = await cursor.fetchone()
+                    pre_count = row[0] if row else 0
 
-            # Wait for vacuum to finish
-            while _vacuum_state["running"]:
-                await asyncio.sleep(2)
+                await _run_vacuum(network)
 
-            async with conn.execute(
-                "SELECT COUNT(*) FROM api_cache WHERE _id LIKE 'p2fk:GetRoot%'"
-            ) as cursor:
-                row = await cursor.fetchone()
-                post_count = row[0] if row else 0
+                # Wait for vacuum to finish
+                while _vacuum_state["running"]:
+                    await asyncio.sleep(2)
 
-            new_roots = post_count - pre_count
+                # Count roots after vacuum
+                async with conn.execute(
+                    "SELECT COUNT(*) FROM api_cache WHERE _id LIKE ?",
+                    (f"p2fk:GetRoot%:{('mainnet' in network)}:%",)
+                ) as cursor:
+                    row = await cursor.fetchone()
+                    post_count = row[0] if row else 0
 
-            # Phase 2: Produce delta only if new roots found
-            if new_roots > 0:
-                _adlog(f"Found {new_roots} new roots → producing delta snapshot...")
-                result = await _produce_snapshot(network, delta=True)
-                state["last_result"] = result
-                if result.get("cid"):
-                    state["runs_success"] += 1
-                    _adlog(f"Delta pinned: {result['cid'][:20]}... ({result.get('total_roots', 0)} roots, {result.get('size_human', '?')})")
+                new_roots = post_count - pre_count
+                total_new_roots += new_roots
+
+                # Produce delta only if new roots found for this network
+                if new_roots > 0:
+                    _adlog(f"[{network}] Found {new_roots} new roots → producing delta...")
+                    result = await _produce_snapshot(network, delta=True)
+                    if result.get("cid"):
+                        state["runs_success"] += 1
+                        latest_cid = result["cid"]
+                        latest_network = network
+                        latest_type = result.get("type", "delta")
+                        latest_root_count = result.get("total_roots", 0)
+                        _adlog(f"[{network}] Delta pinned: {result['cid'][:20]}... ({result.get('total_roots', 0)} roots)")
+                    else:
+                        _adlog(f"[{network}] Delta failed: {result.get('error', 'unknown')}")
                 else:
-                    _adlog(f"Delta failed: {result.get('error', 'unknown')}")
-            else:
-                state["runs_skipped"] += 1
-                _adlog(f"0 new roots — skipping snapshot")
+                    _adlog(f"[{network}] 0 new roots — skipping snapshot")
 
-        except Exception as e:
-            _adlog(f"Error: {e}")
-        finally:
-            state["running"] = False
-            state["last_run"] = datetime.now(timezone.utc).isoformat()
+            except Exception as e:
+                _adlog(f"[{network}] Error: {e}")
+
+        if total_new_roots == 0:
+            state["runs_skipped"] += 1
+
+        # On-chain CID announcement (on BTC testnet) if we produced a snapshot
+        if latest_cid and _announce_state["enabled"]:
+            await _announce_cid_onchain(latest_cid, latest_network, latest_type, latest_root_count)
+
+        state["running"] = False
+        state["last_run"] = datetime.now(timezone.utc).isoformat()
 
         # Sleep for interval (check every 10s if still enabled)
         sleep_seconds = state["interval_minutes"] * 60
@@ -993,15 +1124,15 @@ async def bootstrap_status():
 @router.post("/auto-delta/start")
 async def start_auto_delta(
     interval: int = Query(15, description="Minutes between delta runs"),
-    network: str = Query("btc-testnet"),
+    networks: str = Query("btc-testnet,btc-mainnet", description="Comma-separated networks to sweep"),
 ):
-    """Start the auto-delta scheduler. Runs vacuum → delta on interval. Skips if 0 new roots."""
+    """Start the auto-delta scheduler. Sweeps ALL networks each cycle. Skips if 0 new roots."""
     if _auto_delta_state["enabled"]:
         return {"error": "Auto-delta already running", "state": _get_auto_delta_status()}
 
     _auto_delta_state["enabled"] = True
     _auto_delta_state["interval_minutes"] = max(5, min(interval, 1440))  # 5 min to 24 hr
-    _auto_delta_state["network"] = network
+    _auto_delta_state["networks"] = [n.strip() for n in networks.split(",") if n.strip()]
     _auto_delta_state["_task"] = asyncio.create_task(_auto_delta_loop())
     return {"started": True, **_get_auto_delta_status()}
 
@@ -1024,12 +1155,53 @@ async def auto_delta_status():
     return _get_auto_delta_status()
 
 
+@router.get("/announce/status")
+async def announce_status():
+    """Get on-chain CID announcement state."""
+    return {
+        "enabled": _announce_state["enabled"],
+        "min_interval_hours": _announce_state["min_interval_hours"],
+        "last_announced_at": _announce_state["last_announced_at"],
+        "last_announced_cid": _announce_state["last_announced_cid"],
+        "last_txid": _announce_state["last_txid"],
+        "total_announcements": _announce_state["total_announcements"],
+        "min_treasury_balance_sats": _announce_state["min_treasury_balance_sats"],
+    }
+
+
+@router.post("/announce/config")
+async def configure_announce(
+    enabled: Optional[bool] = Query(None),
+    min_interval_hours: Optional[int] = Query(None),
+    min_treasury_balance_sats: Optional[int] = Query(None),
+):
+    """Configure on-chain CID announcement settings."""
+    if enabled is not None:
+        _announce_state["enabled"] = enabled
+    if min_interval_hours is not None:
+        _announce_state["min_interval_hours"] = max(1, min(min_interval_hours, 168))  # 1h to 1 week
+    if min_treasury_balance_sats is not None:
+        _announce_state["min_treasury_balance_sats"] = max(10000, min_treasury_balance_sats)
+    return {"updated": True, **{k: v for k, v in _announce_state.items()}}
+
+
+@router.post("/announce/trigger")
+async def trigger_announce(
+    cid: str = Query(..., description="CID to announce on-chain"),
+    network: str = Query("btc-testnet", description="Network the snapshot indexes"),
+    snap_type: str = Query("manual", description="Snapshot type (full/delta/manual)"),
+    root_count: int = Query(0),
+):
+    """Manually trigger an on-chain CID announcement via treasury wallet."""
+    return await _announce_cid_onchain(cid, network, snap_type, root_count)
+
+
 def _get_auto_delta_status():
     s = _auto_delta_state
     return {
         "enabled": s["enabled"],
         "interval_minutes": s["interval_minutes"],
-        "network": s["network"],
+        "networks": s["networks"],
         "running": s["running"],
         "last_run": s["last_run"],
         "last_result": s["last_result"],
@@ -1037,4 +1209,21 @@ def _get_auto_delta_status():
         "runs_skipped": s["runs_skipped"],
         "runs_success": s["runs_success"],
         "log": s["log"][-20:],
+        "announce": {
+            "enabled": _announce_state["enabled"],
+            "last_announced_cid": _announce_state["last_announced_cid"],
+            "last_txid": _announce_state["last_txid"],
+            "total_announcements": _announce_state["total_announcements"],
+        },
     }
+
+
+def start_auto_delta_on_boot():
+    """Auto-start the multi-chain delta loop on server boot.
+    Desktop apps and standalone servers start sweeping immediately —
+    no admin action needed."""
+    if _auto_delta_state["enabled"]:
+        return  # Already running
+    _auto_delta_state["enabled"] = True
+    _auto_delta_state["_task"] = asyncio.create_task(_auto_delta_loop())
+    logger.info("[AutoDelta] Auto-started on boot (multi-chain, 15m interval)")

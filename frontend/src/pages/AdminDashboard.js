@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { FiSettings, FiAlertCircle, FiMessageSquare, FiBarChart2, FiLogOut, FiLock, FiSave, FiRefreshCw, FiChevronDown, FiChevronUp, FiSend, FiTrash2, FiKey, FiActivity, FiFilm, FiCpu, FiDatabase, FiGlobe, FiMusic, FiPhone, FiZap, FiDollarSign, FiFile, FiEdit, FiCheck, FiX, FiCopy, FiUpload, FiPlus, FiExternalLink, FiLoader, FiBriefcase, FiPackage, FiHardDrive, FiDownload, FiPlay, FiPause } from 'react-icons/fi';
+import { FiSettings, FiAlertCircle, FiMessageSquare, FiBarChart2, FiLogOut, FiLock, FiSave, FiRefreshCw, FiChevronDown, FiChevronUp, FiSend, FiTrash2, FiKey, FiActivity, FiFilm, FiCpu, FiDatabase, FiGlobe, FiMusic, FiPhone, FiZap, FiDollarSign, FiFile, FiEdit, FiCheck, FiX, FiCopy, FiUpload, FiPlus, FiExternalLink, FiLoader, FiBriefcase, FiPackage, FiHardDrive, FiDownload, FiPlay, FiPause, FiRadio } from 'react-icons/fi';
 import { getCallLogs, clearCallLogs, exportCallLogs } from '@/utils/callDebugLog';
 import AdminWalletPanel from '@/components/admin/AdminWalletPanel';
 import CheckpointPanel from '@/components/admin/CheckpointPanel';
@@ -1142,7 +1142,7 @@ function AutoDeltaSection({ network }) {
       if (status?.enabled) {
         await fetch(`${ROOT_API}/snapshot/auto-delta/stop`, { method: 'POST' });
       } else {
-        await fetch(`${ROOT_API}/snapshot/auto-delta/start?interval=${interval}&network=${network}`, { method: 'POST' });
+        await fetch(`${ROOT_API}/snapshot/auto-delta/start?interval=${interval}&networks=btc-testnet,btc-mainnet`, { method: 'POST' });
       }
       await fetchStatus();
     } catch {}
@@ -1150,6 +1150,7 @@ function AutoDeltaSection({ network }) {
   };
 
   const enabled = status?.enabled;
+  const announce = status?.announce;
 
   return (
     <div className={`bg-gray-900/60 border rounded-xl p-5 ${enabled ? 'border-emerald-700/40' : 'border-gray-800'}`} data-testid="auto-delta-section">
@@ -1160,7 +1161,7 @@ function AutoDeltaSection({ network }) {
             {enabled && <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />}
           </h3>
           <p className="text-[10px] text-gray-500">
-            Periodically vacuum new roots and produce delta snapshots. Skips if 0 new roots found.
+            Multi-chain sweep ({(status?.networks || []).join(', ') || 'btc-testnet, btc-mainnet'}). Skips if 0 new roots.
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -1215,6 +1216,25 @@ function AutoDeltaSection({ network }) {
             <p className="text-[9px] text-gray-500">Interval</p>
             <p className="text-sm font-bold text-gray-200">{status.interval_minutes}m</p>
           </div>
+        </div>
+      )}
+
+      {/* On-Chain CID Announce Status */}
+      {announce && (
+        <div className={`rounded-lg px-3 py-2 mb-3 ${announce.last_txid ? 'bg-purple-900/15 border border-purple-700/20' : 'bg-gray-800/30 border border-gray-800'}`}>
+          <div className="flex items-center justify-between">
+            <p className="text-[10px] text-purple-400 flex items-center gap-1.5">
+              <FiRadio size={10} />
+              On-Chain CID Announce
+              {announce.enabled ? <span className="text-emerald-400">(active)</span> : <span className="text-gray-500">(off)</span>}
+            </p>
+            <p className="text-[9px] text-gray-500">{announce.total_announcements} broadcasts</p>
+          </div>
+          {announce.last_txid && (
+            <p className="text-[9px] text-gray-400 mt-1 font-mono">
+              Last: <a href={`https://mempool.space/testnet/tx/${announce.last_txid}`} target="_blank" rel="noreferrer" className="text-cyan-500 hover:underline">{announce.last_txid.slice(0, 20)}...</a>
+            </p>
+          )}
         </div>
       )}
 

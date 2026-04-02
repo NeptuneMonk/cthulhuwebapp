@@ -852,31 +852,66 @@ async def get_object_by_address(address: str, network: str = 'btc-testnet'):
                 logger.warning(f"Roots-based object lookup failed for {address}: {e}")
 
         if not formatted:
+            # Before returning 404, check if the object was burned (indexer drops fully-burned objects)
+            try:
+                roots = await p2fk_get(f"GetRootsByAddress/{address}", is_mainnet)
+                burn_roots = []
+                obj_root = None
+                if isinstance(roots, list):
+                    for root in roots:
+                        file_data = root.get('File') or {}
+                        if 'BRN' in file_data:
+                            burn_roots.append(root)
+                        elif 'OBJ' in file_data and not obj_root:
+                            obj_root = root
+
+                if burn_roots:
+                    # Object existed but was burned — return synthetic burned response
+                    formatted = {
+                        'name': obj_root.get('File', {}).get('OBJ', 'Unknown Object') if obj_root else 'Burned Object',
+                        'description': 'This object has been burned and removed from the chain index.',
+                        'image': '',
+                        'owners': [],
+                        'creators': [],
+                        'transaction_id': obj_root.get('TransactionId', '') if obj_root else '',
+                        'burn_transactions': len(burn_roots),
+                        'burn_txids': [r.get('TransactionId', '')[:16] for r in burn_roots],
+                        'is_burned': True,
+                        'burn_status': 'fully_burned',
+                        'total_supply': 0,
+                        'royalties': {},
+                        'on_chain_files': {},
+                    }
+                    logger.info(f"Object {address} is fully burned ({len(burn_roots)} BRN txs)")
+            except Exception as e:
+                logger.debug(f"Burn fallback check failed for {address}: {e}")
+
+        if not formatted:
             raise HTTPException(status_code=404, detail="Object not found")
 
         formatted['network'] = network
         formatted['object_address'] = address
 
         # ── Burn detection: check on-chain roots for BRN transactions ──
-        try:
-            roots = await p2fk_get(f"GetRootsByAddress/{address}", is_mainnet)
-            burn_count = 0
-            burn_txids = []
-            if isinstance(roots, list):
-                for root in roots:
-                    file_data = root.get('File') or {}
-                    if 'BRN' in file_data:
-                        burn_count += 1
-                        burn_txids.append(root.get('TransactionId', '')[:16])
-            if burn_count > 0:
-                formatted['burn_transactions'] = burn_count
-                formatted['burn_txids'] = burn_txids
-                # If total supply is 0 or all owners have 0 quantity, mark as fully burned
-                total_owned = sum(o.get('quantity', 0) for o in (formatted.get('owners') or []))
-                formatted['is_burned'] = total_owned == 0
-                formatted['burn_status'] = 'fully_burned' if total_owned == 0 else 'partially_burned'
-        except Exception as e:
-            logger.debug(f"Burn check error for {address}: {e}")
+        if not formatted.get('is_burned'):
+            try:
+                roots = await p2fk_get(f"GetRootsByAddress/{address}", is_mainnet)
+                burn_count = 0
+                burn_txids = []
+                if isinstance(roots, list):
+                    for root in roots:
+                        file_data = root.get('File') or {}
+                        if 'BRN' in file_data:
+                            burn_count += 1
+                            burn_txids.append(root.get('TransactionId', '')[:16])
+                if burn_count > 0:
+                    formatted['burn_transactions'] = burn_count
+                    formatted['burn_txids'] = burn_txids
+                    total_owned = sum(o.get('quantity', 0) for o in (formatted.get('owners') or []))
+                    formatted['is_burned'] = total_owned == 0
+                    formatted['burn_status'] = 'fully_burned' if total_owned == 0 else 'partially_burned'
+            except Exception as e:
+                logger.debug(f"Burn check error for {address}: {e}")
 
         # Resolve missing TransactionId via GetRootsByAddress
         if not formatted.get('transaction_id'):

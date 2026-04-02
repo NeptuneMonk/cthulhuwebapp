@@ -51,7 +51,7 @@ from routes.etch import router as etch_router
 from routes.admin_wallet import router as admin_wallet_router
 from routes.auto_checkpoint import router as auto_checkpoint_router, start_auto_checkpoint
 from routes.releases import router as releases_router, public_router as releases_public_router
-from routes.snapshot import router as snapshot_router
+from routes.snapshot import router as snapshot_router, start_auto_delta_on_boot
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -317,6 +317,9 @@ async def startup():
 
     # Start auto-checkpoint background task
     start_auto_checkpoint()
+
+    # Start auto-delta sweep on boot (multi-chain, 15m interval, no admin needed)
+    start_auto_delta_on_boot()
 
     # Auto-install and start Kubo IPFS daemon
     asyncio.create_task(_ensure_kubo_running())
