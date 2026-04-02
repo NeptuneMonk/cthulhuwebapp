@@ -14,13 +14,18 @@ import { useTheme } from '@/hooks/useTheme';
 import { getPendingPosts, checkConfirmations, cleanupOldPosts } from '@/utils/pendingPosts';
 import { cachedFetch } from '@/utils/apiCache';
 import { meshFirstFetch } from '@/utils/meshFirstFetch';
-import { FiAtSign, FiArrowDown } from 'react-icons/fi';
+import { FiAtSign, FiArrowDown, FiUsers, FiGlobe } from 'react-icons/fi';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const PAGE_SIZE = 20;
 const MAX_RENDERED_POSTS = 150;
+const FEED_MODE_KEY = 'cthulhu_feed_mode';
 
-export default function FeedPage({ network }) {
+function getFeedMode() {
+  try { return localStorage.getItem(FEED_MODE_KEY) || 'global'; } catch { return 'global'; }
+}
+
+export default function FeedPage({ network, follows = [] }) {
   const [feed, setFeed] = useState([]);
   const [loading, setLoading] = useState(false);
   const [hasMore, setHasMore] = useState(true);
@@ -30,6 +35,7 @@ export default function FeedPage({ network }) {
   const [pendingPosts, setPendingPosts] = useState([]);
   const [forwardMsg, setForwardMsg] = useState(null); // { txid, senderUrn, senderAddress, content }
   const [tipMsg, setTipMsg] = useState(null); // { txid, senderUrn, senderAddress }
+  const [feedMode, setFeedMode] = useState(getFeedMode);
   const { user } = useAuth();
   const { filterBlocked, blockUser } = useBlockList(network);
   const { performLike, performPin, performDelete, performMonetizedLike, performForward, busy, busyAction } = useOnChainActions(network);
@@ -41,6 +47,14 @@ export default function FeedPage({ network }) {
   const refreshPending = useCallback(() => {
     setPendingPosts(getPendingPosts(network));
   }, [network]);
+
+  const toggleFeedMode = useCallback(() => {
+    setFeedMode(prev => {
+      const next = prev === 'global' ? 'following' : 'global';
+      try { localStorage.setItem(FEED_MODE_KEY, next); } catch {}
+      return next;
+    });
+  }, []);
 
   useEffect(() => {
     if (!user?.address) return;
@@ -97,7 +111,7 @@ export default function FeedPage({ network }) {
     setInitialLoad(true); fetchPageRef.current(0, true);
     refreshPending();
     hasScrolledRef.current = false;
-  }, [network]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [network, feedMode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-scroll to bottom on initial load (chat-style: newest at bottom)
   useEffect(() => {
@@ -122,8 +136,14 @@ export default function FeedPage({ network }) {
     if (loadingRef.current) return;
     loadingRef.current = true; setLoading(true);
     try {
+      // Build query params for feed mode
+      const params = { skip, limit: PAGE_SIZE };
+      if (feedMode === 'following' && follows.length > 0) {
+        params.mode = 'following';
+        params.followed = follows.map(f => f.address).join(',');
+      }
       // Mesh-first: peers → blockchain → backend
-      const { data: res, source } = await meshFirstFetch(`/feed/${network}`, { skip, limit: PAGE_SIZE });
+      const { data: res, source } = await meshFirstFetch(`/feed/${network}`, params);
       if (!res) throw new Error('All sources failed');
       const newPosts = res.feed || [];
       setFeed(prev => {
@@ -143,7 +163,7 @@ export default function FeedPage({ network }) {
       console.error('Feed error:', err);
       setHasMore(false); hasMoreRef.current = false;
     } finally { loadingRef.current = false; setLoading(false); setInitialLoad(false); }
-  }, [network]);
+  }, [network, feedMode, follows]);
   fetchPageRef.current = fetchPage;
 
   const sentinelRef = useCallback((node) => {
@@ -170,6 +190,36 @@ export default function FeedPage({ network }) {
 
   return (
     <div className="h-full flex flex-col" style={{ backgroundColor: theme.colors.bg }} data-testid="feed-page">
+      {/* Feed Mode Toggle */}
+      <div className="flex-shrink-0 flex items-center justify-center py-2 px-4 border-b border-gray-800/50">
+        <div className="flex items-center bg-gray-900/80 rounded-full p-0.5 border border-gray-700/50" data-testid="feed-mode-toggle">
+          <button
+            onClick={() => feedMode !== 'following' && toggleFeedMode()}
+            className={`flex items-center gap-1.5 px-4 py-1.5 rounded-full text-xs font-medium transition-all ${
+              feedMode === 'following'
+                ? 'bg-cyan-600 text-white shadow-sm'
+                : 'text-gray-500 hover:text-gray-300'
+            }`}
+            data-testid="feed-mode-following-btn"
+          >
+            <FiUsers size={12} />
+            Following{follows.length > 0 ? ` (${follows.length})` : ''}
+          </button>
+          <button
+            onClick={() => feedMode !== 'global' && toggleFeedMode()}
+            className={`flex items-center gap-1.5 px-4 py-1.5 rounded-full text-xs font-medium transition-all ${
+              feedMode === 'global'
+                ? 'bg-cyan-600 text-white shadow-sm'
+                : 'text-gray-500 hover:text-gray-300'
+            }`}
+            data-testid="feed-mode-global-btn"
+          >
+            <FiGlobe size={12} />
+            Global
+          </button>
+        </div>
+      </div>
+
       {/* Scrollable Feed — chat-style: newest at bottom */}
       <div ref={scrollContainerRef} className="flex-1 overflow-y-auto px-4 min-h-0" style={wallpaperStyle}>
         {initialLoad && loading ? (
@@ -179,8 +229,22 @@ export default function FeedPage({ network }) {
           </div>
         ) : feed.length === 0 && visiblePending.length === 0 && !loading ? (
           <div className="text-center py-12">
-            <p className="text-xl font-bold text-gray-400 mb-2">No transmissions yet</p>
-            <p className="text-gray-600">Search for profiles or switch to a network with activity</p>
+            {feedMode === 'following' && follows.length === 0 ? (
+              <>
+                <p className="text-xl font-bold text-gray-400 mb-2">No one followed yet</p>
+                <p className="text-gray-600">Search for profiles and follow them, or switch to Global to see all activity</p>
+              </>
+            ) : feedMode === 'following' ? (
+              <>
+                <p className="text-xl font-bold text-gray-400 mb-2">No transmissions from followed users</p>
+                <p className="text-gray-600">Your followed users haven't posted yet on this network</p>
+              </>
+            ) : (
+              <>
+                <p className="text-xl font-bold text-gray-400 mb-2">No transmissions yet</p>
+                <p className="text-gray-600">Search for profiles or switch to a network with activity</p>
+              </>
+            )}
           </div>
         ) : (
           <div className="max-w-3xl mx-auto flex flex-col-reverse gap-3 py-4">

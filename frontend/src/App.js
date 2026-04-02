@@ -1151,7 +1151,7 @@ function AppLayout({ network, setNetwork, claimed, claimProfile, unclaimProfile,
         <Layout network={network} setNetwork={setNetwork} follows={follows} toggleFollow={toggleFollow} claimed={claimed} claimProfile={claimProfile} unclaimProfile={unclaimProfile} pendingMint={pendingMint}>
           <Routes>
             {/* Public routes — browsable without login */}
-            <Route path="/feed" element={<FeedPage network={network} />} />
+            <Route path="/feed" element={<FeedPage network={network} follows={follows} />} />
             <Route path="/objects" element={<ObjectsPage network={network} />} />
             <Route path="/object/addr/:address" element={<SingleObjectPage network={network} lookupByAddress />} />
             <Route path="/object/:txid" element={<SingleObjectPage network={network} />} />

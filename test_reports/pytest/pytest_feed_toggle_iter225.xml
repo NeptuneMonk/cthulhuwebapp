@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="13" skipped="0" tests="14" time="783.283" timestamp="2026-04-02T04:37:45.140505+00:00" hostname="agent-env-ae3e0cd5-ad72-4b84-93b6-e8db8b514a93"><testcase classname="backend.tests.test_feed_toggle_iter225.TestFeedModeToggle" name="test_feed_global_mode_returns_mode_field" time="60.163"><failure message="assert 502 == 200&#10; +  where 502 = &lt;Response [502]&gt;.status_code">backend/tests/test_feed_toggle_iter225.py:23: in test_feed_global_mode_returns_mode_field
+    assert response.status_code == 200
+E   assert 502 == 200
+E    +  where 502 = &lt;Response [502]&gt;.status_code</failure></testcase><testcase classname="backend.tests.test_feed_toggle_iter225.TestFeedModeToggle" name="test_feed_following_mode_filters_by_address" time="60.155"><failure message="assert 502 == 200&#10; +  where 502 = &lt;Response [502]&gt;.status_code">backend/tests/test_feed_toggle_iter225.py:36: in test_feed_following_mode_filters_by_address
+    assert global_resp.status_code == 200
+E   assert 502 == 200
+E    +  where 502 = &lt;Response [502]&gt;.status_code</failure></testcase><testcase classname="backend.tests.test_feed_toggle_iter225.TestFeedModeToggle" name="test_feed_following_mode_with_empty_followed" time="60.135"><failure message="assert 502 == 200&#10; +  where 502 = &lt;Response [502]&gt;.status_code">backend/tests/test_feed_toggle_iter225.py:60: in test_feed_following_mode_with_empty_followed
+    assert response.status_code == 200
+E   assert 502 == 200
+E    +  where 502 = &lt;Response [502]&gt;.status_code</failure></testcase><testcase classname="backend.tests.test_feed_toggle_iter225.TestFeedModeToggle" name="test_feed_following_mode_with_multiple_addresses" time="60.151"><failure message="assert 502 == 200&#10; +  where 502 = &lt;Response [502]&gt;.status_code">backend/tests/test_feed_toggle_iter225.py:72: in test_feed_following_mode_with_multiple_addresses
+    assert global_resp.status_code == 200
+E   assert 502 == 200
+E    +  where 502 = &lt;Response [502]&gt;.status_code</failure></testcase><testcase classname="backend.tests.test_feed_toggle_iter225.TestDeltaSnapshots" name="test_delta_snapshot_returns_type_delta" time="60.170"><failure message="assert 502 == 200&#10; +  where 502 = &lt;Response [502]&gt;.status_code">backend/tests/test_feed_toggle_iter225.py:104: in test_delta_snapshot_returns_type_delta
+    assert response.status_code == 200
+E   assert 502 == 200
+E    +  where 502 = &lt;Response [502]&gt;.status_code</failure></testcase><testcase classname="backend.tests.test_feed_toggle_iter225.TestDeltaSnapshots" name="test_full_snapshot_returns_type_full" time="60.156"><failure message="assert 502 == 200&#10; +  where 502 = &lt;Response [502]&gt;.status_code">backend/tests/test_feed_toggle_iter225.py:119: in test_full_snapshot_returns_type_full
+    assert response.status_code == 200
+E   assert 502 == 200
+E    +  where 502 = &lt;Response [502]&gt;.status_code</failure></testcase><testcase classname="backend.tests.test_feed_toggle_iter225.TestAutoBootstrap" name="test_auto_bootstrap_starts_background_task" time="60.197"><failure message="assert 502 == 200&#10; +  where 502 = &lt;Response [502]&gt;.status_code">backend/tests/test_feed_toggle_iter225.py:139: in test_auto_bootstrap_starts_background_task
+    assert response.status_code == 200
+E   assert 502 == 200
+E    +  where 502 = &lt;Response [502]&gt;.status_code</failure></testcase><testcase classname="backend.tests.test_feed_toggle_iter225.TestAutoBootstrap" name="test_bootstrap_status_returns_progress_fields" time="60.140"><failure message="assert 502 == 200&#10; +  where 502 = &lt;Response [502]&gt;.status_code">backend/tests/test_feed_toggle_iter225.py:154: in test_bootstrap_status_returns_progress_fields
+    assert response.status_code == 200
+E   assert 502 == 200
+E    +  where 502 = &lt;Response [502]&gt;.status_code</failure></testcase><testcase classname="backend.tests.test_feed_toggle_iter225.TestAutoBootstrap" name="test_bootstrap_status_shows_consuming_phase" time="61.167"><failure message="assert 502 == 200&#10; +  where 502 = &lt;Response [502]&gt;.status_code">backend/tests/test_feed_toggle_iter225.py:174: in test_bootstrap_status_shows_consuming_phase
+    assert response.status_code == 200
+E   assert 502 == 200
+E    +  where 502 = &lt;Response [502]&gt;.status_code</failure></testcase><testcase classname="backend.tests.test_feed_toggle_iter225.TestVacuumDeepRoots" name="test_vacuum_status_endpoint_exists" time="60.191"><failure message="assert 502 == 200&#10; +  where 502 = &lt;Response [502]&gt;.status_code">backend/tests/test_feed_toggle_iter225.py:193: in test_vacuum_status_endpoint_exists
+    assert response.status_code == 200
+E   assert 502 == 200
+E    +  where 502 = &lt;Response [502]&gt;.status_code</failure></testcase><testcase classname="backend.tests.test_feed_toggle_iter225.TestVacuumDeepRoots" name="test_vacuum_phases_include_deep_roots" time="0.000" /><testcase classname="backend.tests.test_feed_toggle_iter225.TestVacuumDeepRoots" name="test_vacuum_valid_phases" time="60.147"><failure message="assert 502 == 200&#10; +  where 502 = &lt;Response [502]&gt;.status_code">backend/tests/test_feed_toggle_iter225.py:226: in test_vacuum_valid_phases
+    assert response.status_code == 200
+E   assert 502 == 200
+E    +  where 502 = &lt;Response [502]&gt;.status_code</failure></testcase><testcase classname="backend.tests.test_feed_toggle_iter225.TestSnapshotChain" name="test_latest_cid_endpoint" time="60.172"><failure message="assert 502 == 200&#10; +  where 502 = &lt;Response [502]&gt;.status_code">backend/tests/test_feed_toggle_iter225.py:246: in test_latest_cid_endpoint
+    assert response.status_code == 200
+E   assert 502 == 200
+E    +  where 502 = &lt;Response [502]&gt;.status_code</failure></testcase><testcase classname="backend.tests.test_feed_toggle_iter225.TestSnapshotChain" name="test_snapshot_chain_shows_types" time="60.103"><failure message="assert 502 == 200&#10; +  where 502 = &lt;Response [502]&gt;.status_code">backend/tests/test_feed_toggle_iter225.py:260: in test_snapshot_chain_shows_types
+    assert response.status_code == 200
+E   assert 502 == 200
+E    +  where 502 = &lt;Response [502]&gt;.status_code</failure></testcase></testsuite></testsuites>

@@ -346,7 +346,7 @@ async def _build_feed_from_scratch(network: str, is_mainnet: bool) -> list:
 
 
 @router.get("/feed/{network}")
-async def get_feed(network: str, skip: int = 0, limit: int = 5):
+async def get_feed(network: str, skip: int = 0, limit: int = 5, mode: str = 'global', followed: str = ''):
     try:
         is_mainnet = 'mainnet' in network.lower()
         cache_key = f"feed:{network}"
@@ -358,19 +358,27 @@ async def get_feed(network: str, skip: int = 0, limit: int = 5):
         if cached and cached.get('messages'):
             cache_age = (datetime.now(timezone.utc) - datetime.fromisoformat(cached['timestamp'])).total_seconds()
             all_messages = cached['messages']
+
+            # Filter to followed addresses only
+            if mode == 'following' and followed:
+                followed_set = set(a.strip() for a in followed.split(',') if a.strip())
+                if followed_set:
+                    all_messages = [m for m in all_messages if m.get('from_address') in followed_set]
+
             total = len(all_messages)
             page = all_messages[skip:skip + limit]
 
             refreshing = _feed_refreshing.get(network, False)
             if cache_age > 300 and not refreshing:
-                asyncio.create_task(_refresh_feed_cache(network, is_mainnet, cache_key))
+                asyncio.create_task(_refresh_feed_cache(network, is_mainnet, f"feed:{network}"))
                 refreshing = True
 
             return {
                 "feed": page, "network": network, "count": len(page),
                 "total": total, "skip": skip, "limit": limit,
                 "has_more": (skip + limit) < total,
-                "cached": True, "cache_age": int(cache_age), "refreshing": refreshing
+                "cached": True, "cache_age": int(cache_age), "refreshing": refreshing,
+                "mode": mode,
             }
 
         all_messages = await _build_feed_from_scratch(network, is_mainnet)
@@ -385,12 +393,19 @@ async def get_feed(network: str, skip: int = 0, limit: int = 5):
             upsert=True
         )
 
+        # Filter for following mode
+        if mode == 'following' and followed:
+            followed_set = set(a.strip() for a in followed.split(',') if a.strip())
+            if followed_set:
+                all_messages = [m for m in all_messages if m.get('from_address') in followed_set]
+
         total = len(all_messages)
         page = all_messages[skip:skip + limit]
         return {
             "feed": page, "network": network, "count": len(page),
             "total": total, "skip": skip, "limit": limit,
-            "has_more": (skip + limit) < total
+            "has_more": (skip + limit) < total,
+            "mode": mode,
         }
     except Exception as e:
         logger.error(f"Feed error: {e}")

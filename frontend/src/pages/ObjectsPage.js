@@ -6,6 +6,7 @@ import { ObjectCard } from '@/components/ObjectCard';
 import { useWallet } from '@/hooks/useWallet';
 import { useAuth } from '@/hooks/useAuth';
 import { ObjectCreateModal } from '@/components/ObjectCreateModal';
+import { cachedFetch } from '@/utils/apiCache';
 
 const API = process.env.REACT_APP_BACKEND_URL;
 
@@ -192,21 +193,32 @@ export default function ObjectsPage({ network }) {
     };
   });
 
-  /** Fetch objects via backend proxy */
+  /** Fetch objects via backend proxy with caching */
   const fetchObjects = useCallback(async (searchString, skip, qty, isReset = false) => {
     if (loading) return;
     setLoading(true);
     try {
-      const url = `${API}/api/p2fk/search/objects?searchString=${encodeURIComponent(searchString)}&qty=${qty}&skip=${skip}`;
-      const res = await axios.get(url);
-      const items = Array.isArray(res.data) ? res.data : [];
-      // Normalize: extract the nested object and add blockchain info
+      const cacheId = `objs_${searchString}_${skip}_${qty}`;
+      const doFetch = async () => {
+        const url = `${API}/api/p2fk/search/objects?searchString=${encodeURIComponent(searchString)}&qty=${qty}&skip=${skip}`;
+        const res = await axios.get(url);
+        return Array.isArray(res.data) ? res.data : [];
+      };
+
+      const items = await cachedFetch('objects', cacheId, doFetch, (freshItems) => {
+        // Background update with fresh data
+        const normalized = freshItems
+          .filter(item => item?.object)
+          .map(item => ({ ...item.object, _blockchain: item.blockchain || '' }))
+          .filter(o => !(o.License || '').toLowerCase().startsWith('cthulhu:tether'))
+          .filter(o => (o.Name && o.Name !== 'Unnamed Object') || o.Image);
+        setObjects(normalized);
+        setHasMore(freshItems.length >= qty);
+      });
+
       const normalized = items
         .filter(item => item?.object)
-        .map(item => ({
-          ...item.object,
-          _blockchain: item.blockchain || '',
-        }))
+        .map(item => ({ ...item.object, _blockchain: item.blockchain || '' }))
         .filter(o => !(o.License || '').toLowerCase().startsWith('cthulhu:tether'))
         .filter(o => (o.Name && o.Name !== 'Unnamed Object') || o.Image);
 
