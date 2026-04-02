@@ -26,10 +26,12 @@ export const ComposeBar = ({ network, onPostSuccess, targetAddress, placeholder:
   const [recordingTime, setRecordingTime] = useState(0);
   const [showPollModal, setShowPollModal] = useState(false);
   const [attachMenu, setAttachMenu] = useState(false);
+  const [dragging, setDragging] = useState(false);
   const textRef = useRef(null);
   const recorderRef = useRef(null);
   const timerRef = useRef(null);
   const fileInputRef = useRef(null);
+  const dragCountRef = useRef(0);
 
   // @mention autocomplete state
   const [knownUsers, setKnownUsers] = useState([]);
@@ -235,6 +237,44 @@ export const ComposeBar = ({ network, onPostSuccess, targetAddress, placeholder:
     textRef.current?.focus();
   }, []);
 
+  // ─── Drag & Drop + Paste ────────────────────────────────────
+  const addFilesToAttach = useCallback((files) => {
+    const previews = Array.from(files).map(f => ({
+      name: f.name, type: f.type, _file: f,
+      previewUrl: f.type.startsWith('image/') || f.type.startsWith('video/') ? URL.createObjectURL(f) : null,
+    }));
+    setAttachedFiles(prev => [...prev, ...previews]);
+  }, []);
+
+  const handleDragEnter = useCallback((e) => {
+    e.preventDefault(); e.stopPropagation();
+    dragCountRef.current++;
+    if (e.dataTransfer?.types?.includes('Files')) setDragging(true);
+  }, []);
+  const handleDragLeave = useCallback((e) => {
+    e.preventDefault(); e.stopPropagation();
+    dragCountRef.current--;
+    if (dragCountRef.current <= 0) { setDragging(false); dragCountRef.current = 0; }
+  }, []);
+  const handleDragOver = useCallback((e) => { e.preventDefault(); e.stopPropagation(); }, []);
+  const handleDrop = useCallback((e) => {
+    e.preventDefault(); e.stopPropagation();
+    setDragging(false); dragCountRef.current = 0;
+    if (e.dataTransfer?.files?.length) addFilesToAttach(e.dataTransfer.files);
+  }, [addFilesToAttach]);
+  const handlePaste = useCallback((e) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    const files = [];
+    for (const item of items) {
+      if (item.kind === 'file') {
+        const f = item.getAsFile();
+        if (f) files.push(f);
+      }
+    }
+    if (files.length > 0) { e.preventDefault(); addFilesToAttach(files); }
+  }, [addFilesToAttach]);
+
   const hasAttachments = attachedGif || attachedFiles.length > 0;
 
   // ─── Locked states ──────────────────────────────────────────
@@ -321,7 +361,19 @@ export const ComposeBar = ({ network, onPostSuccess, targetAddress, placeholder:
       <div className="bg-[#0a0e14] px-4 pb-0 pt-1">
         <div className="max-w-3xl mx-auto">
           {/* The compose container */}
-          <div className="border border-gray-700/40 rounded-xl bg-[#111827]" data-testid="compose-container">
+          <div className="border border-gray-700/40 rounded-xl bg-[#111827] relative"
+            onDragEnter={handleDragEnter} onDragLeave={handleDragLeave} onDragOver={handleDragOver} onDrop={handleDrop}
+            data-testid="compose-container"
+          >
+            {/* Drop zone overlay */}
+            {dragging && (
+              <div className="absolute inset-0 z-50 bg-blue-500/10 border-2 border-dashed border-blue-400/50 rounded-xl flex items-center justify-center pointer-events-none" data-testid="compose-bar-drop-zone">
+                <div className="text-center">
+                  <FiPaperclip size={24} className="mx-auto text-blue-400 mb-1" />
+                  <p className="text-blue-400 font-medium text-xs">Drop files here</p>
+                </div>
+              </div>
+            )}
 
             {/* Attachment preview area */}
             {hasAttachments && (
@@ -400,6 +452,7 @@ export const ComposeBar = ({ network, onPostSuccess, targetAddress, placeholder:
                   setMentionQuery(match ? match[1] : null);
                   if (match) setMentionIndex(0);
                 }}
+                onPaste={handlePaste}
                 placeholder={customPlaceholder || "Broadcast to the chain..."}
                 rows={1}
                 onKeyDown={e => {

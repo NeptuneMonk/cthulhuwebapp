@@ -29,11 +29,13 @@ export const ComposeModal = ({ onClose, network, replyTo }) => {
   const [recording, setRecording] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
   const [attachMenu, setAttachMenu] = useState(false);
+  const [dragging, setDragging] = useState(false);
   const textRef = useRef(null);
   const recorderRef = useRef(null);
   const timerRef = useRef(null);
   const fileInputRef = useRef(null);
   const attachMenuRef = useRef(null);
+  const dragCountRef = useRef(0);
 
   const activeWif = authWif || wallet?.wif;
   const activeAddress = authUser?.address || wallet?.address;
@@ -276,6 +278,58 @@ export const ComposeModal = ({ onClose, network, replyTo }) => {
     textRef.current?.focus();
   }, []);
 
+  // ─── Drag & Drop + Paste ────────────────────────────────────
+  const addFilesToAttach = useCallback((files) => {
+    const previews = Array.from(files).map(f => {
+      const entry = {
+        name: f.name, type: f.type, _file: f,
+        previewUrl: f.type.startsWith('image/') || f.type.startsWith('video/') ? URL.createObjectURL(f) : null,
+        uploadId: null, cid: null, uploading: false,
+      };
+      if (f.size >= LARGE_FILE_THRESHOLD && uploadQueue) {
+        entry.uploading = true;
+        const uploadId = uploadQueue.addUpload(f, (result) => {
+          setAttachedFiles(prev => prev.map(af =>
+            af._file === f ? { ...af, cid: result.cid, uploading: false } : af
+          ));
+          toast.success(`${f.name} uploaded to IPFS`);
+        });
+        entry.uploadId = uploadId;
+      }
+      return entry;
+    });
+    setAttachedFiles(prev => [...prev, ...previews]);
+  }, [uploadQueue]);
+
+  const handleDragEnter = useCallback((e) => {
+    e.preventDefault(); e.stopPropagation();
+    dragCountRef.current++;
+    if (e.dataTransfer?.types?.includes('Files')) setDragging(true);
+  }, []);
+  const handleDragLeave = useCallback((e) => {
+    e.preventDefault(); e.stopPropagation();
+    dragCountRef.current--;
+    if (dragCountRef.current <= 0) { setDragging(false); dragCountRef.current = 0; }
+  }, []);
+  const handleDragOver = useCallback((e) => { e.preventDefault(); e.stopPropagation(); }, []);
+  const handleDrop = useCallback((e) => {
+    e.preventDefault(); e.stopPropagation();
+    setDragging(false); dragCountRef.current = 0;
+    if (e.dataTransfer?.files?.length) addFilesToAttach(e.dataTransfer.files);
+  }, [addFilesToAttach]);
+  const handlePaste = useCallback((e) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    const files = [];
+    for (const item of items) {
+      if (item.kind === 'file') {
+        const f = item.getAsFile();
+        if (f) files.push(f);
+      }
+    }
+    if (files.length > 0) { e.preventDefault(); addFilesToAttach(files); }
+  }, [addFilesToAttach]);
+
   const hasAttachments = attachedGif || attachedFiles.length > 0;
 
   return (
@@ -296,7 +350,18 @@ export const ComposeModal = ({ onClose, network, replyTo }) => {
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-4 lg:p-5">
+        <div className="flex-1 overflow-y-auto p-4 lg:p-5"
+          onDragEnter={handleDragEnter} onDragLeave={handleDragLeave} onDragOver={handleDragOver} onDrop={handleDrop}
+        >
+          {/* Drop zone overlay */}
+          {dragging && (
+            <div className="absolute inset-0 z-50 bg-blue-500/10 border-2 border-dashed border-blue-400/50 rounded-xl flex items-center justify-center pointer-events-none" data-testid="compose-modal-drop-zone">
+              <div className="text-center">
+                <FiPaperclip size={32} className="mx-auto text-blue-400 mb-2" />
+                <p className="text-blue-400 font-medium text-sm">Drop files here</p>
+              </div>
+            </div>
+          )}
           {txResult ? (
             <div className="text-center py-6" data-testid="compose-success">
               <div className="text-3xl mb-3">&#10003;</div>
@@ -401,6 +466,7 @@ export const ComposeModal = ({ onClose, network, replyTo }) => {
                 ref={textRef}
                 value={text}
                 onChange={e => setText(e.target.value.slice(0, maxChars))}
+                onPaste={handlePaste}
                 placeholder={replyTo ? "Write your reply..." : "What's happening on-chain?"}
                 rows={attachedGif || attachedFiles.length > 0 ? 2 : 4}
                 autoFocus
