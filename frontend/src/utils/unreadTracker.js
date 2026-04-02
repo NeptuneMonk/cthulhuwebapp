@@ -7,10 +7,9 @@
  * Storage: localStorage key = `cthulhu_unread_${userAddress}_${network}`
  * Format: { [roomOrDmId]: { lastReadCount: number, markedReadAt?: string } }
  *
- * Also polls the backend /api/chat/unread/{address} for messages received
- * while the user was offline (server-side unread tracking).
+ * Fully client-side — no server dependency. The blockchain is the source
+ * of truth for messages; localStorage just tracks what the user has seen.
  */
-const API = process.env.REACT_APP_BACKEND_URL;
 
 function _currentNetwork() {
   return localStorage.getItem('cthulhu_network') || 'btc-testnet';
@@ -32,6 +31,7 @@ function saveStore(userAddress, store) {
 
 /**
  * Mark a room/DM as read up to totalCount messages.
+ * Stored purely in localStorage — no server dependency.
  */
 export function markAsRead(userAddress, chatId, totalCount) {
   if (!userAddress || !chatId) return;
@@ -41,10 +41,6 @@ export function markAsRead(userAddress, chatId, totalCount) {
     markedReadAt: new Date().toISOString(),
   };
   saveStore(userAddress, store);
-  // Also tell the server
-  if (API) {
-    fetch(`${API}/api/chat/mark-read/${encodeURIComponent(chatId)}?address=${encodeURIComponent(userAddress)}`, { method: 'POST' }).catch(() => {});
-  }
 }
 
 /**
@@ -102,65 +98,49 @@ export function notifyUnreadChange() {
 }
 
 // ─── Server-side unread polling ───
+// NOTE: Removed in scalability audit (April 2026).
+// Unread counts are now fully client-side (localStorage).
+// The server is just a read cache — it must not be the source of truth
+// for any UX state. If the server's SQLite is wiped, unread counts
+// survive in the user's browser.
 
-let _pollInterval = null;
 let _serverUnread = 0;
 
 /**
- * Fetch server-side unread counts and merge with local tracking.
- * This catches messages received while the user was offline.
+ * Fetch server-side unread counts — DEPRECATED.
+ * Kept as a no-op to avoid breaking existing callers.
+ * Unread tracking is fully localStorage-based via getUnreadCount().
  */
 export async function fetchServerUnread(userAddress) {
-  if (!userAddress || !API) return 0;
-  try {
-    const resp = await fetch(`${API}/api/chat/unread/${encodeURIComponent(userAddress)}`);
-    if (!resp.ok) return _serverUnread;
-    const data = await resp.json();
-    _serverUnread = data.total_unread || 0;
-    // If server has unread, trigger a badge update
-    if (_serverUnread > 0) {
-      notifyUnreadChange();
-    }
-    return _serverUnread;
-  } catch {
-    return _serverUnread;
-  }
+  return 0;
 }
 
 /**
- * Get the last fetched server unread total.
+ * Get the last fetched server unread total — always 0 (client-side only).
  */
 export function getServerUnread() {
   return _serverUnread;
 }
 
 /**
- * Start polling server for unread counts (call once from App.js).
+ * Start polling server for unread counts — NO-OP.
+ * Unread counts are tracked purely in localStorage.
  */
 export function startUnreadPolling(userAddress, intervalMs = 30000) {
-  stopUnreadPolling();
-  if (!userAddress) return;
-  // Immediate first fetch
-  fetchServerUnread(userAddress);
-  // Register for all rooms the user has tethered
-  _pollInterval = setInterval(() => fetchServerUnread(userAddress), intervalMs);
+  // No-op: all unread tracking is client-side
 }
 
 /**
- * Stop the server unread polling.
+ * Stop the server unread polling — NO-OP.
  */
 export function stopUnreadPolling() {
-  if (_pollInterval) {
-    clearInterval(_pollInterval);
-    _pollInterval = null;
-  }
   _serverUnread = 0;
 }
 
 /**
- * Register a room for server-side unread tracking (call when user joins a room).
+ * Register a room for server-side unread tracking — NO-OP.
+ * Rooms are tracked client-side via localStorage.
  */
 export function registerRoomForTracking(userAddress, roomAddress) {
-  if (!userAddress || !roomAddress || !API) return;
-  fetch(`${API}/api/chat/register-room?address=${encodeURIComponent(userAddress)}&room=${encodeURIComponent(roomAddress)}`, { method: 'POST' }).catch(() => {});
+  // No-op: unread tracking is fully client-side
 }

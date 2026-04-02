@@ -131,6 +131,8 @@ Build a modern, responsive frontend for a blockchain-based social media platform
 - BTC/LTC/DOG/MZC/IPFS filters now strictly validate the `_blockchain` field
 
 #### Proactive IPFS Pinning for Feed Posts (DONE — April 2, 2026)
+
+#### Burned Object Storefront Filtering (DONE — April 2, 2026)
 - Root cause of lost images: IPFS content was never pinned when posts were viewed. Public gateways GC'd the content and it was lost forever.
 - `_proactive_pin_feed_cids()` in `data.py`: extracts ALL IPFS CIDs from feed messages (post images, profile pics, file attachments) and pins them to local Kubo
 - Triggers on: feed page load (current page), background feed refresh (all messages), and feed built from scratch
@@ -172,7 +174,15 @@ Build a modern, responsive frontend for a blockchain-based social media platform
 - **Endpoints**: `GET /api/snapshot/announce/status`, `POST /api/snapshot/announce/config`, `POST /api/snapshot/announce/trigger`
 - **Admin UI**: AutoDeltaSection now shows multi-chain label, On-Chain CID Announce status with broadcast count and last txid link
 
-#### Burned Object Storefront Filtering (DONE — April 2, 2026)
+#### Scalability Audit: "Wipe & Rebuild" Compliance (DONE — April 2, 2026)
+- **Audited all 50 SQLite tables** against core philosophy: "The blockchain is the database. IPFS is the file system. Our server is just a read cache."
+- **Findings**:
+  - Pending Reactions: Already correct — on-chain txs with speed cache (no violation)
+  - Poll Votes: Already correct — on-chain INQ class with local dedup cache (no violation)
+  - DM Clears: Already client-side in IndexedDB (no violation)
+  - Chat Checkpoints: IPFS uploads through Kubo daemon (correct architecture)
+- **Fixed**: Moved chat UX state (unread counts, mark-as-read, room tracking) to fully client-side localStorage. Removed server polling dependency from `unreadTracker.js`. Removed server-side DM clear call from `DMPage.js`.
+- **Remaining**: User auth (passwords) stays server-side for web app; Tauri desktop will use wallet-only auth (planned)
 - Created `burned_objects` SQLite table populated at boot via `scan_cached_roots_for_burns()` and incrementally during vacuum crawls
 - Backend: `proxy_search_objects()` and storefront endpoints filter out burned addresses from results
 - Frontend: ObjectsPage adds safety filter for `is_burned`/`burn_status` fields

@@ -824,11 +824,9 @@ export default function DMPage({ network }) {
                 className="flex items-center gap-2 w-full px-3 py-2 text-sm text-red-400 hover:bg-gray-700/50"
                 onClick={async () => {
                   if (myAddress && partnerAddr) {
-                    // Timestamped soft-delete — recoverable (messages remain on-chain)
+                    // Soft-delete: set clearedBefore timestamp in client-side IndexedDB
+                    // Messages remain on-chain — this just hides them in the UI
                     const cutoffTs = new Date().toISOString();
-                    try {
-                      await axios.post(`${API}/dm/clear/${myAddress}`, { partner: partnerAddr, network });
-                    } catch { /* backend clear is best-effort */ }
                     await setClearedBefore(myAddress, partnerAddr, network, cutoffTs);
                     cachedTimestampRef.current = null;
                     setMessages([]);
