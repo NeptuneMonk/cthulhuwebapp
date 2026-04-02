@@ -26,6 +26,9 @@ export default function ProfileDetailPage({ network, isFollowing, toggleFollow, 
   // Verified image owner badge
   const [isVerifiedImageOwner, setIsVerifiedImageOwner] = useState(false);
 
+  // Impersonation detection
+  const [impersonation, setImpersonation] = useState(null); // { detected, official_address }
+
   // Burn modal
   const [burnTarget, setBurnTarget] = useState(null);
 
@@ -198,6 +201,25 @@ export default function ProfileDetailPage({ network, isFollowing, toggleFollow, 
     }).catch(() => {});
   }, [resolvedAddr, network]);
 
+  // Impersonation check: verify if this address is the official claimant for its URN
+  useEffect(() => {
+    if (!profile?.urn || profile.urn === profile.address) { setImpersonation(null); return; }
+    const checkUrn = async () => {
+      try {
+        const res = await fetch(`${API}/urn/verify/${encodeURIComponent(profile.urn)}?network=${network}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.impersonation_detected && data.official_address !== profile.address) {
+            setImpersonation({ detected: true, official_address: data.official_address });
+          } else {
+            setImpersonation(null);
+          }
+        }
+      } catch { setImpersonation(null); }
+    };
+    checkUrn();
+  }, [profile?.urn, profile?.address, network]);
+
   // Fetch posts
   const fetchPosts = useCallback(async (skip, isReset = false) => {
     if (!resolvedAddr) return;
@@ -309,7 +331,21 @@ export default function ProfileDetailPage({ network, isFollowing, toggleFollow, 
                 </span>
               )}
             </h1>
-            {profile.urn && profile.urn !== profile.address && <p className="text-sm mt-0.5" style={{ color: 'var(--c-accent, #8b5cf6)' }} data-testid="profile-urn">@{profile.urn}</p>}
+            {profile.urn && profile.urn !== profile.address && (
+              <div className="flex items-center justify-center gap-2 mt-0.5">
+                <p className="text-sm" style={{ color: 'var(--c-accent, #8b5cf6)' }} data-testid="profile-urn">@{profile.urn}</p>
+                {impersonation?.detected && (
+                  <button
+                    onClick={() => navigate(`/profile/${impersonation.official_address}`)}
+                    className="px-2 py-0.5 bg-red-500/20 text-red-400 text-[10px] font-bold rounded-full border border-red-500/30 hover:bg-red-500/30 transition-colors cursor-pointer"
+                    title="This is not the original claimant of this URN. Click to see the official profile."
+                    data-testid="not-official-badge"
+                  >
+                    NOT OFFICIAL
+                  </button>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Bio */}

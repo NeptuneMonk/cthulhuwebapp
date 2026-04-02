@@ -1634,3 +1634,73 @@ async def proxy_object_by_address(address: str, network: str = 'btc-testnet'):
     is_mainnet = 'mainnet' in network.lower()
     data = await p2fk_get(f"GetObjectByAddress/{address}", is_mainnet)
     return data if data is not None else []
+
+
+@router.get("/urn/verify/{urn}")
+async def verify_urn(urn: str, network: str = 'btc-testnet'):
+    """Check if a URN has multiple claimants. Returns the official (earliest) one.
+    Impersonation protection: 'first claim wins'."""
+    try:
+        is_mainnet = 'mainnet' in network.lower()
+
+        # Find all addresses claiming this URN in known_users
+        cursor = known_users_col.find({"data": {"$regex": f'"urn"\\s*:\\s*"{urn}"'}})
+        addresses = set()
+        async for doc in cursor:
+            data = doc.get("data", {})
+            if isinstance(data, str):
+                import json
+                data = json.loads(data)
+            if data.get("urn") == urn or data.get("URN") == urn:
+                addr = data.get("address", data.get("Address", ""))
+                if addr:
+                    addresses.add(addr)
+
+        # If no known_users, try p2fk.io keyword lookup
+        if not addresses:
+            result = await p2fk_get(f"GetPublicAddressByKeyword/{urn}", is_mainnet)
+            if result:
+                addr = result if isinstance(result, str) else result.get("Address", "")
+                if addr:
+                    addresses.add(addr)
+
+        if len(addresses) <= 1:
+            official = list(addresses)[0] if addresses else None
+            return {
+                "urn": urn,
+                "official_address": official,
+                "claimants": [{"address": official, "is_official": True}] if official else [],
+                "impersonation_detected": False,
+            }
+
+        # Multiple claimants — resolve CreatedDate for each
+        claimants = []
+        for addr in addresses:
+            profile = await p2fk_get(f"GetProfileByAddress/{addr}", is_mainnet)
+            created = None
+            if profile and isinstance(profile, dict):
+                created = profile.get("CreatedDate", profile.get("createdDate"))
+            claimants.append({"address": addr, "created_date": created})
+
+        # Sort by created_date (earliest first). None dates go last.
+        claimants.sort(key=lambda c: c.get("created_date") or "9999-12-31")
+        official = claimants[0]["address"]
+
+        for c in claimants:
+            c["is_official"] = c["address"] == official
+
+        return {
+            "urn": urn,
+            "official_address": official,
+            "claimants": claimants,
+            "impersonation_detected": True,
+        }
+    except Exception as e:
+        logger.error(f"URN verify error for {urn}: {e}")
+        return {
+            "urn": urn,
+            "official_address": None,
+            "claimants": [],
+            "impersonation_detected": False,
+            "error": str(e),
+        }

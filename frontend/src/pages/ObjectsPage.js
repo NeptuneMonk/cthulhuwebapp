@@ -11,8 +11,8 @@ import { cachedFetch } from '@/utils/apiCache';
 const API = process.env.REACT_APP_BACKEND_URL;
 
 const DEFAULT_QTY = 20;
-const DEFAULT_SEARCH = 'embii';
-const INITIAL_QTY = 10;
+const DEFAULT_SEARCH = '';
+const INITIAL_QTY = 20;
 /** Cross-network discovery prompt */
 function CrossNetworkModal({ object, userNetwork, onClose, navigate }) {
   const [checking, setChecking] = useState(false);
@@ -144,12 +144,12 @@ function CrossNetworkModal({ object, userNetwork, onClose, navigate }) {
 }
 
 const CHAIN_FILTERS = [
-  { key: 'embii', label: 'Featured', color: 'bg-purple-600/20 text-purple-400 border-purple-500/50', match: null },
-  { key: 'BTC',   label: 'BTC',      color: 'bg-amber-600/20 text-amber-400 border-amber-500/50', match: 'BTC' },
-  { key: 'LTC',   label: 'LTC',      color: 'bg-gray-600/20 text-gray-300 border-gray-400/50', match: 'LTC' },
-  { key: 'DOG',   label: 'DOG',      color: 'bg-yellow-600/20 text-yellow-400 border-yellow-500/50', match: 'DOG' },
-  { key: 'MZC',   label: 'MZC',      color: 'bg-green-600/20 text-green-400 border-green-500/50', match: 'MZC' },
-  { key: 'IPFS',  label: 'IPFS',     color: 'bg-blue-600/20 text-blue-400 border-blue-500/50', match: 'IPFS' },
+  { key: 'all',  label: 'All',       color: 'bg-gray-600/20 text-gray-200 border-gray-400/50', match: null },
+  { key: 'BTC',  label: 'BTC',       color: 'bg-amber-600/20 text-amber-400 border-amber-500/50', match: 'BTC' },
+  { key: 'LTC',  label: 'LTC',       color: 'bg-gray-600/20 text-gray-300 border-gray-400/50', match: 'LTC' },
+  { key: 'DOG',  label: 'DOG',       color: 'bg-yellow-600/20 text-yellow-400 border-yellow-500/50', match: 'DOG' },
+  { key: 'MZC',  label: 'MZC',       color: 'bg-green-600/20 text-green-400 border-green-500/50', match: 'MZC' },
+  { key: 'IPFS', label: 'IPFS',      color: 'bg-blue-600/20 text-blue-400 border-blue-500/50', match: 'IPFS' },
 ];
 
 export default function ObjectsPage({ network }) {
@@ -160,7 +160,7 @@ export default function ObjectsPage({ network }) {
 
   const [query, setQuery] = useState('');
   const [showCreate, setShowCreate] = useState(false);
-  const [activeFilter, setActiveFilter] = useState('embii');
+  const [activeFilter, setActiveFilter] = useState('all');
   const [objects, setObjects] = useState([]);
   const [loading, setLoading] = useState(false);
   const [hasMore, setHasMore] = useState(false);
@@ -291,9 +291,8 @@ export default function ObjectsPage({ network }) {
     skipRef.current = 0;
     setIsUserSearch(false);
     setQuery('');
-    activeSearchRef.current = activeFilter;
-    const qty = activeFilter === 'embii' ? INITIAL_QTY : DEFAULT_QTY;
-    fetchObjects(activeFilter, 0, qty, true);
+    activeSearchRef.current = activeFilter === 'all' ? '' : activeFilter;
+    fetchObjects(activeSearchRef.current, 0, DEFAULT_QTY, true);
   }, [activeFilter]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSubmit = (e) => {
@@ -311,9 +310,8 @@ export default function ObjectsPage({ network }) {
     setQuery('');
     setObjects([]);
     skipRef.current = 0;
-    activeSearchRef.current = activeFilter;
-    const qty = activeFilter === 'embii' ? INITIAL_QTY : DEFAULT_QTY;
-    fetchObjects(activeFilter, 0, qty, true);
+    activeSearchRef.current = activeFilter === 'all' ? '' : activeFilter;
+    fetchObjects(activeSearchRef.current, 0, DEFAULT_QTY, true);
   };
 
   const loadMore = () => {
