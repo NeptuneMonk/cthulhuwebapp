@@ -883,8 +883,50 @@ async def get_object_by_address(address: str, network: str = 'btc-testnet'):
                         'on_chain_files': {},
                     }
                     logger.info(f"Object {address} is fully burned ({len(burn_roots)} BRN txs)")
+                    # Register in burned objects registry
+                    try:
+                        from routes.snapshot import _register_burned_object
+                        await _register_burned_object(address, burn_roots[0].get('TransactionId', ''), network)
+                    except Exception:
+                        pass
             except Exception as e:
                 logger.debug(f"Burn fallback check failed for {address}: {e}")
+
+        # Also check local burned_objects table if p2fk.io returned nothing
+        if not formatted:
+            try:
+                from routes.snapshot import get_burned_set
+                from db_sqlite import get_conn
+                burned_addrs = await get_burned_set(network)
+                if address in burned_addrs:
+                    # Object is in our local burned registry — return synthetic burned response
+                    conn = await get_conn()
+                    async with conn.execute(
+                        "SELECT burn_txid, detected_at FROM burned_objects WHERE object_address = ? AND network = ?",
+                        (address, network)
+                    ) as cursor:
+                        row = await cursor.fetchone()
+                    burn_txid = row[0] if row else ''
+                    detected_at = row[1] if row else ''
+                    formatted = {
+                        'name': 'Burned Object',
+                        'description': 'This object has been burned and removed from the chain index.',
+                        'image': '',
+                        'owners': [],
+                        'creators': [],
+                        'transaction_id': '',
+                        'burn_transactions': 1,
+                        'burn_txids': [burn_txid[:16]] if burn_txid else [],
+                        'is_burned': True,
+                        'burn_status': 'fully_burned',
+                        'total_supply': 0,
+                        'royalties': {},
+                        'on_chain_files': {},
+                        'detected_at': detected_at,
+                    }
+                    logger.info(f"Object {address} found in local burned registry")
+            except Exception as e:
+                logger.debug(f"Local burned registry check failed for {address}: {e}")
 
         if not formatted:
             raise HTTPException(status_code=404, detail="Object not found")
@@ -910,6 +952,13 @@ async def get_object_by_address(address: str, network: str = 'btc-testnet'):
                     total_owned = sum(o.get('quantity', 0) for o in (formatted.get('owners') or []))
                     formatted['is_burned'] = total_owned == 0
                     formatted['burn_status'] = 'fully_burned' if total_owned == 0 else 'partially_burned'
+                    # Register in burned objects registry
+                    if total_owned == 0:
+                        try:
+                            from routes.snapshot import _register_burned_object
+                            await _register_burned_object(address, burn_txids[0] if burn_txids else '', network)
+                        except Exception:
+                            pass
             except Exception as e:
                 logger.debug(f"Burn check error for {address}: {e}")
 
@@ -1073,6 +1122,14 @@ async def get_storefront(network: str, skip: int = 0, limit: int = 10, keyword: 
         # ── If cache can serve this page, return immediately ──
         if cache_fresh and skip + limit <= len(cached_objects):
             all_objects = cached_objects
+            # Filter out burned objects from cached results
+            try:
+                from routes.snapshot import get_burned_set
+                burned_addrs = await get_burned_set(network)
+                if burned_addrs:
+                    all_objects = [o for o in all_objects if o.get('object_address') not in burned_addrs]
+            except Exception:
+                pass
             if data_source and data_source != 'ALL':
                 all_objects = [o for o in all_objects if _detect_data_repo(o) == data_source]
             page = all_objects[skip:skip + limit]
@@ -1133,6 +1190,16 @@ async def get_storefront(network: str, skip: int = 0, limit: int = 10, keyword: 
         # Format and merge with existing cache
         formatted_new = [format_object_for_api(obj) for obj in new_objects]
         formatted_new = [f for f in formatted_new if f.get('urn') or f.get('name', 'Unnamed') != 'Unnamed']
+
+        # Filter out burned objects
+        try:
+            from routes.snapshot import get_burned_set
+            burned_addrs = await get_burned_set(network)
+            if burned_addrs:
+                formatted_new = [f for f in formatted_new if f.get('object_address') not in burned_addrs]
+        except Exception:
+            pass
+
         all_formatted = cached_objects + formatted_new
 
         # Sort: listed first by price, then by change date

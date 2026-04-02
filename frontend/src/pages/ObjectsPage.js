@@ -211,7 +211,8 @@ export default function ObjectsPage({ network }) {
           .filter(item => item?.object)
           .map(item => ({ ...item.object, _blockchain: item.blockchain || '' }))
           .filter(o => !(o.License || '').toLowerCase().startsWith('cthulhu:tether'))
-          .filter(o => (o.Name && o.Name !== 'Unnamed Object') || o.Image);
+          .filter(o => (o.Name && o.Name !== 'Unnamed Object') || o.Image)
+          .filter(o => !o.is_burned && o.burn_status !== 'fully_burned');
         // Apply strict blockchain filter
         const activeChainFilter = CHAIN_FILTERS.find(f => f.key === activeFilter);
         const chainMatch = activeChainFilter?.match;
@@ -226,7 +227,8 @@ export default function ObjectsPage({ network }) {
         .filter(item => item?.object)
         .map(item => ({ ...item.object, _blockchain: item.blockchain || '' }))
         .filter(o => !(o.License || '').toLowerCase().startsWith('cthulhu:tether'))
-        .filter(o => (o.Name && o.Name !== 'Unnamed Object') || o.Image);
+        .filter(o => (o.Name && o.Name !== 'Unnamed Object') || o.Image)
+        .filter(o => !o.is_burned && o.burn_status !== 'fully_burned');
 
       // Apply strict blockchain filter when a chain filter is active
       const activeChainFilter = CHAIN_FILTERS.find(f => f.key === activeFilter);

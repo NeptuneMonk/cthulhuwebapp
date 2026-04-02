@@ -1,0 +1,92 @@
+{
+  "summary": "Iteration 231: Tested burned object filtering feature. All 6 features working correctly. Backend APIs pass (9/9 tests). Frontend correctly filters burned objects from storefront and search. Header status dots render with proper data-testid attributes.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_burned_objects_iter231.py",
+    "/app/test_reports/pytest/pytest_burned_objects_iter231.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "snapshot.py: burned_objects SQLite table correctly populated on boot via scan_cached_roots_for_burns() and during vacuum crawls",
+    "snapshot.py: get_burned_set() returns set of all burned object addresses for filtering",
+    "objects.py: storefront endpoint filters out burned objects using get_burned_set()",
+    "data.py: proxy_search_objects endpoint filters out burned objects from search results",
+    "ObjectsPage.js: Frontend has safety filter for is_burned/burn_status fields",
+    "HeaderStatusDots.js: 3 status dots with correct data-testid attributes (header-ipfs-status, header-mesh-status, header-walkie-status)",
+    "FIX APPLIED: objects.py get_object_by_address() now checks local burned_objects table when p2fk.io returns empty for fully burned objects"
+  ],
+  "updated_files": [
+    "/app/backend/routes/objects.py",
+    "/app/backend/tests/test_burned_objects_iter231.py"
+  ],
+  "success_rate": {
+    "backend": "100% (9/9 tests passed)",
+    "frontend": "100%"
+  },
+  "test_credentials": {
+    "admin_username": "CthulhuAdmin",
+    "admin_password": "78UH1%2kC^vH2Gi1MqI@"
+  },
+  "seed_data_creation": "None",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Burned object filtering feature fully working: (1) GET /api/p2fk/search/objects with burned object name returns 0 results, (2) Wildcard search excludes burned objects, (3) GET /api/object/addr/{burned_address} returns synthetic burned response with burn_transactions > 0, (4) Storefront page filters out burned objects, (5) Header shows 3 status dots with data-testid attributes, (6) Auto-delta status shows enabled=true with networks array. The burned object msBayXP6iCByaHeMteiwmXMbS74x91MmqY is correctly filtered from search/storefront but accessible on detail page.",
+  "features_tested": {
+    "search_burned_object_by_name": {
+      "status": "PASS",
+      "details": "GET /api/p2fk/search/objects?searchString=For+real+final+test returns 0 results (burned object filtered out)"
+    },
+    "wildcard_search_excludes_burned": {
+      "status": "PASS",
+      "details": "GET /api/p2fk/search/objects?searchString=*&qty=200 does NOT contain msBayXP6iCByaHeMteiwmXMbS74x91MmqY"
+    },
+    "burned_object_detail_accessible": {
+      "status": "PASS",
+      "details": "GET /api/object/addr/msBayXP6iCByaHeMteiwmXMbS74x91MmqY returns 200 with burn_transactions=1, is_burned=true, burn_status=fully_burned"
+    },
+    "storefront_excludes_burned": {
+      "status": "PASS",
+      "details": "GET /api/objects/storefront/btc-testnet does NOT contain burned object"
+    },
+    "header_status_dots": {
+      "status": "PASS",
+      "details": "3 status dots found with data-testid: header-ipfs-status (bg-emerald-400), header-mesh-status (bg-gray-700), header-walkie-status (bg-gray-700)"
+    },
+    "auto_delta_status": {
+      "status": "PASS",
+      "details": "GET /api/snapshot/auto-delta/status returns enabled=true with networks=['btc-testnet', 'btc-mainnet']"
+    }
+  },
+  "backend_tests_run": {
+    "health_endpoint": "PASS - Status 200, services: mongodb up, ipfs up",
+    "search_burned_object_by_name": "PASS - Returns 0 results for 'For real final test'",
+    "wildcard_search_excludes_burned": "PASS - Burned object not in wildcard search results",
+    "burned_object_detail_accessible": "PASS - Returns burn_transactions=1, is_burned=true",
+    "auto_delta_status_enabled": "PASS - Returns enabled=true with networks array",
+    "storefront_excludes_burned": "PASS - Burned object not in storefront results",
+    "burned_set_contains_address": "PASS - Burned object in local registry",
+    "ipfs_health": "PASS - IPFS service accessible",
+    "mesh_nodes_endpoint": "PASS - Mesh nodes endpoint accessible"
+  },
+  "ui_tests_run": {
+    "storefront_page_load": "PASS - Storefront page loads with object cards",
+    "header_status_dots_container": "PASS - data-testid=header-status-dots found",
+    "ipfs_status_dot": "PASS - data-testid=header-ipfs-status found, class=bg-emerald-400",
+    "mesh_status_dot": "PASS - data-testid=header-mesh-status found, class=bg-gray-700",
+    "walkie_status_dot": "PASS - data-testid=header-walkie-status found, class=bg-gray-700",
+    "burned_object_not_on_storefront": "PASS - 'For real final test' not visible",
+    "search_burned_object": "PASS - Search returns 'No objects found' message"
+  },
+  "fix_applied": {
+    "file": "/app/backend/routes/objects.py",
+    "description": "Added check for local burned_objects table in get_object_by_address() when p2fk.io returns empty for fully burned objects. This ensures burned object detail pages return synthetic burned response instead of 404."
+  }
+}

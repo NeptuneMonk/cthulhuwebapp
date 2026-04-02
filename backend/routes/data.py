@@ -1608,7 +1608,24 @@ async def proxy_search_objects(searchString: str = '', qty: int = 20, skip: int 
     data = await p2fk_get("GetKnownObjectsBySearchString", is_mainnet, {
         "searchString": searchString, "qty": str(qty), "skip": str(skip)
     })
-    return data if data is not None else []
+    if not data or not isinstance(data, list):
+        return []
+    # Filter out burned objects
+    try:
+        from routes.snapshot import get_burned_set
+        burned_addrs = await get_burned_set(network)
+        if burned_addrs:
+            filtered = []
+            for item in data:
+                obj = item.get('object', item) if isinstance(item, dict) else item
+                creators = obj.get('Creators', {}) if isinstance(obj, dict) else {}
+                obj_addr = list(creators.keys())[0] if creators else ''
+                if obj_addr not in burned_addrs:
+                    filtered.append(item)
+            return filtered
+    except Exception:
+        pass
+    return data
 
 
 @router.get("/p2fk/search/profiles")

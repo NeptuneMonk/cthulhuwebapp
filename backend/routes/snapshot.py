@@ -55,6 +55,86 @@ def _vlog(msg: str):
     logger.info(f"Vacuum: {msg}")
 
 
+# ─── Burned Objects Registry ─────────────────────────────────────────────────
+
+async def _ensure_burned_table():
+    conn = await get_conn()
+    await conn.execute("""
+        CREATE TABLE IF NOT EXISTS burned_objects (
+            object_address TEXT PRIMARY KEY,
+            burn_txid TEXT,
+            network TEXT,
+            detected_at TEXT
+        )
+    """)
+    await conn.commit()
+
+
+async def _register_burned_object(object_address: str, burn_txid: str, network: str):
+    """Register an object as burned. Called during vacuum when BRN roots are found."""
+    conn = await get_conn()
+    await _ensure_burned_table()
+    await conn.execute(
+        "INSERT OR IGNORE INTO burned_objects (object_address, burn_txid, network, detected_at) VALUES (?, ?, ?, ?)",
+        (object_address, burn_txid, network, datetime.now(timezone.utc).isoformat()),
+    )
+    await conn.commit()
+
+
+async def get_burned_set(network: str = None) -> set:
+    """Return the set of all known burned object addresses."""
+    conn = await get_conn()
+    await _ensure_burned_table()
+    if network:
+        async with conn.execute("SELECT object_address FROM burned_objects WHERE network = ?", (network,)) as cursor:
+            return {row[0] for row in await cursor.fetchall()}
+    else:
+        async with conn.execute("SELECT object_address FROM burned_objects") as cursor:
+            return {row[0] for row in await cursor.fetchall()}
+
+
+async def scan_cached_roots_for_burns():
+    """Scan all cached P2FK roots for BRN transactions and register burned objects.
+    Called on startup to populate the burned_objects table from existing cache."""
+    conn = await get_conn()
+    await _ensure_burned_table()
+    count = 0
+    try:
+        async with conn.execute(
+            "SELECT _id, data FROM api_cache WHERE _id LIKE 'p2fk:GetRootsByAddress%'"
+        ) as cursor:
+            rows = await cursor.fetchall()
+
+        for _id, data_str in rows:
+            try:
+                data = json.loads(data_str)
+                cached = data.get("data", data) if isinstance(data, dict) and "data" in data else data
+                if not isinstance(cached, list):
+                    continue
+                # Extract network from cache key (p2fk:GetRootsByAddress/addr:mainnet_bool:extra)
+                parts = _id.split(":")
+                is_mainnet = "True" in _id
+                network = "btc-mainnet" if is_mainnet else "btc-testnet"
+
+                for root in cached:
+                    file_data = root.get("File") or {}
+                    if isinstance(file_data, dict) and "BRN" in file_data:
+                        # The object address is in the cache key: GetRootsByAddress/{addr}
+                        addr_part = _id.split("GetRootsByAddress/")
+                        if len(addr_part) > 1:
+                            object_address = addr_part[1].split(":")[0]
+                            await _register_burned_object(object_address, root.get("TransactionId", ""), network)
+                            count += 1
+            except Exception:
+                continue
+
+        if count > 0:
+            logger.info(f"[BurnScan] Registered {count} burned objects from cached roots")
+    except Exception as e:
+        logger.warning(f"[BurnScan] Error scanning cached roots: {e}")
+
+
+
 # ─── Auto-Delta Scheduler ────────────────────────────────────────────────────
 
 _auto_delta_state = {
@@ -404,6 +484,10 @@ async def _run_vacuum_inner(network: str):
                 signed_by = root.get("SignedBy", "")
                 if signed_by and signed_by not in seeds:
                     discovered_addresses.add(signed_by)
+                # Detect BRN (burn) transactions
+                file_data = root.get("File") or {}
+                if isinstance(file_data, dict) and "BRN" in file_data:
+                    await _register_burned_object(addr, root.get("TransactionId", ""), network)
         else:
             _vacuum_state["errors"] += 1
             _vlog(f"  → failed or empty")
@@ -461,6 +545,10 @@ async def _run_vacuum_inner(network: str):
                     signed_by = root.get("SignedBy", "")
                     if signed_by and signed_by not in discovered_addresses and signed_by not in seeds:
                         deep_discovered.add(signed_by)
+                    # Detect BRN (burn) transactions
+                    file_data = root.get("File") or {}
+                    if isinstance(file_data, dict) and "BRN" in file_data:
+                        await _register_burned_object(addr, root.get("TransactionId", ""), network)
         except Exception:
             _vacuum_state["errors"] += 1
 
