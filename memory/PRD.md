@@ -52,6 +52,24 @@ Build a modern, responsive frontend for a blockchain-based social media platform
 - **Bug Fix**: Fixed `fetchone()` async bug in snapshot txid tracking. Fixed chain resolution hanging on genesis snapshot with NULL `previous_cid`.
 - **502 Fix**: Backend crash during hot-reload resolved (supervisor restart).
 
+### Deep Root Vacuum Crawl (DONE — April 2, 2026)
+- New vacuum phase "crawling_deep_roots": crawls `GetRootsByAddress` for ALL discovered addresses (not just seeds)
+- Catches roots signed by objects, non-profile addresses, and any entity with a receiving address
+- Discovery cap at 500 deep addresses per run to prevent explosion
+- Fixed vacuum crash: `SELECT address FROM known_users` → `json_extract(data, '$.address')` (SQLite JSON column)
+- Added safety wrapper: vacuum background task now catches all exceptions and logs them instead of hanging silently
+
+### Feed Mode Toggle (DONE — April 2, 2026)
+- **Following / Global toggle**: Pill-shaped button bar at top of feed page
+- **Persistence**: Stored in `localStorage` key `cthulhu_feed_mode` — survives navigation, page refresh, and logout
+- **Backend**: `GET /api/feed/{network}?mode=following&followed=addr1,addr2,...` filters to only followed addresses' posts
+- **Empty states**: Distinct messages for "no follows yet" vs "no posts from followed"
+
+### Storefront Speed Optimization (DONE — April 2, 2026)
+- Objects page now uses `cachedFetch` (stale-while-revalidate) for all search results
+- 5-minute TTL with background refresh — instant loads on back-navigation (0.06s vs 2-3s)
+- Session state preservation (objects, scroll position, filters) on unmount/restore
+
 ### Feed Hydration (DONE)
 - `POST /api/snapshot/hydrate-feed`: extracts all 158 unique signers from cached data
 - Registers them as known users → feed now shows ALL discovered content
@@ -65,6 +83,7 @@ Build a modern, responsive frontend for a blockchain-based social media platform
 
 ## Backlog
 ### P1
+- Unofficial URN Claim Detection & Tagging (earliest creation date = official, later claims tagged "NOT OFFICIAL" with "see official @urn" link, @mentions reroute to official)
 - Ownership Cascade Transfers
 - Tauri desktop app packaging
 
