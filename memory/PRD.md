@@ -175,6 +175,13 @@ Build a modern, responsive frontend for a blockchain-based social media platform
 #### Burned Object 502 Fix (DONE — April 2, 2026)
 - Backend: `get_object_by_address()` in `objects.py` now checks for BRN transactions BEFORE returning 404, so fully burned objects return a synthetic response with `is_burned=true` instead of crashing
 - Frontend: Existing burn banner UI now receives proper data instead of hanging on infinite spinner
+
+#### Mesh Snapshot Gossip + Status Dot (DONE — April 2, 2026)
+- **Backend gossip broadcast**: After producing a delta snapshot, `broadcast_snapshot_gossip()` pushes the CID to ALL connected WebSocket signaling clients instantly
+- **MeshNode relay**: Nodes that receive the gossip relay it to all their WebRTC peers, propagating across the mesh
+- **MeshClient auto-consume**: Clients that receive a snapshot-gossip message auto-call `/api/snapshot/consume` to hydrate their local index immediately
+- **Header status dot**: New cyan mesh relay dot alongside IPFS (green) and walkie (amber) dots in the desktop header. Shows connected/off state with tooltip on hover. Polls mesh singleton status every 3s
+- **Flow**: Server produces delta → broadcasts CID via WS → nodes relay via WebRTC → clients auto-consume → instant sync without waiting for 6h on-chain announcement
 ## Key Files
 
 #### Storefront: "All" Default Filter (DONE — April 2, 2026)
