@@ -24,6 +24,7 @@ Build a modern, responsive frontend for a blockchain-based decentralized social 
 - WebRTC mesh relay gossip
 
 ## Recently Completed (April 2026)
+- **P0 Fix: Single Object View Timeouts (.wav/.mp4)** — Fixed 5 root causes: (1) Swapped API priority to mempool.space first (eliminates blockstream.info 429 storms), (2) Added in-memory TX output cache with LRU eviction for ledger-type files, (3) Increased concurrent child TX fetch semaphore from 3 to 8, (4) Added p2fk.io root as fast-path gateway before slow blockchain reconstruction, (5) Fixed critical frontend bug where 202 JSON responses were incorrectly treated as file data by useOnchainResolver.
 - **P0 Fix: Profile URN Overwrite Bug** — Fixed in MyProfilePage.js, SettingsModal.js, ActivateMessaging.js. PRO transactions now use on-chain profile URN from API, not user.urn placeholder.
 - **P1: Full P2FK Payload Audit** — Line-by-line comparison of p2fk.js against embiimob/Sup C# reference. All 8 transaction types verified compatible: PRO, OBJ, GIV, BRN, BUY, MSG, INQ, Vote.
 
