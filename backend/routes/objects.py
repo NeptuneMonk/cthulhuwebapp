@@ -262,9 +262,8 @@ async def get_owned_objects(address: str, network: str = 'btc-testnet', skip: in
                 if obj_addr not in seen:
                     seen[obj_addr] = obj_data
 
-        # Trust p2fk.io API — it is the authoritative source of truth.
-        # No client-side dedup or burn filtering. The API handles all on-chain state.
-        formatted = [format_object_for_api(obj) for obj in (owned_raw or [])]
+        # Build formatted output from the deduplicated `seen` dict (uses ProcessHeight for conflict resolution)
+        formatted = [format_object_for_api(obj) for obj in seen.values()]
         formatted = [f for f in formatted if f.get('urn') or f.get('name', 'Unnamed') != 'Unnamed']
 
         # Resolve missing txids from user_roots (we already fetched them above)
@@ -801,6 +800,17 @@ async def search_objects(request: Request, keyword: str, network: str = 'btc-tes
         logger.error(f"Object search error: {e}")
         return {"objects": [], "keyword": keyword, "count": 0, "total": 0, "has_more": False}
 
+
+
+@router.get("/p2fk/object/{address}")
+async def get_raw_object_by_address(address: str, network: str = 'btc-testnet', fresh: bool = False):
+    """Get raw p2fk.io object data by object address. Used for fresh ownership checks.
+    Pass fresh=true to bypass cache (e.g., after a burn to verify current count)."""
+    is_mainnet = 'mainnet' in network.lower()
+    raw = await p2fk_get(f"GetObjectByAddress/{address}", is_mainnet, skip_cache=fresh)
+    if raw and isinstance(raw, dict) and raw.get('Name'):
+        return raw
+    return {"error": "Object not found"}
 
 
 @router.get("/object/addr/{address}")

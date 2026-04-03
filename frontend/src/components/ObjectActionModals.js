@@ -325,13 +325,44 @@ export const BurnModal = ({ object, network, onClose }) => {
   const [confirmed, setConfirmed] = useState(false);
   const [step, setStep] = useState(1); // 1 = set qty, 2 = confirm
   const [walletSats, setWalletSats] = useState(null);
+  const [liveOwned, setLiveOwned] = useState(null); // Fresh on-chain count
 
   const objectAddress = object.object_address || object.creators?.[0]?.address || '';
-  const myOwned = object.owners?.find(o => o.address === address)?.quantity || 0;
+  const cachedOwned = object.owners?.find(o => o.address === address)?.quantity || 0;
+  const myOwned = liveOwned !== null ? liveOwned : cachedOwned;
 
   // Estimated cost: ~5 P2FK dust outputs + network fee
   const estimatedMinSats = 5 * 546 + 1500;
   const insufficientFunds = walletSats !== null && walletSats < estimatedMinSats;
+
+  // Fetch FRESH ownership from p2fk.io (bypass cache) when modal opens
+  useEffect(() => {
+    if (!objectAddress || !address) return;
+    const API = process.env.REACT_APP_BACKEND_URL;
+    fetch(`${API}/api/p2fk/object/${objectAddress}?network=${network}&fresh=true`)
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (!data) return;
+        const owners = data.Owners || data.owners || {};
+        let qty = 0;
+        if (typeof owners === 'object' && !Array.isArray(owners)) {
+          // p2fk.io format: { address: { Item1: qty } } or { address: qty }
+          const entry = owners[address];
+          if (entry && typeof entry === 'object') qty = entry.Item1 || 0;
+          else if (typeof entry === 'number') qty = entry;
+        } else if (Array.isArray(owners)) {
+          const found = owners.find(o => o.address === address);
+          qty = found?.quantity || 0;
+        }
+        if (qty > 0) {
+          setLiveOwned(qty);
+          // If user already set quantity higher than actual, clamp it
+          setQuantity(prev => Math.min(prev, qty));
+          console.log(`[Cthulhu BRN] Fresh ownership: ${qty} (cached: ${cachedOwned})`);
+        }
+      })
+      .catch(() => {});
+  }, [objectAddress, address, network, cachedOwned]);
 
   // Fetch balance on mount
   useEffect(() => {
@@ -395,6 +426,9 @@ export const BurnModal = ({ object, network, onClose }) => {
         });
         refreshBalance();
         window.dispatchEvent(new CustomEvent('tethers-changed', { detail: { burned: objectAddress } }));
+        // Invalidate the object ownership cache so profile page shows updated counts
+        const API = process.env.REACT_APP_BACKEND_URL;
+        fetch(`${API}/api/objects/owned/${address}?network=${network}&force=true&limit=1`).catch(() => {});
       }
     } catch (err) {
       console.error(`[Cthulhu BRN] Failed:`, err);
@@ -462,15 +496,22 @@ export const BurnModal = ({ object, network, onClose }) => {
         <div className="space-y-4">
           <div className="bg-gray-800/50 rounded-lg p-3 flex items-center gap-3">
             <div className="text-sm text-gray-300 font-medium">{object.name}</div>
-            {myOwned > 0 && <span className="text-xs text-gray-500">You own: {myOwned}</span>}
+            {myOwned > 0 && <span className="text-xs text-gray-500">You own: {myOwned}{liveOwned !== null && liveOwned !== cachedOwned ? ' (live)' : ''}</span>}
           </div>
+
+          {liveOwned !== null && liveOwned !== cachedOwned && (
+            <div className="text-xs px-3 py-2 rounded-lg border text-amber-400 bg-amber-400/5 border-amber-400/20" data-testid="stale-data-warning">
+              <FiAlertTriangle size={11} className="inline mr-1" />
+              On-chain count ({liveOwned}) differs from displayed ({cachedOwned}). Using live data.
+            </div>
+          )}
 
           <div>
             <label className="block text-xs text-gray-400 font-medium mb-1.5">Quantity to Burn</label>
             <input
               type="number"
               value={quantity}
-              onChange={e => setQuantity(Math.max(1, parseInt(e.target.value) || 1))}
+              onChange={e => setQuantity(Math.min(myOwned || 999999, Math.max(1, parseInt(e.target.value) || 1)))}
               min={1}
               max={myOwned || 999999}
               className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-gray-100 text-sm focus:border-blue-500 focus:outline-none"

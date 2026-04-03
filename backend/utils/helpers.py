@@ -28,6 +28,7 @@ _CACHE_TTL_ROOT = 31536000  # 1 year — immutable blockchain data (GetRootByTra
 _CACHE_TTL_PROFILE = 3600
 _CACHE_TTL_DEFAULT = 600    # 10 minutes per embii's recommendation
 _CACHE_TTL_POLL = 30        # 30 seconds — polls need near-real-time vote counts
+_CACHE_TTL_OWNERSHIP = 120  # 2 minutes — object ownership changes after GIV/BRN/BUY
 
 # Rate-limit guard: sliding window for p2fk.io
 # embii confirmed higher throughput is fine now (bitfossil-level)
@@ -207,6 +208,8 @@ async def p2fk_get(path: str, mainnet: bool = False, extra_params: dict = None, 
         cache_ttl = _CACHE_TTL_PROFILE
     elif 'Inquiry' in path or 'Inquiries' in path:
         cache_ttl = _CACHE_TTL_POLL
+    elif 'ObjectsOwned' in path or 'ObjectsByAddress' in path or 'GetObjectByAddress' in path:
+        cache_ttl = _CACHE_TTL_OWNERSHIP
     else:
         cache_ttl = _CACHE_TTL_DEFAULT
 
