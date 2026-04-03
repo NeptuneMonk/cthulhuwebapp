@@ -1,234 +1,71 @@
-# Cthulhu - Decentralized Social Media Platform
+# Cthulhu - Decentralized Social Objects Platform
 
 ## Original Problem Statement
-Build a modern, responsive frontend for a blockchain-based social media platform (Cthulhu) with tokenized object storefront and data vault. Dark theme, mobile-friendly, inspired by Telegram. 100% client-side signing. Eliminate dependency on external APIs via local P2FK decoder and IPFS-backed chain snapshots.
+Build a modern, responsive frontend for a blockchain-based decentralized social media platform. The platform uses 100% client-side signing (WIF encrypted in browser), SQLite caching, local IPFS daemon, and the P2FK protocol. Core philosophy: "The blockchain is the database. IPFS is the file system. Our server is just a read cache."
 
 ## Architecture
-- **Frontend:** React + Tailwind + Shadcn UI
-- **Backend:** FastAPI + SQLite (NOT MongoDB)
-- **Blockchain:** Local P2FK decoder (primary) + p2fk.io (last-resort fallback)
-- **IPFS:** Local Kubo daemon + IPFS-backed chain snapshots for decentralized bootstrap
-- **Auth:** Client-side WIF encryption (Web Crypto API)
-- **Signing:** 100% client-side via bitcoinjs-lib + @noble/secp256k1
-- **Chain Index:** Vacuum p2fk.io → SQLite → IPFS snapshot → any node bootstraps
+- **Frontend**: React (CRA + config-overrides for crypto polyfills)
+- **Backend**: FastAPI + SQLite (aiosqlite) — NO MongoDB
+- **IPFS**: Local Kubo daemon for uploads/pins
+- **Signing**: 100% client-side via bitcoinjs-lib + @noble/secp256k1
+- **Mesh**: WebRTC gossip for snapshot propagation
+- **Desktop**: Tauri wrapper (skeleton exists in /src-tauri)
 
-## What's Implemented
-- Full auth flow (WIF import, encrypt, login)
-- Profile minting, Object creation/give/buy/burn (all client-side PSBT)
-- Feed with caching, background refresh, hydrated from snapshot data
-- Conversation threading (keyword-based), Object storefront, Discover page
-- On-chain file reconstruction, IPFS upload/GC/auto-pin
-- IPFS Content Cache Manager (Settings > Data and Storage)
-- Mesh network (WebRTC), Walkie-talkie phone system
-- SEC encrypted state backups, Admin dashboard
-- Local P2FK Decoder + Async Blockchain Explorer Client
-- p2fk.io → Local Backend Migration Complete
-- Connect Your Node UI (custom Bitcoin Core RPC)
-- Decoder Health Dashboard (independence score, source tracking)
-- **IPFS Chain Snapshots** (vacuum, produce, consume, daisy-chain)
-- **Feed Hydration** (extract all signers from cache → register as known users → richer feed)
-- **On-Chain Discovery** (CTHULHU-SNAPSHOT keyword address for decentralized bootstrap)
-- **Latest CID Public Endpoint** (any node can query for latest snapshot)
+## Core Requirements (All COMPLETED)
+1. 100% Client-Side Authentication via WIF
+2. Backend strictly SQLite
+3. Local P2FK Decoder with reliable blockchain explorers
+4. Decentralized IPFS Snapshot system (Auto-delta daisy-chain)
+5. Auto-discover and register signers
+6. Feed toggle between "Global" and "Following"
+7. Display Polls using on-chain data
+8. Real Delete transactions (SQLite purge & IPFS unpin)
+9. Impersonation protection ("First claim wins" for URNs)
+10. Client-side signing for all on-chain operations (posts, objects, GIV, BUY, BURN)
+11. Burned object detection and filtering
+12. Chat UX state migrated client-side (IndexedDB)
+13. Batched feed fetching (30 addresses at a time)
+14. Multi-chain auto-delta vacuum with on-chain CID announcements
+15. WebRTC mesh gossip for snapshot propagation
 
-## Session 2 Changes (April 1, 2026)
-
-### Local P2FK Decoder (DONE)
-### p2fk.io → Local Migration (DONE)
-### Decoder Health Dashboard (DONE)
-### IPFS Content Cache Manager (DONE)
-### Connect Your Node (DONE)
-
-### IPFS Chain Snapshots (DONE)
-- Vacuum p2fk.io at 1.5 req/sec, auto-register discovered signers
-- Produce: serialize → gzip → pin to IPFS → daisy-chain CIDs
-- Consume: fetch CID from IPFS → hydrate SQLite + auto-register users
-- Genesis: `QmUokA8vW5NNDddLhPAZKtu3iJetNKYzUwY9fuohHDNG8A` (6,025 roots, 84 profiles)
-
-### Delta Snapshots & Auto-Bootstrap (DONE — April 2, 2026)
-- **Delta Snapshots**: `POST /api/snapshot/produce?delta=true` — only new roots since last snapshot. Tracked via `snapshot_txids` table. Full=5MB, Delta=<1KB when no changes.
-- **Auto-Bootstrap**: `POST /api/snapshot/auto-bootstrap` — background task walks the IPFS daisy-chain, consumes all snapshots in chronological order, hydrates local cache.
-- **Bootstrap Status**: `GET /api/snapshot/bootstrap-status` — polls progress (running, phase, imported, users).
-- **Admin UI**: Delta toggle (amber), Auto-Bootstrap button (purple), Tracked TXIDs stat, type badges on snapshot chain (delta=amber, full=emerald).
-- **Bug Fix**: Fixed `fetchone()` async bug in snapshot txid tracking. Fixed chain resolution hanging on genesis snapshot with NULL `previous_cid`.
-- **502 Fix**: Backend crash during hot-reload resolved (supervisor restart).
-
-### Deep Root Vacuum Crawl (DONE — April 2, 2026)
-- New vacuum phase "crawling_deep_roots": crawls `GetRootsByAddress` for ALL discovered addresses (not just seeds)
-- Catches roots signed by objects, non-profile addresses, and any entity with a receiving address
-- Discovery cap at 500 deep addresses per run to prevent explosion
-- Fixed vacuum crash: `SELECT address FROM known_users` → `json_extract(data, '$.address')` (SQLite JSON column)
-- Added safety wrapper: vacuum background task now catches all exceptions and logs them instead of hanging silently
-
-### Feed Mode Toggle (DONE — April 2, 2026)
-- **Following / Global toggle**: Pill-shaped button bar at top of feed page
-- **Persistence**: Stored in `localStorage` key `cthulhu_feed_mode` — survives navigation, page refresh, and logout
-- **Backend**: `GET /api/feed/{network}?mode=following&followed=addr1,addr2,...` filters to only followed addresses' posts
-- **Empty states**: Distinct messages for "no follows yet" vs "no posts from followed"
-
-### Poll System Refactor — On-Chain Source of Truth (DONE — April 2, 2026)
-- **Vote counts**: Now sourced from on-chain data via `GetInquiryByTransactionID` (p2fk.io indexer). Local DB no longer increments fake counters.
-- **Local registry**: Demoted to speed cache only. Used for instant feed visibility of unconfirmed polls and "already voted" detection.
-- **PollCard**: Fetches live on-chain data on mount, merges with local vote records for optimistic UX.
-- **Architecture principle**: "The blockchain is the database. IPFS is the file system. Our server is just a read cache."
-- **Local-only data** (acknowledged): follow lists, favorites, playlists, audience chats — these are user preferences, not protocol data.
-
-### IPFS Snapshot in Dependency Gauge (DONE — April 2, 2026)
-- Added `ipfs_snapshot` as 5th tracked source in decoder health stats (purple in bar chart)
-- Snapshot hydration imports are now tracked in the independence score (counts as independent from p2fk.io)
-- Source breakdown grid expanded to 5 columns: Local Decoder, IPFS Snapshot, Fresh Cache, Stale Cache, p2fk.io
-
-### Storefront Speed Optimization (DONE — April 2, 2026)
-- Objects page now uses `cachedFetch` (stale-while-revalidate) for all search results
-- 5-minute TTL with background refresh — instant loads on back-navigation (0.06s vs 2-3s)
-- Session state preservation (objects, scroll position, filters) on unmount/restore
-
-### Feed Hydration (DONE)
-- `POST /api/snapshot/hydrate-feed`: extracts all 158 unique signers from cached data
-- Registers them as known users → feed now shows ALL discovered content
-- Feed grew from 68 known users to 156
-
-### On-Chain Discovery (DONE)
-- Well-known keyword address: `CTHULHU-SNAPSHOT` → `mmexXxh54XNFQdaRCjNRL7Hh3dzaEqS3MB` (testnet)
-- Admin UI shows keyword, address, latest CID, copy button
-- Instructions for publishing CID on-chain via compose
-- `GET /api/snapshot/latest-cid`: public endpoint for node bootstrap discovery
+## Completed (April 2026)
+- [x] P0: Tauri Download Page (`/download` route) wired into App.js
+- [x] P0: Landing page "Download App" button navigates to `/download`
+- [x] P0: Auth page "Experimental Beta" warning banner added
+- [x] P1: Ownership Cascade Transfers — backend endpoint `GET /api/rooms/{parent}/owned-subtopics/{owner}` + frontend GiveModal cascade UI with sequential GIV
+- [x] P1: Auth Migration to Wallet-Only — ALREADY COMPLETE (all server auth endpoints deprecated, 100% client-side WIF)
 
 ## Backlog
-### P1
-- Ownership Cascade Transfers
 
 ### P2
-- Object count discrepancies
-- "Ink Log" wallet history, Venue & Seat Sales
+- Investigate incorrect object counts for profiles (DEDA, embii4u, kattacomi)
+- Research object-based chat rooms
+- Venue & Seat Sales / Locked Objects
+- "Ink Log" wallet transaction history tab
 
 ### P3
-- "SupFlix" Media Gallery
-- Object-based chat rooms
+- "SupFlix" Media Gallery (video/audio objects)
+- Evaluate paid blockchain explorer APIs
 
-### Session 3 Changes (April 2, 2026)
+## Key API Endpoints
+- `GET /api/rooms/{parent}/owned-subtopics/{owner}?network=` — Cascade transfer discovery
+- `GET /api/p2fk/burned` — Burned objects registry
+- `POST /api/snapshot/announce/trigger` — Manual CID announcement
+- `GET /api/feed/{network}` — Backgrounded feed with instant cache response
+- `POST /api/wallet/broadcast` — Broadcast signed TX hex
+- `GET /api/wallet/utxos/{address}` — Fetch UTXOs
+- `GET /api/wallet/raw-tx/{txid}` — Fetch raw TX hex
+- `POST /api/upload` — IPFS upload via local Kubo daemon
 
-#### Surgical Delete/Burn Cache Purge (DONE)
-- `_surgical_cache_purge()` in `data.py`: removes ONLY the specific txid from the feed cache, not the entire cache
-- Unpins associated IPFS CIDs from local Kubo daemon (best-effort)
-- Triggered on both `POST /api/reactions/{txid}` (type=delete) and when `GET /api/reactions/{txid}` discovers a confirmed author-delete
-- Frontend: `performDelete` emits `cthulhu-post-deleted` event; FeedPage listens and removes the post from local state instantly
-
-#### Recoverable Clear Chat (DONE)
-- DM "Clear Chat" now uses timestamped soft-delete only — no longer destroys IndexedDB caches (sent messages, conversation cache, decrypt cache)
-- `setClearedBefore()` now records a clear history (last 10 clears) for auditability
-- Added `removeClearedBefore()` function in `dmDb.js` to undo a clear
-- "Recover Chat" button added to DM menu — removes the `clearedBefore` filter so messages reappear on next fetch from chain
-
-#### SEC Backup Blocklist Integration (DONE)
-- `collectNetworkState()` now includes `blockedUsers` from localStorage
-- `restoreNetworkState()` merges restored blocklist with existing local blocklist (deduplicating by address)
-- Blocked users survive device changes when SEC backup is restored
-
-#### Storefront Chain Filter Fix (DONE)
-- `CHAIN_FILTERS` now has a `match` field for strict blockchain matching
-- `fetchObjects()` applies client-side post-filter: `object._blockchain.toUpperCase().includes(chainMatch)`
-- Featured (embii) has no chain match — shows all results as before
-- BTC/LTC/DOG/MZC/IPFS filters now strictly validate the `_blockchain` field
-
-#### Proactive IPFS Pinning for Feed Posts (DONE — April 2, 2026)
-
-#### Burned Object Storefront Filtering (DONE — April 2, 2026)
-- Root cause of lost images: IPFS content was never pinned when posts were viewed. Public gateways GC'd the content and it was lost forever.
-- `_proactive_pin_feed_cids()` in `data.py`: extracts ALL IPFS CIDs from feed messages (post images, profile pics, file attachments) and pins them to local Kubo
-- Triggers on: feed page load (current page), background feed refresh (all messages), and feed built from scratch
-- Deduplicates pin requests to avoid hammering Kubo
-- Result: node went from 1 pin (default) to 33+ pins after a single feed load
-- This ensures our node has a local copy of all content it has ever seen — true "pinning node" behavior
-- Fixed `ReferenceError: blockList is not defined` in `AppLayout`
-- Added `useBlockList(network)` hook to `AppLayout` function
-- Changed `blockUser={blockUser} isBlocked={isBlocked}` to `blockUser={blockList.blockUser} isBlocked={blockList.isBlocked}` on ProfileDetailPage route
-
-
-#### Drag & Drop / Paste File Support in Compose (DONE — April 2, 2026)
-- ComposeModal.js (Feed overlay) and ComposeBar.js (Feed inline + Object Chat): Added drag/drop + paste file handlers
-- Drop zone overlay appears on drag. Paste catches clipboard files (screenshots, etc.)
-- NOT added to DMPage.js (Private Messages) per user instruction
-- Large files (>5MB) start background upload immediately via UploadQueue
-
-#### Local Decoder Priority Flip (DONE — April 2, 2026)
-- Flipped `p2fk_get()` priority: `cache_fresh → local_decoder → p2fk_io → cache_stale`
-- Independence score: 0% → 99.6%
-
-#### Proactive IPFS Pinning for Feed Posts (DONE — April 2, 2026)
-- `_proactive_pin_feed_cids()` pins all IPFS CIDs from feed messages to local Kubo on every load
-- Node went from 1 pin → 88+ pins after first feed load
-
-#### Auto-Backup Verification (CONFIRMED — April 2, 2026)
-- No auto-backup intervals exist. SEC backups are manual only (SettingsModal sign-out flow)
-
-#### Auto-Delta Indexer (DONE — April 2, 2026)
-- Background scheduler: vacuum → delta snapshot on configurable interval (5m-24hr, default 15m)
-- Skips if 0 new roots found (no wasted IPFS pins)
-- Admin endpoints: POST /api/snapshot/auto-delta/start, stop, GET status
-- Admin UI: "Auto-Delta Indexer" section with start/stop, interval, stats, live log
-
-#### Multi-Chain Vacuum + Auto-Boot + On-Chain CID Announce (DONE — April 2, 2026)
-- **Multi-chain sweep**: Auto-delta now iterates over ALL configured networks (btc-testnet + btc-mainnet) each cycle, not just one
-- **Auto-start on boot**: `start_auto_delta_on_boot()` called from `server.py` startup — no admin action needed, desktop apps start crawling immediately
-- **On-chain CID announce**: After producing a snapshot, treasury wallet publishes CID as a P2FK root on BTC testnet via `CTHULHU-SNAPSHOT` keyword. Configurable cooldown (default 6h), balance guard (min 50k sats), automatic discovery for any desktop app reading treasury roots
-- **Endpoints**: `GET /api/snapshot/announce/status`, `POST /api/snapshot/announce/config`, `POST /api/snapshot/announce/trigger`
-- **Admin UI**: AutoDeltaSection now shows multi-chain label, On-Chain CID Announce status with broadcast count and last txid link
-
-#### Scalability Audit: "Wipe & Rebuild" Compliance (DONE — April 2, 2026)
-- **Audited all 50 SQLite tables** against core philosophy: "The blockchain is the database. IPFS is the file system. Our server is just a read cache."
-- **Findings**:
-  - Pending Reactions: Already correct — on-chain txs with speed cache (no violation)
-  - Poll Votes: Already correct — on-chain INQ class with local dedup cache (no violation)
-  - DM Clears: Already client-side in IndexedDB (no violation)
-  - Chat Checkpoints: IPFS uploads through Kubo daemon (correct architecture)
-- **Fixed**: Moved chat UX state (unread counts, mark-as-read, room tracking) to fully client-side localStorage. Removed server polling dependency from `unreadTracker.js`. Removed server-side DM clear call from `DMPage.js`.
-- **Remaining**: User auth (passwords) stays server-side for web app; Tauri desktop will use wallet-only auth (planned)
-- Created `burned_objects` SQLite table populated at boot via `scan_cached_roots_for_burns()` and incrementally during vacuum crawls
-- Backend: `proxy_search_objects()` and storefront endpoints filter out burned addresses from results
-- Frontend: ObjectsPage adds safety filter for `is_burned`/`burn_status` fields
-- Detail page still accessible via direct URL — shows burn banner with transaction info
-- 41 burned objects detected and registered from cached roots on initial scan
-
-#### Mesh Snapshot Gossip + Status Dot (DONE — April 2, 2026)
-- **Backend gossip broadcast**: After producing a delta snapshot, `broadcast_snapshot_gossip()` pushes the CID to ALL connected WebSocket signaling clients instantly
-- **MeshNode relay**: Nodes that receive the gossip relay it to all their WebRTC peers, propagating across the mesh
-- **MeshClient auto-consume**: Clients that receive a snapshot-gossip message auto-call `/api/snapshot/consume` to hydrate their local index immediately
-- **Header status dot**: New cyan mesh relay dot alongside IPFS (green) and walkie (amber) dots in the desktop header. Shows connected/off state with tooltip on hover. Polls mesh singleton status every 3s
-- **Flow**: Server produces delta → broadcasts CID via WS → nodes relay via WebRTC → clients auto-consume → instant sync without waiting for 6h on-chain announcement
 ## Key Files
+- `/app/backend/routes/room_topics.py` — Cascade transfer endpoint
+- `/app/frontend/src/components/ObjectActionModals.js` — GiveModal with cascade UI
+- `/app/frontend/src/pages/DownloadPage.js` — Tauri download hub
+- `/app/frontend/src/hooks/useAuth.js` — Client-side WIF auth
+- `/app/frontend/src/utils/p2fk.js` — P2FK payload construction
+- `/app/frontend/src/utils/txBuilder.js` — PSBT building/signing
 
-#### Storefront: "All" Default Filter (DONE — April 2, 2026)
-- Replaced hardcoded "Featured"/"embii" search with "All" (empty search string)
-- Objects load chronologically on initial load
-- Chain filters (BTC/LTC/DOG/MZC/IPFS) maintained with strict `_blockchain` field validation
-
-#### Impersonation Protection (DONE — April 2, 2026)
-- `GET /api/urn/verify/{urn}` endpoint: finds all addresses claiming a URN, resolves `CreatedDate`, returns official (earliest) claimant
-- ProfileDetailPage: "NOT OFFICIAL" red badge appears for impersonators, clickable link to official profile
-- Single claimants correctly show no badge
-
-#### Tauri Desktop Packaging Prep (DONE — April 2, 2026)
-- Created `/app/src-tauri/` project skeleton: `tauri.conf.json`, `Cargo.toml`, `src/main.rs`, `build.rs`, `capabilities/default.json`
-- Rust host spawns Python API (PyInstaller sidecar) + Kubo IPFS daemon as child processes
-- Created `/app/TAURI_PACKAGING.md` step-by-step guide for building platform-specific installers
-
-#### Burn Detection & Display (DONE — April 2, 2026)
-- Backend: Object endpoint now scans P2FK roots for `BRN` (burn) transactions and adds `burn_transactions`, `burn_txids`, `is_burned`, `burn_status` fields
-- Frontend: SingleObjectPage shows red burn banner when burns are detected on-chain
-- Defensive guards: All `.map()` calls in SingleObjectPage now use `(array || []).map()` to prevent crashes on missing data
-- Verified: Object `msBayXP6iCByaHeMteiwmXMbS74x91MmqY` has 7 BRN roots on-chain (6 by owner, 1 by buyer). p2fk.io indexer doesn't reflect burns yet.
-- `/app/backend/routes/snapshot.py` — Vacuum, produce (full+delta), consume, hydrate-feed, auto-bootstrap, bootstrap-status, latest-cid
-- `/app/backend/p2fk_decoder.py` — P2FK Root decoder
-- `/app/backend/blockchain_api.py` — Async blockchain explorer client
-- `/app/backend/routes/p2fk_local.py` — Local P2FK API routes
-- `/app/backend/utils/helpers.py` — p2fk_get with local fallback + decoder tracking
-- `/app/backend/utils/stats_tracker.py` — Decoder source tracking
-- `/app/frontend/src/pages/AdminDashboard.js` — DecoderHealthPanel, SnapshotPanel, HydrateFeedSection, OnChainDiscoverySection
-- `/app/frontend/src/components/SettingsModal.js` — IpfsCacheManager, ConnectNodeSection
-
-## Test Credentials
-- WIF: `cPYRpd9zq5mTdoo93NM5V9gTkpPnL26kjS5f6qYExPHLtCFp2gN8`
-- Admin: `CthulhuAdmin` / `78UH1%2kC^vH2Gi1MqI@`
-- Network: `btc-testnet`
-- Genesis Snapshot CID: `QmUokA8vW5NNDddLhPAZKtu3iJetNKYzUwY9fuohHDNG8A`
-- Discovery Keyword: `CTHULHU-SNAPSHOT` → `mmexXxh54XNFQdaRCjNRL7Hh3dzaEqS3MB`
+## Treasury Wallet
+- Network: BTC Testnet
+- Address: `mmexXxh54XNFQdaRCjNRL7Hh3dzaEqS3MB`
+- On-chain announce keyword: `CTHULHU-SNAPSHOT`
