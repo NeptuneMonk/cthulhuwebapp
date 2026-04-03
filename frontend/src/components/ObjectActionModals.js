@@ -323,6 +323,7 @@ export const BurnModal = ({ object, network, onClose }) => {
   const [error, setError] = useState(null);
   const [txResult, setTxResult] = useState(null);
   const [confirmed, setConfirmed] = useState(false);
+  const [step, setStep] = useState(1); // 1 = set qty, 2 = confirm
   const [walletSats, setWalletSats] = useState(null);
 
   const objectAddress = object.object_address || object.creators?.[0]?.address || '';
@@ -356,6 +357,8 @@ export const BurnModal = ({ object, network, onClose }) => {
   const handleBurn = async () => {
     if (!confirmed || !isConnected) return;
     if (!wif) { setError('Wallet is locked. Enter your password to unlock.'); return; }
+    const burnQty = parseInt(quantity) || 1;
+    console.log(`[Cthulhu BRN] Burning ${burnQty} of "${object.name}" at ${objectAddress}`);
     setSending(true);
     setError(null);
     try {
@@ -364,19 +367,21 @@ export const BurnModal = ({ object, network, onClose }) => {
         import('@/utils/txBuilder'),
       ]);
 
-      const { addresses, taxInsertIndex } = buildBurnTransaction(wif, objectAddress, parseInt(quantity) || 1, network);
+      const { addresses, taxInsertIndex } = buildBurnTransaction(wif, objectAddress, burnQty, network);
+      console.log(`[Cthulhu BRN] Payload addresses: ${addresses.length}, qty=${burnQty}`);
       const result = await buildAndBroadcast(wif, addresses, network, [], 0, 546, [], taxInsertIndex);
 
       if (result.success) {
+        console.log(`[Cthulhu BRN] Success! txid=${result.txid}, qty=${burnQty}`);
         setTxResult(result);
         addTransaction(address, {
           txid: result.txid,
           type: 'BRN',
           network,
           addresses,
-          label: `Burn ${object.name || 'object'}`,
+          label: `Burn ${burnQty}x ${object.name || 'object'}`,
         });
-        addPendingTx({ txid: result.txid, type: 'Burn', label: object.name || 'Object', network });
+        addPendingTx({ txid: result.txid, type: 'Burn', label: `${burnQty}x ${object.name || 'Object'}`, network });
         addOptimisticItem({
           txid: result.txid,
           type: 'BRN',
@@ -385,14 +390,14 @@ export const BurnModal = ({ object, network, onClose }) => {
           objectAddress,
           data: {
             name: object.name || 'Object',
-            quantity: parseInt(quantity) || 1,
+            quantity: burnQty,
           },
         });
         refreshBalance();
-        // Also notify the tether blocklist
         window.dispatchEvent(new CustomEvent('tethers-changed', { detail: { burned: objectAddress } }));
       }
     } catch (err) {
+      console.error(`[Cthulhu BRN] Failed:`, err);
       setError(err.message || 'Burn failed');
     } finally {
       setSending(false);
@@ -403,7 +408,57 @@ export const BurnModal = ({ object, network, onClose }) => {
     <ModalShell title="Burn Object" icon={FiTrash2} onClose={onClose}>
       {txResult ? (
         <TxSuccess txid={txResult.txid} type="Burn" onClose={onClose} />
+      ) : step === 2 ? (
+        /* Step 2: Final Confirmation */
+        <div className="space-y-4" data-testid="burn-confirm-step">
+          <div className="text-center py-3">
+            <div className="w-14 h-14 rounded-full bg-red-500/15 flex items-center justify-center mx-auto mb-3">
+              <FiTrash2 size={24} className="text-red-400" />
+            </div>
+            <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Confirm Burn</p>
+            <p className="text-2xl font-bold text-red-400" data-testid="burn-confirm-qty">{quantity}x</p>
+            <p className="text-sm text-gray-300 font-medium">{object.name}</p>
+            <p className="text-xs text-gray-600 mt-1">of {myOwned} owned</p>
+          </div>
+
+          <div className="p-3 bg-red-500/5 border border-red-500/20 rounded-lg">
+            <div className="flex items-start gap-2.5">
+              <FiAlertTriangle size={14} className="text-red-400 flex-shrink-0 mt-0.5" />
+              <p className="text-xs text-red-400/80">This is <strong>irreversible</strong>. {quantity} unit{quantity > 1 ? 's' : ''} will be permanently destroyed on-chain.</p>
+            </div>
+            <label className="flex items-center gap-2 mt-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={confirmed}
+                onChange={e => setConfirmed(e.target.checked)}
+                className="rounded border-gray-700 bg-gray-800"
+                data-testid="burn-confirm-checkbox"
+              />
+              <span className="text-xs text-gray-300">I understand — burn {quantity} unit{quantity > 1 ? 's' : ''} permanently</span>
+            </label>
+          </div>
+
+          {error && <p className="text-xs text-red-400 bg-red-400/10 border border-red-400/20 rounded px-3 py-2" data-testid="burn-error">{error}</p>}
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => { setStep(1); setConfirmed(false); }}
+              className="px-4 py-2.5 bg-gray-800 text-gray-400 rounded-lg text-sm hover:bg-gray-700 transition-colors"
+              data-testid="burn-back-btn"
+            >Back</button>
+            <button
+              onClick={handleBurn}
+              disabled={!confirmed || sending || !isConnected || insufficientFunds}
+              className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-red-600 hover:bg-red-700 disabled:bg-gray-800 disabled:text-gray-600 text-white rounded-lg transition-colors font-semibold text-sm"
+              data-testid="burn-confirm-btn"
+            >
+              <FiTrash2 size={14} />
+              {sending ? 'Signing...' : `Burn ${quantity} unit${quantity > 1 ? 's' : ''}`}
+            </button>
+          </div>
+        </div>
       ) : (
+        /* Step 1: Set Quantity */
         <div className="space-y-4">
           <div className="bg-gray-800/50 rounded-lg p-3 flex items-center gap-3">
             <div className="text-sm text-gray-300 font-medium">{object.name}</div>
@@ -421,29 +476,14 @@ export const BurnModal = ({ object, network, onClose }) => {
               className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-gray-100 text-sm focus:border-blue-500 focus:outline-none"
               data-testid="burn-quantity-input"
             />
-          </div>
-
-          <div className="p-4 bg-red-500/5 border border-red-500/20 rounded-lg">
-            <div className="flex items-start gap-3">
-              <FiAlertTriangle size={18} className="text-red-400 flex-shrink-0 mt-0.5" />
-              <div>
-                <p className="text-sm text-red-400 font-medium mb-1">This action is irreversible</p>
-                <p className="text-xs text-gray-400">Burned objects are permanently destroyed and cannot be recovered.</p>
+            {myOwned > 1 && (
+              <div className="flex gap-2 mt-2">
+                {[1, Math.ceil(myOwned / 2), myOwned].filter((v, i, a) => a.indexOf(v) === i).map(q => (
+                  <button key={q} onClick={() => setQuantity(q)} className={`px-3 py-1 rounded text-xs transition-colors ${quantity === q ? 'bg-red-500/20 text-red-400 border border-red-500/30' : 'bg-gray-800 text-gray-500 border border-gray-700 hover:text-gray-300'}`} data-testid={`burn-quick-${q}`}>{q === myOwned ? 'All' : q}</button>
+                ))}
               </div>
-            </div>
-            <label className="flex items-center gap-2 mt-3 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={confirmed}
-                onChange={e => setConfirmed(e.target.checked)}
-                className="rounded border-gray-700 bg-gray-800"
-                data-testid="burn-confirm-checkbox"
-              />
-              <span className="text-xs text-gray-300">I understand this is permanent</span>
-            </label>
+            )}
           </div>
-
-          {error && <p className="text-xs text-red-400 bg-red-400/10 border border-red-400/20 rounded px-3 py-2" data-testid="burn-error">{error}</p>}
 
           {/* Balance check */}
           {walletSats !== null && (
@@ -466,13 +506,13 @@ export const BurnModal = ({ object, network, onClose }) => {
           <div className="flex items-center gap-3">
             <span className="text-xs text-emerald-600 flex items-center gap-1"><FiShield size={11} /> Signed locally</span>
             <button
-              onClick={handleBurn}
-              disabled={!confirmed || sending || !isConnected || insufficientFunds}
+              onClick={() => setStep(2)}
+              disabled={!isConnected || insufficientFunds || quantity < 1}
               className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-red-600 hover:bg-red-700 disabled:bg-gray-800 disabled:text-gray-600 text-white rounded-lg transition-colors font-semibold"
-              data-testid="burn-confirm-btn"
+              data-testid="burn-next-btn"
             >
               <FiTrash2 size={16} />
-              {sending ? 'Signing...' : `Burn ${quantity} unit${quantity > 1 ? 's' : ''}`}
+              Burn {quantity} unit{quantity > 1 ? 's' : ''} →
             </button>
           </div>
         </div>
