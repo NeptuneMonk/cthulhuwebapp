@@ -89,55 +89,72 @@ async def ipfs_restart():
 
         env = {"IPFS_PATH": str(ipfs_path), "PATH": "/usr/local/bin:/usr/bin:/bin"}
 
-        # Step 1: Install kubo binary if missing
+        # Step 1: Install kubo binary if missing — use BUNDLED binaries first
         ipfs_bin = Path("/usr/local/bin/ipfs")
         if not ipfs_bin.exists():
-            steps.append("Binary missing — downloading kubo v0.33.0...")
             arch = platform.machine()
-            goarch = "arm64" if arch in ("aarch64", "arm64") else "amd64"
-            dl_url = f"https://dist.ipfs.tech/kubo/v0.33.0/kubo_v0.33.0_linux-{goarch}.tar.gz"
-            tarball = "/tmp/kubo.tar.gz"
+            arch_suffix = "arm64" if arch in ("aarch64", "arm64") else "amd64"
+            bundled = Path(__file__).parent.parent / "bin" / f"ipfs-{arch_suffix}"
 
-            # Try curl first, then Python urllib
-            downloaded = False
-            try:
-                dl = subprocess.run(
-                    ["curl", "-sL", dl_url, "-o", tarball],
-                    capture_output=True, timeout=120
-                )
-                if dl.returncode == 0 and os.path.getsize(tarball) > 1000:
-                    downloaded = True
-                    steps.append("Downloaded via curl")
-            except Exception as e:
-                steps.append(f"curl failed: {e}")
+            installed = False
+            if bundled.exists():
+                steps.append(f"Installing from bundled binary: {bundled}")
+                for bin_dest in ["/usr/local/bin/ipfs", "/tmp/ipfs_bin"]:
+                    try:
+                        subprocess.run(["cp", str(bundled), bin_dest],
+                                       capture_output=True, timeout=10, check=True)
+                        subprocess.run(["chmod", "+x", bin_dest], capture_output=True)
+                        ipfs_bin = Path(bin_dest)
+                        installed = True
+                        steps.append(f"Binary installed at {bin_dest}")
+                        break
+                    except Exception:
+                        continue
 
-            if not downloaded:
+            if not installed:
+                steps.append("Bundled binary not found — downloading from GitHub...")
+                goarch = "arm64" if arch in ("aarch64", "arm64") else "amd64"
+                dl_url = f"https://github.com/ipfs/kubo/releases/download/v0.33.0/kubo_v0.33.0_linux-{goarch}.tar.gz"
+                tarball = "/tmp/kubo.tar.gz"
+
+                downloaded = False
                 try:
-                    import urllib.request
-                    urllib.request.urlretrieve(dl_url, tarball)
-                    if os.path.getsize(tarball) > 1000:
+                    dl = subprocess.run(
+                        ["curl", "-sL", dl_url, "-o", tarball],
+                        capture_output=True, timeout=120
+                    )
+                    if dl.returncode == 0 and os.path.getsize(tarball) > 1000:
                         downloaded = True
-                        steps.append("Downloaded via urllib")
+                        steps.append("Downloaded via curl from GitHub")
                 except Exception as e:
-                    steps.append(f"urllib failed: {e}")
+                    steps.append(f"curl failed: {e}")
 
-            if not downloaded:
-                raise Exception("Could not download Kubo binary")
+                if not downloaded:
+                    try:
+                        import urllib.request
+                        urllib.request.urlretrieve(dl_url, tarball)
+                        if os.path.getsize(tarball) > 1000:
+                            downloaded = True
+                            steps.append("Downloaded via urllib from GitHub")
+                    except Exception as e:
+                        steps.append(f"urllib failed: {e}")
 
-            subprocess.run(["tar", "xzf", tarball, "-C", "/tmp"],
-                           capture_output=True, timeout=30)
+                if not downloaded:
+                    raise Exception("Could not install Kubo binary (no bundled binary and download failed)")
 
-            # Try /usr/local/bin first, fall back to /tmp
-            for bin_dest in ["/usr/local/bin/ipfs", "/tmp/ipfs_bin"]:
-                try:
-                    subprocess.run(["cp", "/tmp/kubo/ipfs", bin_dest],
-                                   capture_output=True, timeout=10, check=True)
-                    subprocess.run(["chmod", "+x", bin_dest], capture_output=True)
-                    ipfs_bin = Path(bin_dest)
-                    steps.append(f"Binary installed at {bin_dest}")
-                    break
-                except Exception:
-                    continue
+                subprocess.run(["tar", "xzf", tarball, "-C", "/tmp"],
+                               capture_output=True, timeout=30)
+
+                for bin_dest in ["/usr/local/bin/ipfs", "/tmp/ipfs_bin"]:
+                    try:
+                        subprocess.run(["cp", "/tmp/kubo/ipfs", bin_dest],
+                                       capture_output=True, timeout=10, check=True)
+                        subprocess.run(["chmod", "+x", bin_dest], capture_output=True)
+                        ipfs_bin = Path(bin_dest)
+                        steps.append(f"Binary installed at {bin_dest}")
+                        break
+                    except Exception:
+                        continue
 
             if not ipfs_bin.exists():
                 raise Exception("Could not install binary to any path")

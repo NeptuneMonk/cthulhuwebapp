@@ -24,9 +24,10 @@ Build a modern, responsive frontend for a blockchain-based decentralized social 
 - WebRTC mesh relay gossip
 
 ## Recently Completed (April 2026)
-- **P0 Fix: "Unnamed" Object View** — Added data validation (require name/urn/address fields) and self-healing re-fetch to SingleObjectPage. Prevents stale mesh data from causing "Unnamed" rendering.
-- **P0 Fix: Burned Objects Still Showing** — Added `get_burned_set()` filtering to owned/created/counts endpoints. SQLite api_cache fallback for object detail when p2fk.io 404s.
-- **P0 Fix: Media Timeouts (.wav/.mp4)** — mempool.space first, in-memory TX cache, semaphore 3→8, p2fk.io fast-path, frontend 202 handling fix.
+- **P0 Fix: IPFS Deployment Failure** — Bundled Kubo IPFS binaries (amd64 + arm64) in `/app/backend/bin/` so they ship with deployment. No runtime downloads from `dist.ipfs.tech` needed. Updated both `server.py` startup and `/ipfs/restart` endpoint. Download fallback URL changed from `dist.ipfs.tech` (502) to GitHub releases.
+- **P0 Fix: "Unnamed" Object View** — Added data validation and self-healing re-fetch to SingleObjectPage.
+- **P0 Fix: Burned Objects Still Showing** — Added `get_burned_set()` filtering to owned/created/counts endpoints.
+- **P0 Fix: Media Timeouts (.wav/.mp4)** — mempool.space first, in-memory TX cache, semaphore 3→8, p2fk.io fast-path.
 - **P0 Fix: Profile URN Overwrite Bug** — Fixed in MyProfilePage.js, SettingsModal.js, ActivateMessaging.js.
 - **P1: Full P2FK Payload Audit** — All 8 transaction types verified compatible with SUP reference client.
 
