@@ -34,7 +34,8 @@ export default function MyProfilePage({ network }) {
 
   const activeAddress = user?.address || wallet?.address;
   const activeWif = wif || wallet?.wif;
-  const urn = user?.urn || '';
+  // Display URN — may be the address placeholder until profile is fetched
+  const displayUrn = user?.urn || '';
 
   // Fetch profile data
   const fetchProfile = useCallback(async () => {
@@ -124,7 +125,17 @@ export default function MyProfilePage({ network }) {
 
   // Save profile — builds and broadcasts a PRO update transaction
   const handleSave = async () => {
-    if (!activeWif || !urn) return;
+    if (!activeWif) return;
+
+    // CRITICAL: Use the on-chain profile URN, NOT user.urn (which may be the address placeholder).
+    // The profile state is fetched from the API and contains the real on-chain URN.
+    const onChainUrn = profile?.urn || profile?.URN;
+    const isRealUrn = onChainUrn && onChainUrn !== activeAddress && onChainUrn !== user?.address;
+    if (!isRealUrn) {
+      setSaveError('No minted profile found on-chain. Please mint your profile first before updating.');
+      return;
+    }
+
     setSaving(true);
     setSaveError('');
     setSaveResult(null);
@@ -162,7 +173,7 @@ export default function MyProfilePage({ network }) {
       });
 
       const profileData = {
-        urn,
+        urn: onChainUrn,
         displayName: form.displayName || undefined,
         firstName: form.firstName || undefined,
         middleName: form.middleName || undefined,
@@ -184,7 +195,7 @@ export default function MyProfilePage({ network }) {
 
       addTransaction(result.senderAddress, {
         txid: txResult.txid, type: 'PRO', network,
-        addresses: result.addresses, label: `Profile update: @${urn}`,
+        addresses: result.addresses, label: `Profile update: @${onChainUrn}`,
       });
 
       // Register updated profile on backend
@@ -192,7 +203,7 @@ export default function MyProfilePage({ network }) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          address: result.senderAddress, network, urn,
+          address: result.senderAddress, network, urn: onChainUrn,
           image: form.imageRef || null,
           display_name: form.displayName || null,
         }),
@@ -309,9 +320,9 @@ export default function MyProfilePage({ network }) {
         <div className="flex flex-col items-center pt-6 pb-4 px-4">
           <div className="relative group" data-testid="my-profile-avatar-section">
             {imageUrl ? (
-              <img src={imageUrl} alt={urn} className="w-24 h-24 rounded-full object-cover border-2 border-gray-700" data-testid="my-profile-avatar" />
+              <img src={imageUrl} alt={displayUrn} className="w-24 h-24 rounded-full object-cover border-2 border-gray-700" data-testid="my-profile-avatar" />
             ) : (
-              <ProfileThumb name={urn || '?'} image={null} size="xl" />
+              <ProfileThumb name={displayUrn || '?'} image={null} size="xl" />
             )}
             {editing && (
               <label className="absolute inset-0 flex items-center justify-center rounded-full bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer" data-testid="my-profile-change-image">
@@ -325,8 +336,8 @@ export default function MyProfilePage({ network }) {
           {editing && form.imageRef && !uploadError && <p className="text-xs text-emerald-400 mt-1 truncate max-w-[250px]">Pinned: {form.imageRef}</p>}
 
           {/* URN */}
-          <h2 className="text-xl font-bold text-gray-100 mt-3" data-testid="my-profile-urn">@{urn}</h2>
-          {profile?.display_name && profile.display_name !== urn && (
+          <h2 className="text-xl font-bold text-gray-100 mt-3" data-testid="my-profile-urn">@{displayUrn}</h2>
+          {profile?.display_name && profile.display_name !== displayUrn && (
             <p className="text-sm text-gray-400">{profile.display_name}</p>
           )}
 

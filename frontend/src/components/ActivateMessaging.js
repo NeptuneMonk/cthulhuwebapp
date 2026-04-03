@@ -30,15 +30,24 @@ export function ActivateMessaging({ network, onActivated, compact = false }) {
 
       // Fetch current profile so we don't overwrite existing fields
       const API = process.env.REACT_APP_BACKEND_URL;
-      let profileData = { urn: user?.urn || '' };
+      let profileData = {};
       try {
         const { dedupGet } = await import('@/utils/dedupFetch');
         const data = await dedupGet(`${API}/api/profile/${user?.address}?network=${network}`, 15000);
-        if (data?.URN) profileData.urn = data.URN;
-        if (data?.Bio) profileData.bio = data.Bio;
-        if (data?.Image) profileData.image = data.Image;
-        if (data?.DisplayName) profileData.displayName = data.DisplayName;
+        // Use lowercase keys — format_profile returns {urn, bio, image, display_name}
+        const fetchedUrn = data?.URN || data?.urn;
+        if (fetchedUrn && fetchedUrn !== user?.address) {
+          profileData.urn = fetchedUrn;
+        }
+        if (data?.Bio || data?.bio) profileData.bio = data.Bio || data.bio;
+        if (data?.Image || data?.image) profileData.image = data.Image || data.image;
+        if (data?.DisplayName || data?.display_name) profileData.displayName = data.DisplayName || data.display_name;
       } catch {}
+
+      // CRITICAL: Never submit an address as the URN
+      if (!profileData.urn || profileData.urn === user?.address) {
+        throw new Error('No minted profile found. Mint your profile before activating messaging.');
+      }
 
       const { addresses, taxInsertIndex } = buildProfileTransaction(currentWif, profileData, network);
       await buildAndBroadcast(currentWif, addresses, network, [], 0, 546, [], taxInsertIndex);

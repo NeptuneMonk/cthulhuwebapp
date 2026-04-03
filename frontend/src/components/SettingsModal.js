@@ -1085,7 +1085,12 @@ export default function SettingsModal({ fullPage, onClose, profileImage, network
       }
 
       // Build a minimal profile update with PKX/PKY (urn identifies the profile)
-      const profileData = { urn: user?.urn || '' };
+      // CRITICAL: Use authProfileUrn (resolved on-chain URN), NOT user?.urn which may be the address placeholder
+      const resolvedUrn = authProfileUrn || '';
+      if (!resolvedUrn || resolvedUrn === user?.address) {
+        throw new Error('No minted profile found on-chain. Mint your profile first to publish encryption keys.');
+      }
+      const profileData = { urn: resolvedUrn };
       const { addresses, taxInsertIndex } = buildProfileTransaction(currentWif, profileData, network);
 
       // Build PSBT, sign, and broadcast

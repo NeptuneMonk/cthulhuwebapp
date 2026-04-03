@@ -1,0 +1,89 @@
+{
+  "summary": "Iteration 235: Verified P0 URN Overwrite Bug Fix via code review and frontend smoke tests. The fix ensures PRO transaction payloads use on-chain profile URN (from API data) instead of user.urn (which can be the Bitcoin address placeholder). Backend health check passed. Frontend loads correctly with login, feed, and settings working.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {
+        "flow": "External API calls",
+        "issue": "504 errors from p2fk.io external service - expected for testnet environment",
+        "affected_selectors": []
+      }
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/test_reports/iteration_235.json"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "MyProfilePage.js (Lines 130-137): FIXED - Uses profile?.urn || profile?.URN from API data, guards against address-as-URN with explicit check: onChainUrn !== activeAddress && onChainUrn !== user?.address",
+    "SettingsModal.js (Lines 1088-1093): FIXED - Uses authProfileUrn prop (resolved on-chain URN), guards against address match: resolvedUrn === user?.address",
+    "ActivateMessaging.js (Lines 33-50): FIXED - Fetches profile from API, checks both data?.URN and data?.urn (case-mismatch fix), guards against address-as-URN: profileData.urn === user?.address",
+    "useAuth.js (Lines 171-172, 245-246): Confirmed - Still sets urn=address as placeholder, which is OK because downstream consumers now properly guard against it"
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "100%",
+    "frontend": "95%"
+  },
+  "test_credentials": {
+    "wif": "cPYRpd9zq5mTdoo93NM5V9gTkpPnL26kjS5f6qYExPHLtCFp2gN8",
+    "password": "pXk7uHCH8kuu85B",
+    "network": "btc-testnet"
+  },
+  "seed_data_creation": "None",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "P0 URN Overwrite Bug Fix verified via code review. Test user 'Emergent2' has a minted profile with active messaging (PKX/PKY published). The fix guards prevent address-as-URN submission in 3 files: MyProfilePage.js, SettingsModal.js, ActivateMessaging.js. Backend uses SQLite (NOT MongoDB). External p2fk.io API returns 504 errors intermittently - this is expected for testnet.",
+  "features_tested": {
+    "p0_urn_fix_myprofilepage": {
+      "status": "PASS (Code Review)",
+      "details": "Lines 130-137 use profile?.urn || profile?.URN from API data with guard: onChainUrn !== activeAddress && onChainUrn !== user?.address. Shows error 'No minted profile found on-chain' if guard fails."
+    },
+    "p0_urn_fix_settingsmodal": {
+      "status": "PASS (Code Review)",
+      "details": "Lines 1088-1093 use authProfileUrn prop with guard: resolvedUrn === user?.address. Shows error 'No minted profile found on-chain' if guard fails."
+    },
+    "p0_urn_fix_activatemessaging": {
+      "status": "PASS (Code Review)",
+      "details": "Lines 33-50 fetch profile from API, check both data?.URN and data?.urn (case-mismatch fix), guard: profileData.urn === user?.address. Shows error 'No minted profile found' if guard fails."
+    },
+    "backend_health": {
+      "status": "PASS",
+      "details": "GET /api/tbtc-price returns 200 with price data"
+    },
+    "frontend_landing_page": {
+      "status": "PASS",
+      "details": "Landing page loads with Cthulhu branding, Launch App and Download App buttons"
+    },
+    "frontend_auth_page": {
+      "status": "PASS",
+      "details": "Auth page loads with beta warning banner, Import Key tab, WIF input, password input, Import & Login button"
+    },
+    "frontend_login_flow": {
+      "status": "PASS",
+      "details": "Login with test WIF successful, redirects to /feed"
+    },
+    "frontend_feed_page": {
+      "status": "PASS",
+      "details": "Feed page loads with sidebar, contacts list, posts"
+    },
+    "frontend_settings_page": {
+      "status": "PASS",
+      "details": "Settings page loads with menu items, profile section shows 'Minted' badge and 'Private Messaging ACTIVE'"
+    },
+    "profile_api": {
+      "status": "PASS",
+      "details": "GET /api/profile/{address} returns correct URN ('Emergent2') separate from address, with PKX/PKY keys"
+    }
+  },
+  "p0_bug_verification": {
+    "bug_description": "Profile updates were overwriting the user's on-chain URN with their Bitcoin address. This happened because useAuth.js sets urn=address as a fallback, and MyProfilePage.js/SettingsModal.js/ActivateMessaging.js blindly submitted this address as the URN in PRO payloads.",
+    "fix_verification": "Code review confirms all 3 files now use on-chain profile URN from API data (not user.urn) and guard against address-as-URN submission. The fix prevents the bug by: (1) Fetching real URN from profile API, (2) Checking if URN equals address before submission, (3) Showing user-friendly error if no minted profile exists.",
+    "test_user_status": "Test user 'Emergent2' already has minted profile with active messaging, so guards would allow operation to proceed correctly using on-chain URN."
+  }
+}
