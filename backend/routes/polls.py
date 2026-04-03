@@ -165,16 +165,18 @@ async def get_poll_by_address(address: str, network: str = 'btc-testnet'):
 
 
 @router.get("/polls/by-txid/{txid}")
-async def get_poll_by_txid(txid: str, network: str = 'btc-testnet'):
+async def get_poll_by_txid(txid: str, network: str = 'btc-testnet', fresh: bool = False):
     """Get a poll/inquiry by transaction ID.
     
     Source of truth: on-chain data via GetInquiryByTransactionID.
     Local registry is ONLY used as a fallback for unconfirmed (mempool) polls
     before the indexer has seen them. Vote counts from the local registry are
     NOT authoritative — only on-chain counts are.
+    
+    Pass fresh=true to bypass the API cache (used after voting to get updated counts).
     """
     mainnet = _is_mainnet(network)
-    data = await p2fk_get(f"GetInquiryByTransactionID/{txid}", mainnet)
+    data = await p2fk_get(f"GetInquiryByTransactionID/{txid}", mainnet, skip_cache=fresh)
     if data and isinstance(data, dict) and data.get("Question"):
         formatted = _format_poll(data)
         # Merge local "already voted" info for the current user
@@ -195,15 +197,65 @@ async def get_poll_by_txid(txid: str, network: str = 'btc-testnet'):
                 poll_status = "active"
         except Exception:
             pass
+
+        # Compute vote counts from local votes mapping
+        votes_map = local.get('votes') or {}
+        raw_answers = local.get('answers', [])
+        # Count votes per answer address
+        vote_counts = {}
+        for voter, answer_addr in votes_map.items():
+            vote_counts[answer_addr] = vote_counts.get(answer_addr, 0) + 1
+        total_votes = sum(vote_counts.values())
+
+        # Normalize answers — can be list of dicts, dict-of-dicts, or legacy format
+        enriched_answers = []
+        if isinstance(raw_answers, list):
+            for a in raw_answers:
+                if isinstance(a, dict):
+                    addr = a.get('address', '')
+                    enriched_answers.append({
+                        'address': addr,
+                        'answer': a.get('answer', ''),
+                        'total_votes': vote_counts.get(addr, a.get('total_votes', 0)),
+                        'total_value': a.get('total_value', 0),
+                    })
+                elif isinstance(a, str):
+                    enriched_answers.append({
+                        'address': '',
+                        'answer': a,
+                        'total_votes': 0,
+                        'total_value': 0,
+                    })
+        elif isinstance(raw_answers, dict):
+            # Legacy format: {"0": {"total_votes": 1}, "1": {...}} or {"addr": "text"}
+            for key, val in raw_answers.items():
+                if isinstance(val, dict):
+                    enriched_answers.append({
+                        'address': key,
+                        'answer': val.get('answer', val.get('Answer', key)),
+                        'total_votes': vote_counts.get(key, val.get('total_votes', val.get('TotalVotes', 0))),
+                        'total_value': val.get('total_value', val.get('TotalValue', 0)),
+                    })
+                elif isinstance(val, str):
+                    enriched_answers.append({
+                        'address': key,
+                        'answer': val,
+                        'total_votes': vote_counts.get(key, 0),
+                        'total_value': 0,
+                    })
+            # Use max of computed or embedded counts
+            if not total_votes:
+                total_votes = sum(a.get('total_votes', 0) for a in enriched_answers)
+
         return {
             "txid": local['txid'],
             "question": local['question'],
-            "answers": local.get('answers', []),
+            "answers": enriched_answers,
             "own_gate": local.get('own_gate', []),
             "cre_gate": local.get('cre_gate', []),
-            "total_votes": 0,  # No on-chain data yet — don't show fake counts
+            "total_votes": total_votes,
             "total_gated_votes": 0,
-            "votes": local.get('votes', {}),
+            "votes": votes_map,
             "status": poll_status,
             "require_signature": True,
             "created_by": local.get('creator_address'),

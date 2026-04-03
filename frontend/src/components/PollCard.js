@@ -31,15 +31,21 @@ export default function PollCard({ poll, network, onVoted }) {
   useEffect(() => {
     if (!poll.txid || isPending) return;
     let cancelled = false;
-    fetch(`${API}/polls/by-txid/${poll.txid}?network=${network}`)
-      .then(r => r.ok ? r.json() : null)
-      .then(d => {
-        if (!cancelled && d && d.question && !d.error) {
-          setLivePoll(d);
-        }
-      })
-      .catch(() => {});
-    return () => { cancelled = true; };
+    const fetchPoll = (fresh = false) => {
+      const freshParam = fresh ? '&fresh=true' : '';
+      fetch(`${API}/polls/by-txid/${poll.txid}?network=${network}${freshParam}`)
+        .then(r => r.ok ? r.json() : null)
+        .then(d => {
+          if (!cancelled && d && d.question && !d.error) {
+            setLivePoll(d);
+          }
+        })
+        .catch(() => {});
+    };
+    fetchPoll();
+    // Auto-refresh every 30s for active polls
+    const interval = setInterval(() => fetchPoll(true), 30000);
+    return () => { cancelled = true; clearInterval(interval); };
   }, [poll.txid, network, isPending]);
 
   // On mount, check if user already voted (from poll_data.votes or API)
@@ -109,6 +115,17 @@ export default function PollCard({ poll, network, onVoted }) {
       setVotedFor(answerAddress);
       toast.success('Vote cast!');
       onVoted?.();
+
+      // Re-fetch fresh on-chain data after a short delay (indexer needs time to register)
+      setTimeout(async () => {
+        try {
+          const resp = await fetch(`${API}/polls/by-txid/${poll.txid}?network=${network}&fresh=true`);
+          if (resp.ok) {
+            const d = await resp.json();
+            if (d && d.question && !d.error) setLivePoll(d);
+          }
+        } catch {}
+      }, 3000);
     } catch (err) {
       toast.error(`Vote failed: ${err.message}`);
     } finally {

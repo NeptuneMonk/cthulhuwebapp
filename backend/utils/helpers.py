@@ -27,6 +27,7 @@ logger = logging.getLogger(__name__)
 _CACHE_TTL_ROOT = 31536000  # 1 year — immutable blockchain data (GetRootByTransactionId)
 _CACHE_TTL_PROFILE = 3600
 _CACHE_TTL_DEFAULT = 600    # 10 minutes per embii's recommendation
+_CACHE_TTL_POLL = 30        # 30 seconds — polls need near-real-time vote counts
 
 # Rate-limit guard: sliding window for p2fk.io
 # embii confirmed higher throughput is fine now (bitfossil-level)
@@ -194,7 +195,7 @@ async def _local_p2fk_fallback(path: str, mainnet: bool = False):
     return None
 
 
-async def p2fk_get(path: str, mainnet: bool = False, extra_params: dict = None):
+async def p2fk_get(path: str, mainnet: bool = False, extra_params: dict = None, skip_cache: bool = False):
     """Fetch from p2fk.io with MongoDB cache (serve fresh cache, fallback stale).
     Priority: cache_fresh → local_decoder → p2fk_io → cache_stale.
     Rate-limited to 3 concurrent requests with 429 backoff/retry."""
@@ -204,11 +205,13 @@ async def p2fk_get(path: str, mainnet: bool = False, extra_params: dict = None):
         cache_ttl = _CACHE_TTL_ROOT
     elif 'Profile' in path:
         cache_ttl = _CACHE_TTL_PROFILE
+    elif 'Inquiry' in path or 'Inquiries' in path:
+        cache_ttl = _CACHE_TTL_POLL
     else:
         cache_ttl = _CACHE_TTL_DEFAULT
 
     # Serve fresh cache immediately (skip network call entirely)
-    if await _is_cache_fresh(cache_key, cache_ttl):
+    if not skip_cache and await _is_cache_fresh(cache_key, cache_ttl):
         cached = await _get_api_cache(cache_key, cache_ttl)
         if cached is not None:
             track_cache(hit=True)

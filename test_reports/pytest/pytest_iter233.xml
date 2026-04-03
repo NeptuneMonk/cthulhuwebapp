@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="9" skipped="0" tests="9" time="601.767" timestamp="2026-04-03T02:15:42.268101+00:00" hostname="agent-env-ae3e0cd5-ad72-4b84-93b6-e8db8b514a93"><testcase classname="backend.tests.test_poll_caching_iter233.TestPollCachingFix" name="test_poll_api_returns_correct_vote_count_test_poll" time="60.145"><failure message="AssertionError: Expected 200, got 502&#10;assert 502 == 200&#10; +  where 502 = &lt;Response [502]&gt;.status_code">backend/tests/test_poll_caching_iter233.py:28: in test_poll_api_returns_correct_vote_count_test_poll
+    assert response.status_code == 200, f"Expected 200, got {response.status_code}"
+E   AssertionError: Expected 200, got 502
+E   assert 502 == 200
+E    +  where 502 = &lt;Response [502]&gt;.status_code</failure></testcase><testcase classname="backend.tests.test_poll_caching_iter233.TestPollCachingFix" name="test_poll_api_returns_correct_vote_count_try_poll" time="60.166"><failure message="AssertionError: Expected 200, got 502&#10;assert 502 == 200&#10; +  where 502 = &lt;Response [502]&gt;.status_code">backend/tests/test_poll_caching_iter233.py:53: in test_poll_api_returns_correct_vote_count_try_poll
+    assert response.status_code == 200, f"Expected 200, got {response.status_code}"
+E   AssertionError: Expected 200, got 502
+E   assert 502 == 200
+E    +  where 502 = &lt;Response [502]&gt;.status_code</failure></testcase><testcase classname="backend.tests.test_poll_caching_iter233.TestPollCachingFix" name="test_fresh_param_bypasses_cache" time="60.158"><failure message="assert 502 == 200&#10; +  where 502 = &lt;Response [502]&gt;.status_code">backend/tests/test_poll_caching_iter233.py:72: in test_fresh_param_bypasses_cache
+    assert response1.status_code == 200
+E   assert 502 == 200
+E    +  where 502 = &lt;Response [502]&gt;.status_code</failure></testcase><testcase classname="backend.tests.test_poll_caching_iter233.TestPollCachingFix" name="test_poll_api_handles_list_based_answers" time="60.165"><failure message="assert 502 == 200&#10; +  where 502 = &lt;Response [502]&gt;.status_code">backend/tests/test_poll_caching_iter233.py:98: in test_poll_api_handles_list_based_answers
+    assert response.status_code == 200
+E   assert 502 == 200
+E    +  where 502 = &lt;Response [502]&gt;.status_code</failure></testcase><testcase classname="backend.tests.test_poll_caching_iter233.TestPollCachingFix" name="test_poll_api_handles_dict_based_answers" time="60.160"><failure message="assert 502 == 200&#10; +  where 502 = &lt;Response [502]&gt;.status_code">backend/tests/test_poll_caching_iter233.py:118: in test_poll_api_handles_dict_based_answers
+    assert response.status_code == 200
+E   assert 502 == 200
+E    +  where 502 = &lt;Response [502]&gt;.status_code</failure></testcase><testcase classname="backend.tests.test_poll_caching_iter233.TestPollCachingFix" name="test_poll_api_returns_votes_map" time="60.163"><failure message="assert 502 == 200&#10; +  where 502 = &lt;Response [502]&gt;.status_code">backend/tests/test_poll_caching_iter233.py:139: in test_poll_api_returns_votes_map
+    assert response.status_code == 200
+E   assert 502 == 200
+E    +  where 502 = &lt;Response [502]&gt;.status_code</failure></testcase><testcase classname="backend.tests.test_poll_caching_iter233.TestPollCachingFix" name="test_poll_not_found_returns_error" time="60.152"><failure message="assert 502 == 200&#10; +  where 502 = &lt;Response [502]&gt;.status_code">backend/tests/test_poll_caching_iter233.py:159: in test_poll_not_found_returns_error
+    assert response.status_code == 200  # API returns 200 with error in body
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   assert 502 == 200
+E    +  where 502 = &lt;Response [502]&gt;.status_code</failure></testcase><testcase classname="backend.tests.test_poll_caching_iter233.TestPollCacheTTL" name="test_poll_cache_ttl_is_short" time="120.333"><failure message="assert 502 == 200&#10; +  where 502 = &lt;Response [502]&gt;.status_code">backend/tests/test_poll_caching_iter233.py:180: in test_poll_cache_ttl_is_short
+    assert response1.status_code == 200
+E   assert 502 == 200
+E    +  where 502 = &lt;Response [502]&gt;.status_code</failure></testcase><testcase classname="backend.tests.test_poll_caching_iter233.TestHealthEndpoint" name="test_health_endpoint" time="60.196"><failure message="assert 502 == 200&#10; +  where 502 = &lt;Response [502]&gt;.status_code">backend/tests/test_poll_caching_iter233.py:196: in test_health_endpoint
+    assert response.status_code == 200
+E   assert 502 == 200
+E    +  where 502 = &lt;Response [502]&gt;.status_code</failure></testcase></testsuite></testsuites>
