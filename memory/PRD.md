@@ -33,8 +33,13 @@ Build a modern, responsive frontend for a blockchain-based decentralized social 
 - [x] P0: Landing page "Download App" button navigates to `/download`
 - [x] P0: Auth page "Experimental Beta" warning banner
 - [x] P1: Ownership Cascade Transfers — backend endpoint + frontend GiveModal cascade UI
-- [x] P1: Auth Migration to Wallet-Only — COMPLETE (all server auth 410, client-side WIF)
-- [x] BUG FIX: Poll vote counts not updating — reduced cache TTL to 30s for polls, added fresh=true cache bypass, computed vote counts from local vote registry, added 30s auto-refresh + post-vote re-fetch
+- [x] P1: Auth Migration to Wallet-Only — COMPLETE (all server auth returns 410)
+- [x] BUG FIX: Poll vote counts not updating — reduced cache TTL to 30s, cache bypass param, computed vote counts from local registry, auto-refresh
+- [x] UX: 2-step Burn modal with quantity confirmation, quick-select buttons (1, half, All), console logging for debugging
+- [x] FIX: Nested button warning in AddressLabel component
+
+## Burn Quantity Investigation
+The BRN payload format `[[position, qty], [0, salt]]` was verified byte-by-byte against the SUP C# reference client (ObjectBurn.cs). The P2FK indexer OBJ.cs code confirms it reads `burn[1]` as `qtyToBurn` and processes it correctly. If burns still only remove 1 unit, it may be an indexer version issue on p2fk.io. Console logging (`[Cthulhu BRN]`) was added to help diagnose future occurrences.
 
 ## Backlog
 
@@ -65,7 +70,7 @@ Build a modern, responsive frontend for a blockchain-based decentralized social 
 - `/app/backend/routes/polls.py` — Poll vote count computation from local registry
 - `/app/backend/utils/helpers.py` — Cache TTL settings (30s for polls)
 - `/app/frontend/src/components/PollCard.js` — Auto-refresh + post-vote re-fetch
-- `/app/frontend/src/components/ObjectActionModals.js` — GiveModal with cascade UI
+- `/app/frontend/src/components/ObjectActionModals.js` — GiveModal cascade + BurnModal 2-step
 - `/app/frontend/src/pages/DownloadPage.js` — Tauri download hub
 - `/app/frontend/src/hooks/useAuth.js` — Client-side WIF auth
 - `/app/frontend/src/utils/p2fk.js` — P2FK payload construction

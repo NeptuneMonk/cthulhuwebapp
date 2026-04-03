@@ -48,16 +48,17 @@ export const AddressLabel = ({ address, network, className = '' }) => {
       >
         {displayName}
       </span>
-      <button
+      <span
         onClick={handleCopy}
-        className={`inline-flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity ${
+        role="button"
+        className={`inline-flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer ${
           copied ? 'text-emerald-400' : 'text-gray-500 hover:text-gray-300'
         }`}
         title="Copy address"
         data-testid="copy-address-btn"
       >
         {copied ? <FiCheck size={11} /> : <FiCopy size={11} />}
-      </button>
+      </span>
     </span>
   );
 };
