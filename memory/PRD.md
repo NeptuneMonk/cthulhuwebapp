@@ -24,9 +24,9 @@ Build a modern, responsive frontend for a blockchain-based decentralized social 
 - WebRTC mesh relay gossip
 
 ## Recently Completed (April 2026)
-- **P0 Fix: Burned Objects Still Showing** — Burned objects ("Krilly", "For real final test") now properly filtered from owned/created/counts endpoints using the burned_objects table via `get_burned_set()`.
-- **P0 Fix: Single Object View "Object Not Found"** — Added SQLite api_cache fallback when p2fk.io `GetObjectByTransactionId` returns 404. Frontend ObjectCard now passes prefetchedObject in navigation state for reliable rendering.
-- **P0 Fix: Media Timeouts (.wav/.mp4)** — Fixed 5 root causes: mempool.space first (no more 429 storms), in-memory TX output cache, semaphore 3→8, p2fk.io root fast-path, and frontend 202 handling bug.
+- **P0 Fix: "Unnamed" Object View** — Added data validation (require name/urn/address fields) and self-healing re-fetch to SingleObjectPage. Prevents stale mesh data from causing "Unnamed" rendering.
+- **P0 Fix: Burned Objects Still Showing** — Added `get_burned_set()` filtering to owned/created/counts endpoints. SQLite api_cache fallback for object detail when p2fk.io 404s.
+- **P0 Fix: Media Timeouts (.wav/.mp4)** — mempool.space first, in-memory TX cache, semaphore 3→8, p2fk.io fast-path, frontend 202 handling fix.
 - **P0 Fix: Profile URN Overwrite Bug** — Fixed in MyProfilePage.js, SettingsModal.js, ActivateMessaging.js.
 - **P1: Full P2FK Payload Audit** — All 8 transaction types verified compatible with SUP reference client.
 

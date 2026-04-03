@@ -1247,7 +1247,8 @@ export default function SingleObjectPage({ network, lookupByAddress }) {
         const { data, source } = await import('@/utils/meshFirstFetch').then(m =>
           m.meshFirstFetch(`/${apiPath}`, { network }, { timeout: 2000 })
         );
-        if (data && !data.error && !data.detail) {
+        // Validate returned data has essential fields before accepting
+        if (data && !data.error && !data.detail && (data.name || data.urn || data.object_address)) {
           setObject({
             ...data,
             owners: data.owners || [],
@@ -1263,19 +1264,23 @@ export default function SingleObjectPage({ network, lookupByAddress }) {
         }
       } catch {}
 
-      // Fallback to direct axios
+      // Fallback to direct backend API call
       try {
         const res = await axios.get(`${API}/${apiPath}`, { params: { network } });
         const d = res.data;
-        setObject({
-          ...d,
-          owners: d.owners || [],
-          creators: d.creators || [],
-          listings: d.listings || [],
-          offers: d.offers || [],
-          royalties: d.royalties || {},
-        });
-        if (d?.urn) cacheByUrn(d.urn, d, null);
+        if (d && !d.detail && (d.name || d.urn || d.object_address)) {
+          setObject({
+            ...d,
+            owners: d.owners || [],
+            creators: d.creators || [],
+            listings: d.listings || [],
+            offers: d.offers || [],
+            royalties: d.royalties || {},
+          });
+          if (d?.urn) cacheByUrn(d.urn, d, null);
+        } else {
+          setError(d?.detail || 'Object data is incomplete');
+        }
       } catch (err) {
         setError(err.response?.data?.detail || 'Failed to load object');
       }
@@ -1284,6 +1289,30 @@ export default function SingleObjectPage({ network, lookupByAddress }) {
 
     fetchObject();
   }, [identifier, apiPath, network]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Self-healing: if object loaded but has no name (mesh served stale/empty data),
+  // re-fetch directly from the backend as a last resort
+  useEffect(() => {
+    if (!object || object.name || loading) return;
+    const refetch = async () => {
+      try {
+        const res = await axios.get(`${API}/${apiPath}`, { params: { network } });
+        const d = res.data;
+        if (d && (d.name || d.urn)) {
+          setObject(prev => ({
+            ...prev,
+            ...d,
+            owners: d.owners || prev?.owners || [],
+            creators: d.creators || prev?.creators || [],
+            listings: d.listings || prev?.listings || [],
+            offers: d.offers || prev?.offers || [],
+            royalties: d.royalties || prev?.royalties || {},
+          }));
+        }
+      } catch {}
+    };
+    refetch();
+  }, [object?.name, loading]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Extract IPFS CIDs from object fields (memoized for propagation bar + auto-pin)
   const ipfsCids = React.useMemo(() => {
