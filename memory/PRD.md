@@ -24,9 +24,11 @@ Build a modern, responsive frontend for a blockchain-based decentralized social 
 - WebRTC mesh relay gossip
 
 ## Recently Completed (April 2026)
-- **P0 Fix: Single Object View Timeouts (.wav/.mp4)** — Fixed 5 root causes: (1) Swapped API priority to mempool.space first (eliminates blockstream.info 429 storms), (2) Added in-memory TX output cache with LRU eviction for ledger-type files, (3) Increased concurrent child TX fetch semaphore from 3 to 8, (4) Added p2fk.io root as fast-path gateway before slow blockchain reconstruction, (5) Fixed critical frontend bug where 202 JSON responses were incorrectly treated as file data by useOnchainResolver.
-- **P0 Fix: Profile URN Overwrite Bug** — Fixed in MyProfilePage.js, SettingsModal.js, ActivateMessaging.js. PRO transactions now use on-chain profile URN from API, not user.urn placeholder.
-- **P1: Full P2FK Payload Audit** — Line-by-line comparison of p2fk.js against embiimob/Sup C# reference. All 8 transaction types verified compatible: PRO, OBJ, GIV, BRN, BUY, MSG, INQ, Vote.
+- **P0 Fix: Burned Objects Still Showing** — Burned objects ("Krilly", "For real final test") now properly filtered from owned/created/counts endpoints using the burned_objects table via `get_burned_set()`.
+- **P0 Fix: Single Object View "Object Not Found"** — Added SQLite api_cache fallback when p2fk.io `GetObjectByTransactionId` returns 404. Frontend ObjectCard now passes prefetchedObject in navigation state for reliable rendering.
+- **P0 Fix: Media Timeouts (.wav/.mp4)** — Fixed 5 root causes: mempool.space first (no more 429 storms), in-memory TX output cache, semaphore 3→8, p2fk.io root fast-path, and frontend 202 handling bug.
+- **P0 Fix: Profile URN Overwrite Bug** — Fixed in MyProfilePage.js, SettingsModal.js, ActivateMessaging.js.
+- **P1: Full P2FK Payload Audit** — All 8 transaction types verified compatible with SUP reference client.
 
 ## Audit Findings (P1)
 - `dnm` (display name) in PRO: Written by Cthulhu, read by p2fk.io indexer, ignored by SUP client UI. Not a protocol violation.
