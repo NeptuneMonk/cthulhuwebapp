@@ -280,6 +280,16 @@ export default function AuthPage() {
           <p className="text-sm text-gray-500 mt-1">Decentralized Social Objects</p>
         </div>
 
+        {/* Experimental Beta Warning */}
+        <div className="bg-amber-900/15 border border-amber-600/30 rounded-lg px-4 py-3 mb-4" data-testid="beta-warning-banner">
+          <div className="flex items-start gap-2.5">
+            <FiAlertTriangle className="text-amber-400 mt-0.5 flex-shrink-0" size={15} />
+            <p className="text-[11px] text-amber-400/80 leading-relaxed">
+              <strong>Experimental Beta:</strong> Cthulhu is a work in progress. Accounts and data may not persist between updates. Your WIF key is your identity &mdash; <span className="text-amber-300 font-medium">back it up</span>.
+            </p>
+          </div>
+        </div>
+
         {/* Unmoderated Content Advisory */}
         <div className="bg-amber-900/10 border border-amber-700/20 rounded-lg px-4 py-3 mb-6" data-testid="content-advisory">
           <p className="text-[11px] text-amber-400/80 leading-relaxed">

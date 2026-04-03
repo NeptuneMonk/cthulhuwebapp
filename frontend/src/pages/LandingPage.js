@@ -127,13 +127,12 @@ export default function LandingPage() {
             <FiArrowRight className="group-hover:translate-x-1 transition-transform" />
           </button>
           <button
-            className="flex items-center justify-center gap-2 px-8 py-3.5 rounded-full border border-gray-700 text-gray-400 text-sm tracking-wide hover:border-gray-500 hover:text-gray-200 transition-all cursor-default"
+            onClick={() => navigate('/download')}
+            className="flex items-center justify-center gap-2 px-8 py-3.5 rounded-full border border-gray-700 text-gray-400 text-sm tracking-wide hover:border-gray-500 hover:text-gray-200 transition-all"
             data-testid="landing-cta-download"
-            title="Coming soon"
           >
             <FiDownload size={16} />
             Download App
-            <span className="text-[10px] uppercase tracking-widest text-gray-600 ml-1">Soon</span>
           </button>
         </div>
       </section>

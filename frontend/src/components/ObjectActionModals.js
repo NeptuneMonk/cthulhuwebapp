@@ -64,11 +64,19 @@ export const GiveModal = ({ object, network, onClose }) => {
   const [txResult, setTxResult] = useState(null);
   const [walletSats, setWalletSats] = useState(null);
 
+  // Cascade transfer state
+  const [subtopics, setSubtopics] = useState([]);
+  const [cascadeEnabled, setCascadeEnabled] = useState(true);
+  const [cascadeProgress, setCascadeProgress] = useState(null); // { current, total, results }
+  const isTether = (object.license || '').toLowerCase().startsWith('cthulhu:tether');
+
   const objectAddress = object.object_address || object.creators?.[0]?.address || '';
   const myOwned = object.owners?.find(o => o.address === address)?.quantity || 0;
 
-  // Estimated cost: ~6 P2FK dust outputs + network fee
-  const estimatedMinSats = 6 * 546 + 1500;
+  // Estimated cost per GIV: ~6 P2FK dust outputs + network fee
+  const perTxCost = 6 * 546 + 1500;
+  const totalTxCount = 1 + (cascadeEnabled ? subtopics.length : 0);
+  const estimatedMinSats = perTxCost * totalTxCount;
   const insufficientFunds = walletSats !== null && walletSats < estimatedMinSats;
 
   // Fetch balance on mount
@@ -92,44 +100,69 @@ export const GiveModal = ({ object, network, onClose }) => {
     })();
   }, [address, network]);
 
+  // Fetch owned sub-topics for cascade when this is a tether
+  useEffect(() => {
+    if (!isTether || !address || !objectAddress) return;
+    const API = process.env.REACT_APP_BACKEND_URL;
+    fetch(`${API}/api/rooms/${objectAddress}/owned-subtopics/${address}?network=${network}`)
+      .then(r => r.ok ? r.json() : { subtopics: [] })
+      .then(data => setSubtopics(data.subtopics || []))
+      .catch(() => setSubtopics([]));
+  }, [isTether, address, objectAddress, network]);
+
   const handleGive = async () => {
     if (!recipient.trim() || !isConnected) return;
     if (!wif) { setError('Wallet is locked. Enter your password to unlock.'); return; }
     setSending(true);
     setError(null);
+
     try {
       const [{ buildGiveTransaction }, { buildAndBroadcast }] = await Promise.all([
         import('@/utils/p2fk'),
         import('@/utils/txBuilder'),
       ]);
 
+      // 1. Give the parent object
       const { addresses, taxInsertIndex } = buildGiveTransaction(wif, objectAddress, recipient.trim(), parseInt(quantity) || 1, network);
       const result = await buildAndBroadcast(wif, addresses, network, [], 0, 546, [], taxInsertIndex);
 
-      if (result.success) {
-        setTxResult(result);
-        addTransaction(address, {
-          txid: result.txid,
-          type: 'GIV',
-          network,
-          addresses,
-          label: `Give ${object.name || 'object'}`,
-        });
-        addPendingTx({ txid: result.txid, type: 'Give', label: object.name || 'Object', network });
-        addOptimisticItem({
-          txid: result.txid,
-          type: 'GIV',
-          network,
-          senderAddress: address,
-          objectAddress,
-          data: {
-            name: object.name || 'Object',
-            recipient: recipient.trim(),
-            quantity: parseInt(quantity) || 1,
-          },
-        });
-        refreshBalance();
+      if (!result.success) throw new Error('Parent transfer failed');
+
+      addTransaction(address, { txid: result.txid, type: 'GIV', network, addresses, label: `Give ${object.name || 'object'}` });
+      addPendingTx({ txid: result.txid, type: 'Give', label: object.name || 'Object', network });
+      addOptimisticItem({
+        txid: result.txid, type: 'GIV', network, senderAddress: address, objectAddress,
+        data: { name: object.name || 'Object', recipient: recipient.trim(), quantity: parseInt(quantity) || 1 },
+      });
+
+      // 2. Cascade: give each sub-topic sequentially
+      const cascadeResults = [{ name: object.name, txid: result.txid, success: true }];
+      if (cascadeEnabled && subtopics.length > 0) {
+        setCascadeProgress({ current: 0, total: subtopics.length, results: cascadeResults });
+        for (let i = 0; i < subtopics.length; i++) {
+          const sub = subtopics[i];
+          setCascadeProgress({ current: i + 1, total: subtopics.length, results: [...cascadeResults] });
+          try {
+            // Brief delay to let mempool accept previous tx
+            await new Promise(r => setTimeout(r, 1500));
+            const subGiv = buildGiveTransaction(wif, sub.topic_address, recipient.trim(), sub.owned_quantity || 1, network);
+            const subResult = await buildAndBroadcast(wif, subGiv.addresses, network, [], 0, 546, [], subGiv.taxInsertIndex);
+            if (subResult.success) {
+              cascadeResults.push({ name: sub.name, txid: subResult.txid, success: true });
+              addTransaction(address, { txid: subResult.txid, type: 'GIV', network, addresses: subGiv.addresses, label: `Cascade: ${sub.name}` });
+              addPendingTx({ txid: subResult.txid, type: 'Give', label: `${sub.name} (cascade)`, network });
+            } else {
+              cascadeResults.push({ name: sub.name, success: false, error: 'Broadcast failed' });
+            }
+          } catch (err) {
+            cascadeResults.push({ name: sub.name, success: false, error: err.message });
+          }
+        }
+        setCascadeProgress({ current: subtopics.length, total: subtopics.length, results: cascadeResults });
       }
+
+      setTxResult({ ...result, cascadeResults });
+      refreshBalance();
     } catch (err) {
       setError(err.message || 'Give failed');
     } finally {
@@ -140,7 +173,37 @@ export const GiveModal = ({ object, network, onClose }) => {
   return (
     <ModalShell title="Give Object" icon={FiGift} onClose={onClose}>
       {txResult ? (
-        <TxSuccess txid={txResult.txid} type="Give" onClose={onClose} />
+        <div className="space-y-3" data-testid="tx-success">
+          <div className="w-12 h-12 rounded-full bg-green-500/20 flex items-center justify-center mx-auto mb-3">
+            <FiCheck size={24} className="text-green-400" />
+          </div>
+          <p className="text-green-400 font-medium text-center mb-1">Transfer complete!</p>
+          {(txResult.cascadeResults || []).map((cr, i) => (
+            <div key={i} className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs ${cr.success ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'}`} data-testid={`cascade-result-${i}`}>
+              {cr.success ? <FiCheck size={12} /> : <FiAlertTriangle size={12} />}
+              <span className="font-medium truncate">{cr.name}</span>
+              {cr.success && <span className="text-gray-600 font-mono ml-auto">{cr.txid?.slice(0, 12)}...</span>}
+              {!cr.success && <span className="ml-auto">{cr.error}</span>}
+            </div>
+          ))}
+          <button onClick={onClose} className="w-full mt-2 px-5 py-2 bg-gray-800 text-gray-300 rounded-lg text-sm hover:bg-gray-700 transition-colors" data-testid="tx-success-close">Close</button>
+        </div>
+      ) : cascadeProgress ? (
+        <div className="space-y-4 py-4" data-testid="cascade-progress">
+          <p className="text-sm text-gray-300 text-center font-medium">Cascade Transfer in Progress</p>
+          <div className="w-full bg-gray-800 rounded-full h-2">
+            <div className="bg-purple-500 h-2 rounded-full transition-all" style={{ width: `${((cascadeProgress.current + 1) / (cascadeProgress.total + 1)) * 100}%` }} />
+          </div>
+          <p className="text-xs text-gray-500 text-center">
+            Transferring sub-topic {cascadeProgress.current} of {cascadeProgress.total}...
+          </p>
+          {cascadeProgress.results.map((cr, i) => (
+            <div key={i} className={`flex items-center gap-2 px-3 py-1.5 rounded text-xs ${cr.success ? 'text-green-400' : 'text-red-400'}`}>
+              {cr.success ? <FiCheck size={10} /> : <FiAlertTriangle size={10} />}
+              <span className="truncate">{cr.name}</span>
+            </div>
+          ))}
+        </div>
       ) : (
         <div className="space-y-4">
           <div className="bg-gray-800/50 rounded-lg p-3 flex items-center gap-3">
@@ -172,6 +235,38 @@ export const GiveModal = ({ object, network, onClose }) => {
               data-testid="give-quantity-input"
             />
           </div>
+
+          {/* Cascade Transfer Section — only for tethers with sub-topics */}
+          {isTether && subtopics.length > 0 && (
+            <div className="bg-purple-500/5 border border-purple-500/20 rounded-lg p-3 space-y-2" data-testid="cascade-section">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={cascadeEnabled}
+                  onChange={e => setCascadeEnabled(e.target.checked)}
+                  className="rounded border-gray-600 text-purple-500"
+                  data-testid="cascade-toggle"
+                />
+                <span className="text-xs font-medium text-purple-400">
+                  Include {subtopics.length} linked sub-topic{subtopics.length > 1 ? 's' : ''}
+                </span>
+              </label>
+              {cascadeEnabled && (
+                <div className="space-y-1 pl-6">
+                  {subtopics.map((sub, i) => (
+                    <div key={i} className="flex items-center gap-2 text-xs text-gray-400" data-testid={`cascade-subtopic-${i}`}>
+                      <FiTag size={10} className="text-purple-400/60" />
+                      <span className="truncate">{sub.name}</span>
+                      <span className="text-gray-600 ml-auto">x{sub.owned_quantity}</span>
+                    </div>
+                  ))}
+                  <p className="text-[10px] text-gray-600 mt-1">
+                    {subtopics.length + 1} sequential transactions will be broadcast (~{(estimatedMinSats / 1000).toFixed(1)}k sats total)
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
 
           {error && <p className="text-xs text-red-400 bg-red-400/10 border border-red-400/20 rounded px-3 py-2" data-testid="give-error">{error}</p>}
 
@@ -210,7 +305,9 @@ export const GiveModal = ({ object, network, onClose }) => {
               data-testid="give-confirm-btn"
             >
               <FiGift size={16} />
-              {sending ? 'Signing...' : `Give ${quantity} unit${quantity > 1 ? 's' : ''}`}
+              {sending ? 'Signing...' : cascadeEnabled && subtopics.length > 0
+                ? `Give + ${subtopics.length} sub-topic${subtopics.length > 1 ? 's' : ''}`
+                : `Give ${quantity} unit${quantity > 1 ? 's' : ''}`}
             </button>
           </div>
         </div>

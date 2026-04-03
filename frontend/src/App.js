@@ -23,6 +23,7 @@ import ObjectChatPage from '@/pages/ObjectChatPage';
 import PaywallGate from '@/pages/PaywallGate';
 import WikiPage from '@/pages/WikiPage';
 import LandingPage from '@/pages/LandingPage';
+import DownloadPage from '@/pages/DownloadPage';
 import AdminDashboard from '@/pages/AdminDashboard';
 import ChatsPage from '@/pages/ChatsPage';
 import MyProfilePage from '@/pages/MyProfilePage';
@@ -1154,6 +1155,7 @@ function AppLayout({ network, setNetwork, claimed, claimProfile, unclaimProfile,
       <Route path="/" element={homeElement} />
       {!IS_STANDALONE_APP && <Route path="/admin" element={<AdminDashboard />} />}
       <Route path="/auth" element={<AuthPage />} />
+      <Route path="/download" element={<DownloadPage />} />
       <Route path="/setup" element={<ProfileSetupPage />} />
       <Route path="*" element={
         authConnected && !paywallLoading && !paywallPassed ? (
