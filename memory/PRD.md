@@ -24,7 +24,8 @@ Build a modern, responsive frontend for a blockchain-based decentralized social 
 - WebRTC mesh relay gossip
 
 ## Recently Completed (April 2026)
-- **P0 Fix: IPFS Deployment Failure** — Bundled Kubo IPFS binaries (amd64 + arm64) in `/app/backend/bin/` so they ship with deployment. No runtime downloads from `dist.ipfs.tech` needed. Updated both `server.py` startup and `/ipfs/restart` endpoint. Download fallback URL changed from `dist.ipfs.tech` (502) to GitHub releases.
+- **P0 Fix: IPFS Deployment Failure** — Bundled Kubo IPFS binaries (amd64 + arm64) in `/app/backend/bin/`. Download fallback URL changed from `dist.ipfs.tech` (502) to GitHub releases.
+- **P0 Fix: Releases Route MongoDB→SQLite** — Rewrote `routes/releases.py` to use SQLite via `get_conn()` instead of MongoDB. Added migration for existing tables missing columns. Created `build_package.py` script.
 - **P0 Fix: "Unnamed" Object View** — Added data validation and self-healing re-fetch to SingleObjectPage.
 - **P0 Fix: Burned Objects Still Showing** — Added `get_burned_set()` filtering to owned/created/counts endpoints.
 - **P0 Fix: Media Timeouts (.wav/.mp4)** — mempool.space first, in-memory TX cache, semaphore 3→8, p2fk.io fast-path.

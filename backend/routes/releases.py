@@ -14,7 +14,7 @@ import logging
 import os
 import json
 
-from db import db
+from db_sqlite import get_conn
 from utils.p2fk import (
     build_signed_payload, encode_payload_to_addresses,
     get_keyword_address, get_random_delimiter, generate_safe_object_address,
@@ -28,6 +28,104 @@ router = APIRouter(prefix="/api/admin/releases")
 def _get_admin_verify():
     from routes.admin import _verify_admin
     return _verify_admin
+
+
+# ─── SQLite Table Init ───
+
+async def _ensure_tables():
+    conn = await get_conn()
+    await conn.execute("""
+        CREATE TABLE IF NOT EXISTS release_config (
+            key TEXT PRIMARY KEY DEFAULT 'config',
+            data TEXT NOT NULL DEFAULT '{}'
+        )
+    """)
+    await conn.execute("""
+        CREATE TABLE IF NOT EXISTS releases (
+            _id TEXT PRIMARY KEY,
+            version TEXT DEFAULT '',
+            name TEXT DEFAULT '',
+            network TEXT DEFAULT '',
+            published_at TEXT DEFAULT '',
+            data TEXT NOT NULL DEFAULT '{}'
+        )
+    """)
+    # Ensure columns exist (handles migration from older schema)
+    for col, col_type in [("version", "TEXT DEFAULT ''"), ("name", "TEXT DEFAULT ''"),
+                           ("network", "TEXT DEFAULT ''"), ("published_at", "TEXT DEFAULT ''"),
+                           ("data", "TEXT DEFAULT '{}'")]:
+        try:
+            await conn.execute(f"ALTER TABLE releases ADD COLUMN {col} {col_type}")
+        except Exception:
+            pass  # Column already exists
+    await conn.commit()
+
+
+async def _get_config() -> dict:
+    await _ensure_tables()
+    conn = await get_conn()
+    async with conn.execute("SELECT data FROM release_config WHERE key = 'config'") as cur:
+        row = await cur.fetchone()
+    if row:
+        return json.loads(row[0])
+    return {"release_profile_urn": "cthulhurelease", "release_address": "", "profile_minted": False}
+
+
+async def _set_config(updates: dict):
+    await _ensure_tables()
+    config = await _get_config()
+    config.update(updates)
+    conn = await get_conn()
+    await conn.execute(
+        "INSERT OR REPLACE INTO release_config (key, data) VALUES ('config', ?)",
+        (json.dumps(config),)
+    )
+    await conn.commit()
+    return config
+
+
+async def _insert_release(doc: dict):
+    await _ensure_tables()
+    import uuid
+    rid = uuid.uuid4().hex
+    conn = await get_conn()
+    await conn.execute(
+        "INSERT INTO releases (_id, version, name, network, published_at, data) VALUES (?, ?, ?, ?, ?, ?)",
+        (rid, doc.get("version", ""), doc.get("name", ""), doc.get("network", ""),
+         doc.get("published_at", ""), json.dumps(doc))
+    )
+    await conn.commit()
+
+
+async def _get_releases(network: str = "", limit: int = 20) -> list:
+    await _ensure_tables()
+    conn = await get_conn()
+    if network:
+        async with conn.execute(
+            "SELECT data FROM releases WHERE network = ? ORDER BY published_at DESC LIMIT ?",
+            (network, limit)
+        ) as cur:
+            rows = await cur.fetchall()
+    else:
+        async with conn.execute(
+            "SELECT data FROM releases ORDER BY published_at DESC LIMIT ?",
+            (limit,)
+        ) as cur:
+            rows = await cur.fetchall()
+    return [json.loads(r[0]) for r in rows]
+
+
+async def _get_latest_release(network: str) -> Optional[dict]:
+    await _ensure_tables()
+    conn = await get_conn()
+    async with conn.execute(
+        "SELECT data FROM releases WHERE network = ? ORDER BY published_at DESC LIMIT 1",
+        (network,)
+    ) as cur:
+        row = await cur.fetchone()
+    if row:
+        return json.loads(row[0])
+    return None
 
 
 # ─── Models ───
@@ -65,8 +163,7 @@ class PublishReleaseRequest(BaseModel):
 
 @router.get("/config")
 async def get_release_config(_=Depends(_get_admin_verify())):
-    doc = await db.release_config.find_one({"_id": "config"}, {"_id": 0})
-    return doc or {"release_profile_urn": "cthulhurelease", "release_address": "", "profile_minted": False}
+    return await _get_config()
 
 
 @router.put("/config")
@@ -77,9 +174,8 @@ async def update_release_config(body: ReleaseConfigUpdate, _=Depends(_get_admin_
     if body.release_address is not None:
         update["release_address"] = body.release_address
     if update:
-        await db.release_config.update_one({"_id": "config"}, {"$set": update}, upsert=True)
-    doc = await db.release_config.find_one({"_id": "config"}, {"_id": 0})
-    return doc or {}
+        return await _set_config(update)
+    return await _get_config()
 
 
 # ─── Mint Release Profile (PRO format) ───
@@ -93,7 +189,6 @@ async def mint_release_profile(req: MintProfileRequest, _=Depends(_get_admin_ver
     is_mainnet = 'mainnet' in req.network.lower()
     version_byte = 0 if is_mainnet else 111
 
-    # Get signing key from admin wallet session
     wif = _resolve_wif(req.wallet_session_id, req.wallet_address, is_mainnet)
     if not wif:
         raise HTTPException(status_code=403, detail="No signing key available. Unlock the admin wallet first.")
@@ -104,14 +199,12 @@ async def mint_release_profile(req: MintProfileRequest, _=Depends(_get_admin_ver
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Invalid key: {e}")
 
-    # Derive PKX/PKY from the key
     privkey_bytes = key.to_bytes()
     pk = coincurve.PublicKey.from_secret(privkey_bytes)
     uncompressed = pk.format(compressed=False)
     pkx_hex = uncompressed[1:33].hex()
     pky_hex = uncompressed[33:65].hex()
 
-    # Build PRO JSON (SUP-compatible)
     pro_data = {"urn": req.urn}
     if req.display_name:
         pro_data["dnm"] = req.display_name
@@ -133,12 +226,10 @@ async def mint_release_profile(req: MintProfileRequest, _=Depends(_get_admin_ver
     signed_payload = build_signed_payload(payload, wif, is_mainnet)
     encoded_addresses = encode_payload_to_addresses(signed_payload, version_byte)
 
-    # URN keyword address
     urn_addr = get_keyword_address(req.urn, version_byte)
     if urn_addr not in encoded_addresses:
         encoded_addresses.append(urn_addr)
 
-    # Sender MUST be LAST
     while sender_address in encoded_addresses:
         encoded_addresses.remove(sender_address)
     encoded_addresses.append(sender_address)
@@ -146,7 +237,6 @@ async def mint_release_profile(req: MintProfileRequest, _=Depends(_get_admin_ver
     num_outputs = len(encoded_addresses)
     logger.info(f"Release PRO mint: {req.urn} -> {num_outputs} outputs from {sender_address}")
 
-    # Build and broadcast
     try:
         outputs = [(addr, 546, 'satoshi') for addr in encoded_addresses]
         utxos = await fetch_utxos_mempool(sender_address, is_mainnet=is_mainnet)
@@ -161,7 +251,6 @@ async def mint_release_profile(req: MintProfileRequest, _=Depends(_get_admin_ver
             dust_cost = num_outputs * 546
             logger.info(f"Release PRO mint SUCCESS: {req.urn} -> txid={txid}")
 
-            # Record in treasury ledger
             try:
                 from routes.treasury import record_ledger_entry
                 await record_ledger_entry(
@@ -171,19 +260,14 @@ async def mint_release_profile(req: MintProfileRequest, _=Depends(_get_admin_ver
             except Exception:
                 pass
 
-            # Save config
-            await db.release_config.update_one(
-                {"_id": "config"},
-                {"$set": {
-                    "release_profile_urn": req.urn,
-                    "release_address": sender_address,
-                    "profile_minted": True,
-                    "profile_txid": txid,
-                    "profile_network": req.network,
-                    "minted_at": datetime.now(timezone.utc).isoformat(),
-                }},
-                upsert=True,
-            )
+            await _set_config({
+                "release_profile_urn": req.urn,
+                "release_address": sender_address,
+                "profile_minted": True,
+                "profile_txid": txid,
+                "profile_network": req.network,
+                "minted_at": datetime.now(timezone.utc).isoformat(),
+            })
 
             explorer_base = "https://mempool.space" + ("/testnet" if not is_mainnet else "")
             return {
@@ -228,28 +312,21 @@ async def publish_release(req: PublishReleaseRequest, _=Depends(_get_admin_verif
     if not req.zip_cid and not req.image_cid:
         raise HTTPException(status_code=400, detail="At least a zip CID or image CID is required.")
 
-    # Load release config
-    config = await db.release_config.find_one({"_id": "config"}, {"_id": 0})
-    release_urn = (config or {}).get("release_profile_urn", "cthulhurelease")
+    config = await _get_config()
+    release_urn = config.get("release_profile_urn", "cthulhurelease")
 
-    # Generate a unique object address
     obj_address, _obj_wif = generate_safe_object_address(version_byte)
 
-    # Build keyword addresses
     keyword_addresses = []
-
-    # Release URN keyword (e.g. "cthulhurelease")
     release_kw = get_keyword_address(release_urn, version_byte)
     if release_kw not in keyword_addresses:
         keyword_addresses.append(release_kw)
 
-    # Version keyword
     ver_urn = f"{release_urn}-{req.version}"
     ver_kw = get_keyword_address(ver_urn, version_byte)
     if ver_kw not in keyword_addresses:
         keyword_addresses.append(ver_kw)
 
-    # Extra keywords
     for kw in req.keywords:
         clean = kw.strip().lstrip('#')
         if clean:
@@ -257,16 +334,13 @@ async def publish_release(req: PublishReleaseRequest, _=Depends(_get_admin_verif
             if kw_addr not in keyword_addresses:
                 keyword_addresses.append(kw_addr)
 
-    # Reverse indices: sender=0 (last), object=1 (second-to-last)
     sender_rev_idx = 0
     obj_rev_idx = 1
 
-    # Build OBJ JSON
     obj_data = {"urn": ver_urn}
     release_name = req.name or f"Cthulhu {req.version}"
     obj_data["nme"] = release_name
 
-    # Build description with version + changelog
     desc_parts = []
     if req.description:
         desc_parts.append(req.description)
@@ -294,13 +368,11 @@ async def publish_release(req: PublishReleaseRequest, _=Depends(_get_admin_verif
     signed_payload = build_signed_payload(payload, wif, is_mainnet)
     encoded_addresses = encode_payload_to_addresses(signed_payload, version_byte)
 
-    # Build full address list
     full_list = list(encoded_addresses)
     for kw_addr in keyword_addresses:
         if kw_addr not in full_list:
             full_list.append(kw_addr)
 
-    # Cleanup and re-add object + sender at end
     while obj_address in full_list:
         full_list.remove(obj_address)
     while sender_address in full_list:
@@ -311,7 +383,6 @@ async def publish_release(req: PublishReleaseRequest, _=Depends(_get_admin_verif
     num_outputs = len(full_list)
     logger.info(f"Release OBJ: {release_name} (v{req.version}) -> {num_outputs} outputs, zip={req.zip_cid[:20] if req.zip_cid else 'none'}...")
 
-    # Build and broadcast
     try:
         outputs = [(addr, 546, 'satoshi') for addr in full_list]
         utxos = await fetch_utxos_mempool(sender_address, is_mainnet=is_mainnet)
@@ -326,7 +397,6 @@ async def publish_release(req: PublishReleaseRequest, _=Depends(_get_admin_verif
             dust_cost = num_outputs * 546
             logger.info(f"Release OBJ SUCCESS: {release_name} -> txid={txid}")
 
-            # Record in treasury ledger
             try:
                 from routes.treasury import record_ledger_entry
                 await record_ledger_entry(
@@ -336,7 +406,6 @@ async def publish_release(req: PublishReleaseRequest, _=Depends(_get_admin_verif
             except Exception:
                 pass
 
-            # Save release record
             release_doc = {
                 "version": req.version,
                 "name": release_name,
@@ -354,7 +423,7 @@ async def publish_release(req: PublishReleaseRequest, _=Depends(_get_admin_verif
                 "keywords": req.keywords,
                 "published_at": datetime.now(timezone.utc).isoformat(),
             }
-            await db.releases.insert_one(release_doc)
+            await _insert_release(release_doc)
 
             explorer_base = "https://mempool.space" + ("/testnet" if not is_mainnet else "")
             return {
@@ -386,10 +455,7 @@ async def publish_release(req: PublishReleaseRequest, _=Depends(_get_admin_verif
 @router.get("")
 async def list_releases(network: str = "", limit: int = 20, _=Depends(_get_admin_verify())):
     """Admin: list all published releases."""
-    query = {}
-    if network:
-        query["network"] = network
-    releases = await db.releases.find(query, {"_id": 0}).sort("published_at", -1).limit(limit).to_list(limit)
+    releases = await _get_releases(network, limit)
     return {"releases": releases, "count": len(releases)}
 
 
@@ -401,11 +467,7 @@ public_router = APIRouter(prefix="/api/releases")
 @public_router.get("/latest")
 async def get_latest_release(network: str = "btc-testnet"):
     """Public: get the latest published release for users to check for updates."""
-    release = await db.releases.find_one(
-        {"network": network},
-        {"_id": 0},
-        sort=[("published_at", -1)],
-    )
+    release = await _get_latest_release(network)
     if not release:
         return {"available": False}
     return {
@@ -435,7 +497,6 @@ def _resolve_wif(session_id: str, wallet_address: str, is_mainnet: bool) -> str:
                 return keys[wallet_address]
             if keys:
                 return list(keys.values())[0]
-    # Fallback to treasury
     if is_mainnet:
         return os.environ.get('TREASURY_MAINNET_WIF', '')
     return os.environ.get('TREASURY_TESTNET_WIF', '')
@@ -455,7 +516,6 @@ async def build_package(req: BuildRequest, _=Depends(_get_admin_verify())):
     dist_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "dist")
     zip_path = os.path.join(dist_dir, f"cthulhu-v{version}.zip")
 
-    # Check if already built
     if os.path.exists(zip_path):
         size = os.path.getsize(zip_path)
         return {
@@ -466,7 +526,6 @@ async def build_package(req: BuildRequest, _=Depends(_get_admin_verify())):
             "download_url": f"/api/download/cthulhu-v{version}.zip",
         }
 
-    # Run the build script
     build_script = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "build_package.py")
     if not os.path.exists(build_script):
         raise HTTPException(status_code=404, detail="Build script not found")
