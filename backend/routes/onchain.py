@@ -185,7 +185,7 @@ async def _resolve_ledger(ledger_bytes: bytes, filename: str, chain: str, mainne
 
     logger.info(f"Ledger references {len(child_txids)} child transactions")
 
-    sem = asyncio.Semaphore(3)  # Throttle explorer calls to avoid rate limits
+    sem = asyncio.Semaphore(8)  # Allow more concurrent fetches (mempool.space handles it well)
     child_results = [None] * len(child_txids)
 
     async def fetch_child(idx, ctxid):
@@ -308,29 +308,33 @@ async def _resolve_onchain_background(txid: str, filename: str, chain: str, main
     data may live on LTC, DOG, or MZC. This function tries all chains as fallback.
     """
     try:
-        # Fast path: try bitfossil.com gateway first (serves reconstructed files directly)
-        try:
-            client = get_client()
-            resp = await client.get(f"https://bitfossil.com/{txid}/{filename}", timeout=30.0, follow_redirects=True)
-            if resp.status_code == 200 and len(resp.content) > 0:
-                # Bitfossil returns HTML error pages as 200 — detect and skip those
-                ct = resp.headers.get('content-type', '')
-                is_html = 'text/html' in ct or resp.content[:50].strip().startswith(b'<')
-                if not is_html:
-                    file_bytes = resp.content
-                    encoded = base64.b64encode(file_bytes).decode('ascii')
-                    await db.onchain_cache.update_one(
-                        {"key": cache_key},
-                        {"$set": {"key": cache_key, "data": encoded, "filename": filename,
-                                  "size": len(file_bytes), "timestamp": datetime.now(timezone.utc)}},
-                        upsert=True
-                    )
-                    logger.info(f"On-chain file cached via bitfossil gateway: {cache_key} ({len(file_bytes)} bytes)")
-                    return
-                else:
-                    logger.info(f"bitfossil returned HTML (likely error page) for {cache_key}, skipping")
-        except Exception as e:
-            logger.info(f"bitfossil gateway miss for {cache_key}: {e}")
+        # Fast path 1: try p2fk.io root gateway (serves reconstructed files directly)
+        for gateway_name, gateway_url in [
+            ('p2fk.io', f"https://p2fk.io/root/{txid}/{filename}"),
+            ('bitfossil', f"https://bitfossil.com/{txid}/{filename}"),
+        ]:
+            try:
+                client = get_client()
+                resp = await client.get(gateway_url, timeout=20.0, follow_redirects=True)
+                if resp.status_code == 200 and len(resp.content) > 100:
+                    ct = resp.headers.get('content-type', '')
+                    is_html = 'text/html' in ct or resp.content[:50].strip().startswith(b'<')
+                    if not is_html:
+                        file_bytes = resp.content
+                        encoded = base64.b64encode(file_bytes).decode('ascii')
+                        await db.onchain_cache.update_one(
+                            {"key": cache_key},
+                            {"$set": {"key": cache_key, "data": encoded, "filename": filename,
+                                      "size": len(file_bytes), "chain": chain,
+                                      "timestamp": datetime.now(timezone.utc)}},
+                            upsert=True
+                        )
+                        logger.info(f"On-chain file cached via {gateway_name}: {cache_key} ({len(file_bytes)} bytes)")
+                        return
+                    else:
+                        logger.debug(f"{gateway_name} returned HTML for {cache_key}, skipping")
+            except Exception as e:
+                logger.debug(f"{gateway_name} gateway miss for {cache_key}: {e}")
 
         # Slow path: reconstruct from raw transactions with cross-chain fallback
         # Try the specified chain first, then all other chains.

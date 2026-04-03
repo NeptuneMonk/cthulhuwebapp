@@ -98,15 +98,15 @@ NETWORKS = {
     'btc-mainnet': {
         'version_byte': 0,
         'explorers': [
-            {'name': 'blockstream', 'base': 'https://blockstream.info/api'},
             {'name': 'mempool', 'base': 'https://mempool.space/api'},
+            {'name': 'blockstream', 'base': 'https://blockstream.info/api'},
         ],
     },
     'btc-testnet': {
         'version_byte': 111,
         'explorers': [
-            {'name': 'blockstream', 'base': 'https://blockstream.info/testnet/api'},
             {'name': 'mempool', 'base': 'https://mempool.space/testnet/api'},
+            {'name': 'blockstream', 'base': 'https://blockstream.info/testnet/api'},
         ],
     },
     'doge-mainnet': {

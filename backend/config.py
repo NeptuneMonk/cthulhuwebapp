@@ -25,12 +25,12 @@ P2FK_DUST_VALUES_SAT = {1, 546, 548, 550, 1000, 5480, 5500, 1000000, 2000000, 10
 CHAIN_TX_APIS = {
     'BTC': {
         'mainnet': [
-            {'url': 'https://blockstream.info/api/tx/{txid}', 'parser': 'mempool'},
             {'url': 'https://mempool.space/api/tx/{txid}', 'parser': 'mempool'},
+            {'url': 'https://blockstream.info/api/tx/{txid}', 'parser': 'mempool'},
         ],
         'testnet': [
-            {'url': 'https://blockstream.info/testnet/api/tx/{txid}', 'parser': 'mempool'},
             {'url': 'https://mempool.space/testnet/api/tx/{txid}', 'parser': 'mempool'},
+            {'url': 'https://blockstream.info/testnet/api/tx/{txid}', 'parser': 'mempool'},
         ],
     },
     'LTC': {

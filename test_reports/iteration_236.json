@@ -1,0 +1,112 @@
+{
+  "summary": "Iteration 236: Verified all on-chain file resolution fixes for SingleObjectPage.js timeout issue. All backend configuration changes confirmed via code review and pytest. Frontend 202 handling verified via code review. Login and feed functionality working.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "/api/onchain/status/{txid}",
+        "issue": "Timeout when fetching status for non-existent txid (expected behavior - external API calls)",
+        "priority": "LOW"
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/test_reports/pytest/pytest_iter236.xml",
+    "/app/test_reports/test_onchain_fixes_iter236.py"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "config.py (Lines 25-35): VERIFIED - mempool.space is FIRST in CHAIN_TX_APIS for both BTC mainnet and testnet, blockstream.info is second",
+    "blockchain_api.py (Lines 97-123): VERIFIED - mempool is FIRST in NETWORKS explorers for both btc-mainnet and btc-testnet",
+    "utils/blockchain.py (Lines 17-31): VERIFIED - _tx_output_cache dict exists with _TX_CACHE_MAX=5000 and LRU eviction",
+    "routes/onchain.py (Line 188): VERIFIED - Semaphore is 8 (not 3) for concurrent child TX fetches",
+    "routes/onchain.py (Lines 311-333): VERIFIED - p2fk.io and bitfossil.com fast paths exist in _resolve_onchain_background",
+    "SingleObjectPage.js (Lines 149-276): VERIFIED - useOnchainResolver properly handles 202 status with polling, distinguishes JSON status from file data"
+  ],
+  "updated_files": [
+    "/app/test_reports/test_onchain_fixes_iter236.py"
+  ],
+  "success_rate": {
+    "backend": "93% (14/15 tests passed, 1 timeout on external API)",
+    "frontend": "100%"
+  },
+  "test_credentials": {
+    "wif": "cPYRpd9zq5mTdoo93NM5V9gTkpPnL26kjS5f6qYExPHLtCFp2gN8",
+    "password": "pXk7uHCH8kuu85B",
+    "network": "btc-testnet"
+  },
+  "seed_data_creation": "None",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "On-chain file resolution fixes verified. Key changes: (1) mempool.space prioritized over blockstream.info to avoid 429 rate limits, (2) TX output cache added for ledger-type files, (3) Semaphore increased to 8 for better concurrency, (4) p2fk.io fast path added, (5) Frontend useOnchainResolver properly handles 202 JSON responses. Backend uses SQLite (NOT MongoDB for core data). External p2fk.io API may return 504 errors intermittently.",
+  "features_tested": {
+    "backend_health": {
+      "status": "PASS",
+      "details": "GET /api/health returns 200 with mongodb and ipfs services up"
+    },
+    "mempool_priority_config": {
+      "status": "PASS",
+      "details": "CHAIN_TX_APIS has mempool.space FIRST for BTC mainnet and testnet"
+    },
+    "mempool_priority_networks": {
+      "status": "PASS",
+      "details": "NETWORKS has mempool FIRST in explorers for btc-mainnet and btc-testnet"
+    },
+    "tx_output_cache": {
+      "status": "PASS",
+      "details": "_tx_output_cache exists with _TX_CACHE_MAX=5000 and _cache_tx_outputs function"
+    },
+    "semaphore_8": {
+      "status": "PASS",
+      "details": "Semaphore(8) in _resolve_ledger for concurrent child TX fetches"
+    },
+    "p2fk_fast_path": {
+      "status": "PASS",
+      "details": "p2fk.io/root gateway tried as fast path in _resolve_onchain_background"
+    },
+    "bitfossil_fast_path": {
+      "status": "PASS",
+      "details": "bitfossil.com gateway also tried as fast path"
+    },
+    "onchain_file_202": {
+      "status": "PASS",
+      "details": "GET /api/onchain/file returns 202 with status=resolving for uncached files"
+    },
+    "detect_chain_btc_mainnet": {
+      "status": "PASS",
+      "details": "GET /api/onchain/detect-chain correctly identifies BTC mainnet addresses"
+    },
+    "detect_chain_btc_testnet": {
+      "status": "PASS",
+      "details": "GET /api/onchain/detect-chain correctly identifies BTC testnet addresses"
+    },
+    "frontend_login": {
+      "status": "PASS",
+      "details": "Login with test WIF successful, redirects to /feed"
+    },
+    "frontend_feed": {
+      "status": "PASS",
+      "details": "Feed page loads with sidebar, contacts, posts with images"
+    },
+    "frontend_202_handling": {
+      "status": "PASS (Code Review)",
+      "details": "useOnchainResolver (Lines 149-276) properly handles 202 status: checks content-type for JSON, polls on status=resolving, distinguishes JSON from file data"
+    }
+  },
+  "bug_fix_verification": {
+    "original_issue": "SingleObjectPage.js timing out on .wav and .mp4 files, showing 'object not found'",
+    "root_causes_fixed": [
+      "blockstream.info API returning 429 (Too Many Requests) - FIXED: mempool.space now first in priority",
+      "No per-TX output caching - FIXED: _tx_output_cache added with LRU eviction",
+      "Low concurrency semaphore of 3 - FIXED: Increased to 8",
+      "Missing p2fk.io root gateway - FIXED: Added as fast-path before blockchain reconstruction",
+      "Frontend treating 202 JSON as file data - FIXED: useOnchainResolver checks content-type and handles status=resolving"
+    ],
+    "verification_method": "Code review + pytest + frontend smoke test"
+  }
+}

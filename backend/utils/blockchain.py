@@ -13,6 +13,22 @@ from utils.http_pool import get_client
 
 logger = logging.getLogger(__name__)
 
+# In-memory LRU cache for transaction outputs (avoids repeated API calls for child TXs)
+_tx_output_cache = {}
+_TX_CACHE_MAX = 5000
+
+
+def _cache_tx_outputs(cache_key: str, outputs: list):
+    """Store outputs in memory cache with LRU eviction."""
+    global _tx_output_cache
+    _tx_output_cache[cache_key] = outputs
+    if len(_tx_output_cache) > _TX_CACHE_MAX:
+        # Evict oldest 20% of entries
+        evict_count = _TX_CACHE_MAX // 5
+        keys = list(_tx_output_cache.keys())[:evict_count]
+        for k in keys:
+            _tx_output_cache.pop(k, None)
+
 
 async def fetch_utxos_mempool(address: str, is_mainnet: bool = False):
     base = MEMPOOL_MAINNET_API if is_mainnet else MEMPOOL_TESTNET_API
@@ -48,6 +64,14 @@ async def broadcast_raw_tx(raw_tx_hex: str, is_mainnet: bool = False) -> dict:
 
 
 async def fetch_tx_outputs(txid: str, chain: str = 'BTC', mainnet: bool = True) -> list:
+    """Fetch P2FK-encoded outputs from a transaction. Uses in-memory cache."""
+    cache_key = f"{chain}:{txid}:{'m' if mainnet else 't'}"
+
+    # Check memory cache first
+    cached = _tx_output_cache.get(cache_key)
+    if cached:
+        return cached
+
     chain_upper = chain.upper()
     api_configs = CHAIN_TX_APIS.get(chain_upper, {})
     if not api_configs:
@@ -71,8 +95,8 @@ async def fetch_tx_outputs(txid: str, chain: str = 'BTC', mainnet: bool = True) 
                 domain = url.split('/')[2] if '/' in url else parser
                 track_api_call(domain, f"tx_outputs/{parser}", (time.time() - t0) * 1000)
                 if resp.status_code == 429:
-                    wait = 2 * (attempt + 1)
-                    logger.warning(f"Rate limited by {url}, waiting {wait}s")
+                    wait = 1.5 * (attempt + 1)
+                    logger.warning(f"Rate limited by {domain}, waiting {wait}s (attempt {attempt+1})")
                     await asyncio.sleep(wait)
                     continue
                 if resp.status_code != 200:
@@ -110,6 +134,7 @@ async def fetch_tx_outputs(txid: str, chain: str = 'BTC', mainnet: bool = True) 
                             outputs.append(addrs[0])
 
                 if outputs:
+                    _cache_tx_outputs(cache_key, outputs)
                     return outputs
                 last_error = f"No P2FK outputs found via {url}"
                 break

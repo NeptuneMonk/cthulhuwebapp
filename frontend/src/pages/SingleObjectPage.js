@@ -160,23 +160,59 @@ function useOnchainResolver(primaryUrl, txid, filename, { fallbackUrl, enabled =
         } catch {}
       }
 
-      // Priority 2: p2fk.io root endpoint (serves on-chain files directly)
+      // Priority 2: Backend endpoint — handles 202 polling for on-chain reconstruction
       try {
         const resp = await fetch(primaryUrl);
         if (cancelled) return;
-        if (resp.ok) {
-          const blob = await resp.blob();
-          if (!cancelled && blob.size > 0) {
-            cacheBlobInMesh(txid, filename, blob);
-            onResolved?.(URL.createObjectURL(blob), 'p2fk');
-            return;
+        if (resp.status === 200) {
+          const ct = resp.headers.get('content-type') || '';
+          // If JSON response, it's a status message not file data
+          if (ct.includes('application/json')) {
+            const data = await resp.json();
+            if (data.status === 'resolving') {
+              onResolving?.();
+              pollTimer = setTimeout(() => pollBackend(primaryUrl), 4000);
+              return;
+            }
+            if (data.status === 'failed') { onError?.(); return; }
+          } else {
+            // Non-JSON 200 = actual file data
+            const blob = await resp.blob();
+            if (!cancelled && blob.size > 0) {
+              cacheBlobInMesh(txid, filename, blob);
+              onResolved?.(URL.createObjectURL(blob), 'cache');
+              return;
+            }
           }
+        } else if (resp.status === 202) {
+          // Backend is resolving in background — start polling
+          onResolving?.();
+          pollTimer = setTimeout(() => pollBackend(primaryUrl), 4000);
+          return;
         }
       } catch {}
 
-      // Priority 3: Backend endpoint (reconstructs from blockchain, with polling)
+      // Priority 3: p2fk.io root gateway (serves pre-built on-chain files)
       if (fallbackUrl && !cancelled) {
-        try { await pollBackend(fallbackUrl); } catch { if (!cancelled) onError?.(); }
+        try {
+          const resp = await fetch(fallbackUrl);
+          if (!cancelled && resp.ok) {
+            const ct = resp.headers.get('content-type') || '';
+            if (!ct.includes('text/html')) {
+              const blob = await resp.blob();
+              if (blob.size > 100) {
+                cacheBlobInMesh(txid, filename, blob);
+                onResolved?.(URL.createObjectURL(blob), 'p2fk');
+                return;
+              }
+            }
+          }
+        } catch {}
+        // If p2fk.io also failed, poll backend as last resort
+        if (!cancelled) {
+          onResolving?.();
+          pollTimer = setTimeout(() => pollBackend(primaryUrl), 4000);
+        }
       } else if (!cancelled) {
         onError?.();
       }
@@ -198,14 +234,33 @@ function useOnchainResolver(primaryUrl, txid, filename, { fallbackUrl, enabled =
             }
             if (data.status === 'failed') { onError?.(); return; }
           }
-          const blob = await (await fetch(url)).blob();
-          if (!cancelled) {
+          // Non-JSON 200 = file is ready — fetch as blob
+          const blobResp = await fetch(url);
+          if (cancelled) return;
+          const blobCt = blobResp.headers.get('content-type') || '';
+          if (blobCt.includes('application/json')) {
+            // Race condition: backend switched back to JSON between fetches
+            onResolving?.();
+            pollTimer = setTimeout(() => pollBackend(url), 3000);
+            return;
+          }
+          const blob = await blobResp.blob();
+          if (!cancelled && blob.size > 0) {
             cacheBlobInMesh(txid, filename, blob);
             onResolved?.(URL.createObjectURL(blob), 'blockchain');
           }
         } else if (r.status === 202) {
           onResolving?.();
           pollTimer = setTimeout(() => pollBackend(url), 4000);
+        } else if (r.status === 404) {
+          // 404 with failed status — retry later
+          const data = await r.json().catch(() => null);
+          if (data?.status === 'failed') {
+            onError?.();
+          } else {
+            // Maybe still resolving, retry once more
+            pollTimer = setTimeout(() => pollBackend(url), 5000);
+          }
         } else {
           onError?.();
         }
