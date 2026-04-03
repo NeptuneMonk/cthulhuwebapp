@@ -266,6 +266,15 @@ async def get_owned_objects(address: str, network: str = 'btc-testnet', skip: in
         formatted = [format_object_for_api(obj) for obj in seen.values()]
         formatted = [f for f in formatted if f.get('urn') or f.get('name', 'Unnamed') != 'Unnamed']
 
+        # Filter out burned objects
+        try:
+            from routes.snapshot import get_burned_set
+            burned_addrs = await get_burned_set(network)
+            if burned_addrs:
+                formatted = [f for f in formatted if f.get('object_address') not in burned_addrs]
+        except Exception:
+            pass
+
         # Resolve missing txids from user_roots (we already fetched them above)
         if user_roots and isinstance(user_roots, list):
             # Build a map: object_address -> first txid from roots
@@ -316,7 +325,7 @@ async def get_object_counts_fast(address: str, network: str = 'btc-testnet', for
         )
 
         # Trust p2fk.io API — it is the authoritative source of truth.
-        # Owned count: just count what the API returns, no filtering.
+        # Owned count: count what the API returns, minus burned objects.
         owned_count = 0
         if not isinstance(owned_raw, Exception) and isinstance(owned_raw, list):
             owned_count = len(owned_raw)
@@ -329,6 +338,19 @@ async def get_object_counts_fast(address: str, network: str = 'btc-testnet', for
                 oa = next(iter(creators.keys()), None) if isinstance(creators, dict) else None
                 if oa:
                     created_addrs.add(oa)
+
+        # Filter out burned objects from counts
+        try:
+            from routes.snapshot import get_burned_set
+            burned_addrs = await get_burned_set(network)
+            if burned_addrs:
+                if not isinstance(owned_raw, Exception) and isinstance(owned_raw, list):
+                    owned_count = sum(1 for obj in owned_raw
+                        if (next(iter((obj.get('Creators') or {}).keys()), None)
+                            if isinstance(obj.get('Creators'), dict) else None) not in burned_addrs)
+                created_addrs -= burned_addrs
+        except Exception:
+            pass
 
         return {"owned": owned_count, "created": len(created_addrs), "address": address}
     except Exception as e:
@@ -358,6 +380,15 @@ async def get_created_objects(address: str, network: str = 'btc-testnet', skip: 
         formatted = [format_object_for_api(obj) for obj in deduped]
         formatted = [f for f in formatted if f.get('urn') or f.get('name', 'Unnamed') != 'Unnamed']
 
+        # Filter out burned objects
+        try:
+            from routes.snapshot import get_burned_set
+            burned_addrs = await get_burned_set(network)
+            if burned_addrs:
+                formatted = [f for f in formatted if f.get('object_address') not in burned_addrs]
+        except Exception:
+            pass
+
         total = len(formatted)
         page = formatted[skip:skip + limit]
         return {"objects": page, "address": address, "count": len(page), "total": total, "skip": skip, "limit": limit, "has_more": (skip + limit) < total}
@@ -372,6 +403,16 @@ async def get_collection_objects_by_address(address: str, network: str = 'btc-te
         is_mainnet = 'mainnet' in network.lower()
         items = await fetch_objects_created_by_address(address, is_mainnet)
         formatted = [format_object_for_api(obj) for obj in items]
+
+        # Filter out burned objects
+        try:
+            from routes.snapshot import get_burned_set
+            burned_addrs = await get_burned_set(network)
+            if burned_addrs:
+                formatted = [f for f in formatted if f.get('object_address') not in burned_addrs]
+        except Exception:
+            pass
+
         total = len(formatted)
         page = formatted[skip:skip + limit]
         return {"objects": page, "address": address, "count": len(page), "total": total, "skip": skip, "limit": limit, "has_more": (skip + limit) < total}
@@ -1014,8 +1055,40 @@ async def get_object_detail(txid: str, network: str = 'btc-testnet'):
         if not formatted:
             raw = await fetch_object_by_txid(txid, is_mainnet)
             if not raw:
-                raise HTTPException(status_code=404, detail="Object not found")
-            formatted = format_object_for_api(raw)
+                # Fallback: search the object_index for a cached entry with this txid
+                idx_doc = await object_index_col.find_one(
+                    {'raw.transaction_id': txid}, {'_id': 0, 'raw': 1}
+                )
+                if idx_doc and idx_doc.get('raw'):
+                    formatted = idx_doc['raw']
+                else:
+                    # Fallback 2: search SQLite api_cache for GetObjectsOwnedByAddress results
+                    try:
+                        from db_sqlite import get_conn
+                        import json as _json
+                        conn = await get_conn()
+                        async with conn.execute(
+                            "SELECT data FROM api_cache WHERE _id LIKE 'p2fk:GetObjectsOwnedByAddress/%' AND data LIKE ?",
+                            (f'%{txid}%',)
+                        ) as cursor:
+                            rows = await cursor.fetchall()
+                        for (data_str,) in rows:
+                            parsed = _json.loads(data_str)
+                            items = parsed.get('data', []) if isinstance(parsed, dict) else []
+                            for obj in items:
+                                if obj.get('TransactionId') == txid:
+                                    formatted = format_object_for_api(obj)
+                                    break
+                            if formatted:
+                                break
+                    except Exception as e:
+                        logger.debug(f"SQLite fallback error: {e}")
+
+            else:
+                formatted = format_object_for_api(raw)
+
+        if not formatted:
+            raise HTTPException(status_code=404, detail="Object not found")
 
         formatted['network'] = network
 

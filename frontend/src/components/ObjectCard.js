@@ -162,8 +162,8 @@ export const ObjectCard = ({ object, onClick, network, onCrossNetwork }) => {
   const handleClick = () => {
     if (onClick) return onClick();
     if (isCrossNetwork && onCrossNetwork) return onCrossNetwork(object);
-    // Prefer txid (immutable, unique) over address (can be reused across objects)
-    if (txid) navigate(`/object/${txid}`);
+    // Always pass prefetched data to avoid re-fetch failures when p2fk.io can't look up by txid
+    if (txid) navigate(`/object/${txid}`, { state: { prefetchedObject: object } });
     else if (objAddr) navigate(`/object/addr/${objAddr}`, { state: { prefetchedObject: object } });
   };
 

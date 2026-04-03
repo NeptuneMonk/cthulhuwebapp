@@ -1,0 +1,86 @@
+{
+  "summary": "Iteration 237: Verified burned objects filtering and single object detail SQLite fallback fixes. All 3 reported issues are FIXED: (1) Burned objects (Krilly, FinalTest67898) no longer appear in owned/created/counts endpoints, (2) Boom Bap Sick single object view loads correctly with audio player, (3) mempool.space is first in API priority.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "/api/snapshot/burned",
+        "issue": "Endpoint returns 404 - may need to be exposed or renamed",
+        "priority": "LOW"
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/test_reports/pytest/pytest_iter237.xml",
+    "/app/backend/tests/test_burned_objects_iter237.py"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "routes/objects.py (Lines 269-276): VERIFIED - Burned objects filtered from get_owned_objects using get_burned_set()",
+    "routes/objects.py (Lines 343-353): VERIFIED - Burned objects filtered from get_object_counts_fast",
+    "routes/objects.py (Lines 1066-1085): VERIFIED - SQLite api_cache fallback for GetObjectByTransactionId when p2fk.io returns 404",
+    "config.py (Lines 25-35): VERIFIED - mempool.space is FIRST in CHAIN_TX_APIS for BTC mainnet and testnet",
+    "blockchain_api.py (Lines 97-123): VERIFIED - mempool is FIRST in NETWORKS explorers",
+    "ObjectCard.js (Lines 163-167): VERIFIED - Always passes prefetchedObject in navigation state for txid navigation"
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_burned_objects_iter237.py"
+  ],
+  "success_rate": {
+    "backend": "100% (5/5 tests passed, 1 skipped)",
+    "frontend": "100%"
+  },
+  "test_credentials": {
+    "wif": "cPYRpd9zq5mTdoo93NM5V9gTkpPnL26kjS5f6qYExPHLtCFp2gN8",
+    "password": "pXk7uHCH8kuu85B",
+    "network": "btc-testnet"
+  },
+  "seed_data_creation": "None",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "All 3 reported bugs are fixed: (1) Burned objects filtered via burned_objects SQLite table and get_burned_set() function in routes/snapshot.py, (2) Single object detail has SQLite api_cache fallback when p2fk.io GetObjectByTransactionId returns 404, (3) mempool.space prioritized over blockstream.info. Frontend ObjectCard passes prefetchedObject state for reliable navigation.",
+  "features_tested": {
+    "burned_objects_filtering": {
+      "status": "PASS",
+      "details": "GET /api/objects/owned/mqQ6KhpU7hPVh2TFiCwNeDgArWzCxXtTmF returns objects WITHOUT Krilly or FinalTest67898"
+    },
+    "object_counts_filtering": {
+      "status": "PASS",
+      "details": "GET /api/objects/counts/mqQ6KhpU7hPVh2TFiCwNeDgArWzCxXtTmF returns owned count <= 10 (was 11 before fix)"
+    },
+    "boom_bap_sick_loads": {
+      "status": "PASS",
+      "details": "GET /api/object/0659e85f067fb72ee7941304f8f391551be923192a6ab72d08b62b8a6007a65a returns 200 with object data"
+    },
+    "mempool_priority": {
+      "status": "PASS",
+      "details": "CHAIN_TX_APIS has mempool.space FIRST for BTC mainnet and testnet"
+    },
+    "frontend_profile_objects": {
+      "status": "PASS",
+      "details": "Profile objects tab shows 13 objects, none are burned (Krilly, For real final test, FinalTest67898)"
+    },
+    "frontend_boom_bap_sick": {
+      "status": "PASS",
+      "details": "Single object page loads with audio player (BoomBapSick_90.wav), IPFS propagation bar, and all details"
+    }
+  },
+  "bug_fix_verification": {
+    "original_issues": [
+      "Burned objects (Krilly, For real final test) showing in Emergent2's profile Objects tab",
+      "Boom Bap Sick (.wav object) single view showing 'Object not found' timeout",
+      "Media file timeouts due to blockstream.info 429 rate limiting"
+    ],
+    "fixes_verified": [
+      "Burned objects filtered from owned/created/counts endpoints using burned_objects table",
+      "Single object detail endpoint has SQLite cache fallback when p2fk.io returns 404",
+      "mempool.space prioritized over blockstream.info in API config"
+    ],
+    "verification_method": "pytest + Playwright UI testing"
+  }
+}

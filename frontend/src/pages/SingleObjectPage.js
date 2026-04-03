@@ -1221,10 +1221,10 @@ export default function SingleObjectPage({ network, lookupByAddress }) {
   useEffect(() => {
     if (!identifier) return;
 
-    // If navigated with prefetched object data (e.g., object has no txid),
-    // use it directly instead of re-fetching from an unreliable address lookup
+    // If navigated with prefetched object data (e.g., object has no txid or p2fk.io can't look it up),
+    // use it directly instead of re-fetching from an unreliable API lookup
     const prefetched = location.state?.prefetchedObject;
-    if (prefetched && lookupByAddress) {
+    if (prefetched) {
       setObject({
         ...prefetched,
         owners: prefetched.owners || [],
