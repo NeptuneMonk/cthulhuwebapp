@@ -146,58 +146,93 @@ async def health_check():
 
 
 async def _refresh_feed_cache(network: str, is_mainnet: bool, cache_key: str):
+    """Incremental feed refresh — only fetches from addresses with recently
+    discovered activity (from vacuum). Preserves existing cached messages.
+    Falls back to a batched full rebuild if no existing cache."""
     if _feed_refreshing.get(network):
         logger.info(f"Feed refresh already in progress for {network}, skipping")
         return
     _feed_refreshing[network] = True
     try:
         logger.info(f"Background feed refresh started for {network}...")
+
+        # Load existing cached messages
+        cached = await conversation_cache_col.find_one({'cache_key': cache_key}, {'_id': 0})
+        existing_messages = cached.get('messages', []) if cached else []
+        existing_txids = {m.get('transaction_id', '') for m in existing_messages if m.get('transaction_id')}
+
+        # Get ALL known addresses but batch them to avoid rate-limit storms
         addresses = await get_known_addresses(network)
+        BATCH_SIZE = 30  # Process 30 at a time to avoid overwhelming explorers
+        BATCH_DELAY = 2  # Seconds between batches
 
         async def fetch_addr_msgs(addr):
             return addr, await fetch_public_messages(addr, is_mainnet)
 
-        results = await asyncio.gather(
-            *[fetch_addr_msgs(addr) for addr in addresses],
-            return_exceptions=True
-        )
-
-        all_raw = []
-        seen_txids = set()
+        new_raw = []
         unique_senders = set()
-        for result in results:
-            if isinstance(result, Exception):
-                continue
-            address, msgs = result
-            for msg in msgs:
-                txid = msg.get('TransactionId', '')
-                if txid and txid in seen_txids:
-                    continue
-                seen_txids.add(txid)
-                from_addr = msg.get('FromAddress', address)
-                unique_senders.add(from_addr)
-                all_raw.append((from_addr, msg))
+        total_fetched = 0
+        batch_num = 0
 
+        for batch_start in range(0, len(addresses), BATCH_SIZE):
+            batch = addresses[batch_start:batch_start + BATCH_SIZE]
+            batch_num += 1
+            results = await asyncio.gather(
+                *[fetch_addr_msgs(addr) for addr in batch],
+                return_exceptions=True
+            )
+
+            batch_msgs = 0
+            for result in results:
+                if isinstance(result, Exception):
+                    continue
+                address, msgs = result
+                total_fetched += len(msgs)
+                for msg in msgs:
+                    txid = msg.get('TransactionId', '')
+                    if txid and txid in existing_txids:
+                        continue  # Already in cache
+                    if txid:
+                        existing_txids.add(txid)
+                    from_addr = msg.get('FromAddress', address)
+                    unique_senders.add(from_addr)
+                    new_raw.append((from_addr, msg))
+                    batch_msgs += 1
+
+            if batch_num <= 3 or batch_msgs > 0:
+                logger.info(f"Feed batch {batch_num}: {batch_msgs} new msgs from {len(batch)} addrs (total fetched: {total_fetched})")
+
+            if batch_start + BATCH_SIZE < len(addresses):
+                await asyncio.sleep(BATCH_DELAY)
+
+        # Fetch profiles for new senders only
         async def fetch_profile_safe(addr):
             try:
                 return addr, await get_cached_profile(addr, is_mainnet)
             except Exception:
                 return addr, None
 
-        profile_results = await asyncio.gather(
-            *[fetch_profile_safe(addr) for addr in unique_senders],
-            return_exceptions=True
-        )
+        # Fetch profiles for new senders — batched to avoid rate-limit storms
         profiles = {}
-        for pr in profile_results:
-            if isinstance(pr, Exception):
-                continue
-            addr, profile = pr
-            profiles[addr] = profile
+        sender_list = list(unique_senders)
+        PROFILE_BATCH = 50
+        for pb_start in range(0, len(sender_list), PROFILE_BATCH):
+            pb = sender_list[pb_start:pb_start + PROFILE_BATCH]
+            profile_results = await asyncio.gather(
+                *[fetch_profile_safe(addr) for addr in pb],
+                return_exceptions=True
+            )
+            for pr in profile_results:
+                if isinstance(pr, Exception):
+                    continue
+                addr, profile = pr
+                profiles[addr] = profile
+            if pb_start + PROFILE_BATCH < len(sender_list):
+                await asyncio.sleep(1)
 
-        all_messages = []
-        for from_addr, msg in all_raw:
-            # Filter out SEC-encrypted private messages
+        # Format new messages
+        new_messages = []
+        for from_addr, msg in new_raw:
             raw_content = msg.get('Message', '')
             content_str = ' '.join(raw_content) if isinstance(raw_content, list) else str(raw_content)
             if content_str.startswith('SEC') and len(content_str) > 4 and content_str[3] in '\\//:*?"<>|':
@@ -208,22 +243,21 @@ async def _refresh_feed_cache(network: str, is_mainnet: bool, cache_key: str):
 
             profile = profiles.get(from_addr)
             formatted = await format_message(msg, profile, network, is_mainnet)
-            all_messages.append(formatted)
+            new_messages.append(formatted)
             if profile and profile.get('URN'):
                 await register_known_user(
                     from_addr, network, profile.get('URN'),
                     profile.get('Image'), profile.get('DisplayName')
                 )
 
-        all_messages.sort(key=lambda x: x['created_at'], reverse=True)
+        # Merge: existing + new, deduplicated
+        all_messages = existing_messages + new_messages
+        all_messages.sort(key=lambda x: x.get('created_at', ''), reverse=True)
         await _apply_first_seen(all_messages)
-        # Sort by effective timestamp: use created_at (BlockDate) as primary,
-        # first_seen only overrides for very recent mempool transactions (within 24h of first_seen)
+
         def feed_sort_key(msg):
             created = msg.get('created_at', '')
             first = msg.get('first_seen', '')
-            # If first_seen is within 24h of now and newer than created_at, use it (mempool tx)
-            # Otherwise, trust the on-chain BlockDate
             if first and created:
                 try:
                     from datetime import datetime, timezone, timedelta
@@ -234,7 +268,6 @@ async def _refresh_feed_cache(network: str, is_mainnet: bool, cache_key: str):
                     if bd.tzinfo is None:
                         bd = bd.replace(tzinfo=timezone.utc)
                     now = datetime.now(timezone.utc)
-                    # first_seen only matters if it's recent (mempool) AND newer than block date
                     if (now - fs) < timedelta(hours=24) and fs > bd:
                         return first
                 except Exception:
@@ -247,8 +280,7 @@ async def _refresh_feed_cache(network: str, is_mainnet: bool, cache_key: str):
                       'timestamp': datetime.now(timezone.utc).isoformat()}},
             upsert=True
         )
-        logger.info(f"Feed cache refreshed for {network}: {len(all_messages)} messages")
-        # Proactive IPFS pin: pin all CIDs from the refreshed feed
+        logger.info(f"Feed cache refreshed for {network}: {len(all_messages)} messages ({len(new_messages)} new, {len(existing_messages)} existing)")
         asyncio.create_task(_proactive_pin_feed_cids(all_messages))
     except Exception as e:
         logger.warning(f"Background feed refresh failed for {network}: {e}")
@@ -258,34 +290,42 @@ async def _refresh_feed_cache(network: str, is_mainnet: bool, cache_key: str):
 
 async def _build_feed_from_scratch(network: str, is_mainnet: bool) -> list:
     addresses = await get_known_addresses(network)
+    BATCH_SIZE = 30
+    BATCH_DELAY = 2
 
     async def fetch_addr_msgs(addr):
         return addr, await fetch_public_messages(addr, is_mainnet)
 
-    results = await asyncio.gather(
-        *[fetch_addr_msgs(addr) for addr in addresses],
-        return_exceptions=True
-    )
-
     all_raw = []
     seen_txids = set()
     unique_senders = set()
-    for result in results:
-        if isinstance(result, Exception):
-            continue
-        address, msgs = result
-        if not isinstance(msgs, list):
-            continue
-        for msg in msgs:
-            if not isinstance(msg, dict):
+
+    for batch_start in range(0, len(addresses), BATCH_SIZE):
+        batch = addresses[batch_start:batch_start + BATCH_SIZE]
+        results = await asyncio.gather(
+            *[fetch_addr_msgs(addr) for addr in batch],
+            return_exceptions=True
+        )
+
+        for result in results:
+            if isinstance(result, Exception):
                 continue
-            txid = msg.get('TransactionId', '')
-            if txid and txid in seen_txids:
+            address, msgs = result
+            if not isinstance(msgs, list):
                 continue
-            seen_txids.add(txid)
-            from_addr = msg.get('FromAddress', address)
-            unique_senders.add(from_addr)
-            all_raw.append((from_addr, msg))
+            for msg in msgs:
+                if not isinstance(msg, dict):
+                    continue
+                txid = msg.get('TransactionId', '')
+                if txid and txid in seen_txids:
+                    continue
+                seen_txids.add(txid)
+                from_addr = msg.get('FromAddress', address)
+                unique_senders.add(from_addr)
+                all_raw.append((from_addr, msg))
+
+        if batch_start + BATCH_SIZE < len(addresses):
+            await asyncio.sleep(BATCH_DELAY)
 
     async def fetch_profile_safe(addr):
         try:
@@ -442,34 +482,15 @@ async def get_feed(network: str, skip: int = 0, limit: int = 5, mode: str = 'glo
                 "mode": mode,
             }
 
-        all_messages = await _build_feed_from_scratch(network, is_mainnet)
-
-        await conversation_cache_col.update_one(
-            {'cache_key': cache_key},
-            {'$set': {
-                'cache_key': cache_key,
-                'messages': all_messages,
-                'timestamp': datetime.now(timezone.utc).isoformat(),
-            }},
-            upsert=True
-        )
-
-        # Filter for following mode
-        if mode == 'following' and followed:
-            followed_set = set(a.strip() for a in followed.split(',') if a.strip())
-            if followed_set:
-                all_messages = [m for m in all_messages if m.get('from_address') in followed_set]
-
-        total = len(all_messages)
-        page = all_messages[skip:skip + limit]
-
-        # Proactive IPFS pin for freshly built feed
-        asyncio.create_task(_proactive_pin_feed_cids(page))
+        # No cache — return empty immediately and build in background
+        if not _feed_refreshing.get(network):
+            asyncio.create_task(_refresh_feed_cache(network, is_mainnet, cache_key))
 
         return {
-            "feed": page, "network": network, "count": len(page),
-            "total": total, "skip": skip, "limit": limit,
-            "has_more": (skip + limit) < total,
+            "feed": [], "network": network, "count": 0,
+            "total": 0, "skip": skip, "limit": limit,
+            "has_more": False,
+            "cached": False, "cache_age": 0, "refreshing": True,
             "mode": mode,
         }
     except Exception as e:

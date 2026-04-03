@@ -336,7 +336,8 @@ async def fetch_public_messages(address: str, mainnet: bool = False, qty: int = 
     Filters out SEC-encrypted messages and non-message roots.
     Normalizes root fields to match the format expected by format_message().
     """
-    data = await p2fk_get(f"GetRootsByAddress/{address}", mainnet, extra_params={"skip": "0", "qty": str(qty)})
+    # Use the same cache key as vacuum (no extra_params) so cached data is reused
+    data = await p2fk_get(f"GetRootsByAddress/{address}", mainnet)
     if not isinstance(data, list):
         return []
 
@@ -375,7 +376,8 @@ async def fetch_messages_by_sender(address: str, mainnet: bool = False, qty: int
     """Fetch messages authored BY a given address using GetRootsByAddress.
     Uses GetRootsByAddress instead of GetPublicMessagesByAddress to include
     file attachment data (File field)."""
-    data = await p2fk_get(f"GetRootsByAddress/{address}", mainnet, extra_params={"skip": "0", "qty": str(qty)})
+    # Use the same cache key as vacuum (no extra_params) so cached data is reused
+    data = await p2fk_get(f"GetRootsByAddress/{address}", mainnet)
     if not isinstance(data, list):
         return []
     public_msgs = []
