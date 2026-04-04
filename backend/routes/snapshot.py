@@ -1525,8 +1525,12 @@ def _get_auto_delta_status():
 
 def start_auto_delta_on_boot():
     """Auto-start the multi-chain delta loop on server boot.
-    Desktop apps and standalone servers start sweeping immediately —
-    no admin action needed."""
+    Controlled by AUTO_VACUUM_ENABLED env var (default: false).
+    Set to 'true' on the live/production site to enable automatic vacuuming."""
+    import os
+    if os.environ.get("AUTO_VACUUM_ENABLED", "").lower() not in ("true", "1", "yes"):
+        logger.info("[AutoDelta] Skipped auto-start (AUTO_VACUUM_ENABLED not set)")
+        return
     if _auto_delta_state["enabled"]:
         return  # Already running
     _auto_delta_state["enabled"] = True

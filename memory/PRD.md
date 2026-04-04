@@ -25,6 +25,8 @@ Build a modern, responsive frontend for a blockchain-based decentralized social 
 
 ## Recently Completed (April 2026)
 - **P0: Admin Vacuum Controls** — Added graceful vacuum stop (kill switch), network selector (testnet/mainnet), and snapshot history export/import for porting between instances (preview → live). Backend: `POST /api/snapshot/vacuum/stop`, `GET /api/snapshot/history/export`, `POST /api/snapshot/history/import`. Frontend: Stop button, network dropdown, Export/Import UI in Admin Dashboard Chain Snapshots tab. (Tested: iteration_238, 100% pass)
+- **P0: CID Health & Etch-to-Chain** — Added CID health verification (local pin + public gateway checks), re-pin for lost CIDs, and manual etch-to-chain button. Backend: `POST /api/snapshot/verify-cid`, `POST /api/snapshot/repin-cid`, `POST /api/snapshot/etch-cid`. Frontend: health dots, LOST labels, re-pin/etch buttons, legend. (Tested: iteration_239)
+- **P0: Auto-Vacuum Environment Guard** — Auto-delta vacuum no longer starts on boot by default. Controlled by `AUTO_VACUUM_ENABLED` env var. Preview stays quiet; live site sets `AUTO_VACUUM_ENABLED=true`.
 - **P0 Fix: IPFS Deployment Failure** — Bundled Kubo IPFS binaries (amd64 + arm64) in `/app/backend/bin/`. Download fallback URL changed from `dist.ipfs.tech` (502) to GitHub releases.
 - **P0 Fix: Releases Route MongoDB→SQLite** — Rewrote `routes/releases.py` to use SQLite via `get_conn()` instead of MongoDB. Added migration for existing tables missing columns. Created `build_package.py` script.
 - **P0 Fix: "Unnamed" Object View** — Added data validation and self-healing re-fetch to SingleObjectPage.
