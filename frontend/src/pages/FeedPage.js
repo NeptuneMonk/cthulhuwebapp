@@ -152,7 +152,12 @@ export default function FeedPage({ network, follows = [] }) {
       const params = { skip, limit: PAGE_SIZE };
       if (feedMode === 'following' && follows.length > 0) {
         params.mode = 'following';
-        params.followed = follows.map(f => f.address).join(',');
+        // Include user's own address so their posts appear in "Following" feed too
+        const followedAddrs = follows.map(f => f.address);
+        if (user?.address && !followedAddrs.includes(user.address)) {
+          followedAddrs.push(user.address);
+        }
+        params.followed = followedAddrs.join(',');
       }
       // Mesh-first: peers → blockchain → backend
       const { data: res, source } = await meshFirstFetch(`/feed/${network}`, params);
