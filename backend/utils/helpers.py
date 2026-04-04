@@ -236,7 +236,8 @@ async def p2fk_get(path: str, mainnet: bool = False, extra_params: dict = None, 
     track_decoder_source(path, "local_decoder", local_ms, success=False)
 
     # ── FALLBACK: p2fk.io ──
-    params = {"mainnet": str(mainnet).lower()}
+    # showSystemFiles=false: embii's server-side filter — reduces payload, skips system file noise
+    params = {"mainnet": str(mainnet).lower(), "showSystemFiles": "false"}
     if extra_params:
         params.update(extra_params)
 

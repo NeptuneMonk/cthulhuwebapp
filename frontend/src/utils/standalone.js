@@ -167,9 +167,9 @@ async function p2fkGet(path, mainnet = false) {
     const localResult = await _tryLocalDecoder(path, network);
     if (localResult) return localResult;
   }
-  // Fall back to p2fk.io
+  // Fall back to p2fk.io (showSystemFiles=false: server-side filter for smaller payloads)
   try {
-    const r = await fetch(`${P2FK}/${path}?mainnet=${mainnet}`, { signal: AbortSignal.timeout(15000) });
+    const r = await fetch(`${P2FK}/${path}?mainnet=${mainnet}&showSystemFiles=false`, { signal: AbortSignal.timeout(15000) });
     if (r.ok) return await r.json();
   } catch (e) { console.warn(`p2fk.io error [${path}]:`, e); }
   return null;
