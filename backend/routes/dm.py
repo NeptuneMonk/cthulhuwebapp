@@ -50,10 +50,13 @@ async def get_dm_threads(address: str, network: str = "btc-testnet"):
                 if not (msg_list and isinstance(msg_list[0], str) and msg_list[0].startswith("SEC")):
                     continue
 
-            keywords = root.get("Keyword") or {}
-            kw_keys = list(keywords.keys())
-            sender_addr = kw_keys[-1] if kw_keys else None
-            if not sender_addr or sender_addr == address:
+            # Use SignedBy as the authoritative sender address.
+            # The Keyword field contains keyword-derived addresses (hashes), not real users.
+            signed_by = root.get("SignedBy", "")
+            sender_addr = signed_by if signed_by and signed_by != address else None
+
+            # Fallback: if SignedBy is us (self-message / vault), mark as vault
+            if not sender_addr:
                 sender_addr = "__vault__"
 
             if sender_addr not in threads:
