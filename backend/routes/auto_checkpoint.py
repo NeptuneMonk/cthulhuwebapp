@@ -411,8 +411,13 @@ async def _auto_checkpoint_loop():
 
 
 def start_auto_checkpoint():
-    """Start the background auto-checkpoint task."""
+    """Start the background auto-checkpoint task.
+    Controlled by AUTO_VACUUM_ENABLED env var (shares the vacuum guard)."""
     global _checkpoint_task
+    import os
+    if os.environ.get("AUTO_VACUUM_ENABLED", "").lower() not in ("true", "1", "yes"):
+        logger.info("[AutoCheckpoint] Skipped auto-start (AUTO_VACUUM_ENABLED not set)")
+        return
     if _checkpoint_task is None or _checkpoint_task.done():
         _checkpoint_task = asyncio.create_task(_auto_checkpoint_loop())
         logger.info("[AutoCheckpoint] Background task started")

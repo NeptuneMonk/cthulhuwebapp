@@ -236,12 +236,7 @@ async def _refresh_feed_cache(network: str, is_mainnet: bool, cache_key: str):
         # Format new messages
         new_messages = []
         for from_addr, msg in new_raw:
-            raw_content = msg.get('Message', '')
-            content_str = ' '.join(raw_content) if isinstance(raw_content, list) else str(raw_content)
-            if content_str.startswith('SEC') and len(content_str) > 4 and content_str[3] in '\\//:*?"<>|':
-                continue
-            file_data = msg.get('File') or {}
-            if 'SEC' in file_data:
+            if _is_system_or_encrypted_msg(msg):
                 continue
 
             profile = profiles.get(from_addr)
@@ -289,6 +284,40 @@ async def _refresh_feed_cache(network: str, is_mainnet: bool, cache_key: str):
         logger.warning(f"Background feed refresh failed for {network}: {e}")
     finally:
         _feed_refreshing[network] = False
+
+
+def _is_system_or_encrypted_msg(msg: dict) -> bool:
+    """Return True if this P2FK root should be hidden from the public feed.
+    Catches: SEC backups, SEC-encrypted DMs, CTHULHU_CHECKPOINT, empty/garbled content."""
+    raw_content = msg.get('Message', '')
+    content_str = ' '.join(raw_content) if isinstance(raw_content, list) else str(raw_content)
+    file_data = msg.get('File') or {}
+
+    # SEC-encrypted DMs (SEC<separator><data>)
+    if content_str.startswith('SEC') and len(content_str) > 4 and content_str[3] in '\\//:*?"<>|':
+        return True
+    # SEC key in File dict
+    if isinstance(file_data, dict) and 'SEC' in file_data:
+        return True
+    # CTHULHU_CHECKPOINT system messages
+    if 'CTHULHU_CHECKPOINT' in content_str or 'CTHULHU_SNAPSHOT' in content_str:
+        return True
+    # Raw SEC backups — encoded as raw bytes, decoded as garbled/binary content.
+    # These have no readable text and often contain SIG headers with binary after padding.
+    # Detect: content starts with SIG and has non-printable bytes anywhere after the signature.
+    if content_str.startswith('SIG') and len(content_str) > 80:
+        tail = content_str[80:]
+        if any(ord(c) < 32 and c not in '\n\r\t' for c in tail):
+            return True
+        # Also catch posts that are SIG + only padding/hash marks + hex remnants
+        readable_tail = tail.replace('#', '').replace('<', '').replace('>', '').strip()
+        if len(readable_tail) < 20:
+            return True
+    # Completely empty content with no file — blank post
+    stripped = content_str.strip().replace('#', '').strip()
+    if not stripped and not file_data:
+        return True
+    return False
 
 
 async def _build_feed_from_scratch(network: str, is_mainnet: bool) -> list:
@@ -349,14 +378,8 @@ async def _build_feed_from_scratch(network: str, is_mainnet: bool) -> list:
 
     all_messages = []
     for from_addr, msg in all_raw:
-        # Filter out SEC-encrypted private messages from the public feed
-        raw_content = msg.get('Message', '')
-        content_str = ' '.join(raw_content) if isinstance(raw_content, list) else str(raw_content)
-        if content_str.startswith('SEC') and len(content_str) > 4 and content_str[3] in '\\//:*?"<>|':
-            continue
-        # Also filter if File dict has a SEC key (encrypted file attachment)
-        file_data = msg.get('File') or {}
-        if 'SEC' in file_data:
+        # Filter out SEC, checkpoint, and blank posts from the public feed
+        if _is_system_or_encrypted_msg(msg):
             continue
 
         profile = profiles.get(from_addr)
