@@ -1,0 +1,87 @@
+{
+  "summary": "Iteration 241: Verified Wallet/Treasury consolidation - 'Wallet' tab removed from admin sidebar, 'Treasury' is now the unified wallet tab with WIF import capability. All backend regression checks pass.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/test_reports/pytest/pytest_iter241.xml",
+    "/app/backend/tests/test_wallet_treasury_consolidation_iter241.py"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "AdminDashboard.js Line 2856-2870: VERIFIED - TABS array does NOT contain 'wallet' tab, only 'treasury' tab exists",
+    "AdminDashboard.js Line 2931: VERIFIED - data-testid='admin-tab-{id}' pattern used, so admin-tab-wallet does NOT exist",
+    "AdminDashboard.js Line 2589: VERIFIED - Treasury panel shows 'This wallet is used for etching, releases, snapshot announces, and all treasury operations'",
+    "AdminDashboard.js Line 2580: VERIFIED - 'Change Key' button exists for WIF import",
+    "AdminDashboard.js Lines 2604-2641: VERIFIED - WIF import UI with treasury-wif-input, treasury-pw-input, treasury-import-submit",
+    "AdminDashboard.js Lines 2645-2650: VERIFIED - Balance, Tax Income, Expenses, Net cards exist in Treasury panel",
+    "AdminDashboard.js Line 375: VERIFIED - Settings Treasury Addresses section says 'Auto-detected from the imported Treasury key' (not 'Wallet panel')",
+    "AdminDashboard.js Line 2863: VERIFIED - Etch Manager tab accessible via admin-tab-etches",
+    "/api/health: VERIFIED - Returns {services: {sqlite: 'up', ipfs: 'up'}} - no mongodb",
+    "/api/snapshot/status: VERIFIED - Returns valid JSON with vacuum, cache, snapshots"
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_wallet_treasury_consolidation_iter241.py"
+  ],
+  "success_rate": {
+    "backend": "100% (4/4 tests passed)",
+    "frontend": "100% (all 10 UI checks passed)"
+  },
+  "test_credentials": {
+    "admin_username": "CthulhuAdmin",
+    "admin_password": "78UH1%2kC^vH2Gi1MqI@",
+    "base_url": "https://dark-telegram-ui.preview.emergentagent.com"
+  },
+  "seed_data_creation": "None",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Wallet/Treasury consolidation verified: (1) 'Wallet' tab removed from admin sidebar - data-testid='admin-tab-wallet' does NOT exist, (2) 'Treasury' tab is the unified wallet with WIF import capability, (3) Treasury panel shows correct description text, Change Key button, and Balance/Tax Income/Expenses/Net cards, (4) Settings Treasury Addresses section says 'Auto-detected from the imported Treasury key' (not 'Wallet panel'), (5) Etch Manager still accessible via admin-tab-etches, (6) Backend regression checks pass: /api/health returns sqlite: up, /api/snapshot/status returns valid JSON.",
+  "features_tested": {
+    "wallet_tab_removed": {
+      "status": "PASS",
+      "details": "data-testid='admin-tab-wallet' does NOT exist in admin sidebar"
+    },
+    "treasury_tab_exists": {
+      "status": "PASS",
+      "details": "data-testid='admin-tab-treasury' exists and is clickable"
+    },
+    "treasury_panel_description": {
+      "status": "PASS",
+      "details": "Shows 'This wallet is used for etching, releases, snapshot announces, and all treasury operations'"
+    },
+    "treasury_change_key_button": {
+      "status": "PASS",
+      "details": "'Change Key' button exists for WIF import"
+    },
+    "treasury_wif_import_ui": {
+      "status": "PASS",
+      "details": "WIF input, password input, and Import Key button all present"
+    },
+    "treasury_cards": {
+      "status": "PASS",
+      "details": "Balance, Tax Income, Expenses, Net cards all present"
+    },
+    "settings_treasury_text": {
+      "status": "PASS",
+      "details": "Shows 'Auto-detected from the imported Treasury key' (not 'Wallet panel')"
+    },
+    "etch_manager_accessible": {
+      "status": "PASS",
+      "details": "Etch Manager tab accessible via admin-tab-etches"
+    },
+    "health_endpoint_sqlite": {
+      "status": "PASS",
+      "details": "GET /api/health returns {services: {sqlite: 'up', ipfs: 'up'}} - no mongodb"
+    },
+    "snapshot_status_endpoint": {
+      "status": "PASS",
+      "details": "GET /api/snapshot/status returns valid JSON with vacuum, cache, snapshots"
+    }
+  }
+}

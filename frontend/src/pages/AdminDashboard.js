@@ -2,7 +2,6 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { FiSettings, FiAlertCircle, FiMessageSquare, FiBarChart2, FiLogOut, FiLock, FiSave, FiRefreshCw, FiChevronDown, FiChevronUp, FiSend, FiTrash2, FiKey, FiActivity, FiFilm, FiCpu, FiDatabase, FiGlobe, FiMusic, FiPhone, FiZap, FiDollarSign, FiFile, FiEdit, FiCheck, FiX, FiCopy, FiUpload, FiPlus, FiExternalLink, FiLoader, FiBriefcase, FiPackage, FiHardDrive, FiDownload, FiPlay, FiPause, FiRadio, FiShield } from 'react-icons/fi';
 import { getCallLogs, clearCallLogs, exportCallLogs } from '@/utils/callDebugLog';
-import AdminWalletPanel from '@/components/admin/AdminWalletPanel';
 import CheckpointPanel from '@/components/admin/CheckpointPanel';
 import ReleasePanel from '@/components/admin/ReleasePanel';
 
@@ -373,7 +372,7 @@ function SettingsPanel() {
 
       <div className="bg-gray-900/60 border border-gray-800 rounded-xl p-5 space-y-4">
         <h3 className="text-sm font-semibold text-white flex items-center gap-2"><FiKey size={14} /> Treasury Addresses</h3>
-        <p className="text-[11px] text-gray-500">Public receiving addresses. Auto-detected from imported treasury keys in the Wallet panel.</p>
+        <p className="text-[11px] text-gray-500">Public receiving addresses. Auto-detected from the imported Treasury key.</p>
         <div className="space-y-3">
           <Field label="BTC Mainnet Treasury" value={settings.treasury_addresses?.btc || ''} onChange={v => setSettings(s => ({ ...s, treasury_addresses: { ...s.treasury_addresses, btc: v } }))} />
           <Field label="BTC Testnet Treasury" value={settings.treasury_addresses?.btc_testnet || ''} onChange={v => setSettings(s => ({ ...s, treasury_addresses: { ...s.treasury_addresses, btc_testnet: v } }))} />
@@ -2249,6 +2248,7 @@ function EtchManagerPanel({ adminNetwork = 'btc-testnet' }) {
         <div className="space-y-4">
           <div className="bg-gray-900/60 border border-gray-800 rounded-xl p-4 space-y-3">
             <h4 className="text-xs font-semibold text-amber-400 uppercase tracking-wider">OBJ Etch — BitFossil Compatible</h4>
+            <p className="text-[9px] text-gray-600">Broadcasts using the Treasury wallet.</p>
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="text-[10px] text-gray-500 block mb-1">Project Name *</label>
@@ -2486,6 +2486,11 @@ function TreasuryPanel({ network: adminNetwork = 'btc-testnet' }) {
   const [network, setNetwork] = useState(adminNetwork);
   const [ledgerFilter, setLedgerFilter] = useState('');
   const [showLedger, setShowLedger] = useState(false);
+  const [showImportWif, setShowImportWif] = useState(false);
+  const [importWif, setImportWif] = useState('');
+  const [importPw, setImportPw] = useState('');
+  const [importLoading, setImportLoading] = useState(false);
+  const [importResult, setImportResult] = useState(null);
 
   // Sync with admin network toggle
   useEffect(() => { setNetwork(adminNetwork); }, [adminNetwork]);
@@ -2525,6 +2530,29 @@ function TreasuryPanel({ network: adminNetwork = 'btc-testnet' }) {
     navigator.clipboard?.writeText(addr);
   };
 
+  const handleImportWif = async () => {
+    if (!importWif || !importPw) return;
+    setImportLoading(true); setImportResult(null);
+    try {
+      const res = await adminFetch(`/wallet/import-treasury`, {
+        method: 'POST',
+        body: JSON.stringify({ wif: importWif, network, password: importPw }),
+      });
+      const data = await safeJson(res);
+      if (res.ok) {
+        setImportResult({ success: true, address: data.address });
+        setImportWif(''); setImportPw('');
+        setShowImportWif(false);
+        loadEconomics();
+      } else {
+        setImportResult({ error: data.detail || 'Import failed' });
+      }
+    } catch (e) {
+      setImportResult({ error: e.message });
+    }
+    setImportLoading(false);
+  };
+
   if (loading) return <div className="text-gray-500 text-sm animate-pulse py-8 text-center">Loading treasury economics...</div>;
   if (!economics) return <div className="text-red-400 text-sm py-8 text-center">Failed to load treasury data</div>;
 
@@ -2546,18 +2574,70 @@ function TreasuryPanel({ network: adminNetwork = 'btc-testnet' }) {
       {/* Treasury address */}
       {economics.address ? (
         <div className="bg-gray-900/60 border border-gray-800 rounded-xl p-4">
-          <p className="text-[10px] text-gray-500 mb-1">Treasury Address ({network})</p>
+          <div className="flex items-center justify-between mb-1">
+            <p className="text-[10px] text-gray-500">Treasury Address ({network})</p>
+            <button onClick={() => setShowImportWif(!showImportWif)} className="text-[10px] text-gray-600 hover:text-gray-300 flex items-center gap-1">
+              <FiKey size={10} /> {showImportWif ? 'Cancel' : 'Change Key'}
+            </button>
+          </div>
           <div className="flex items-center gap-2">
             <p className="text-sm text-emerald-400 font-mono truncate flex-1">{economics.address}</p>
             <button onClick={() => copyAddress(economics.address)} className="p-1 text-gray-500 hover:text-white" title="Copy">
               <FiCopy size={12} />
             </button>
           </div>
+          <p className="text-[9px] text-gray-600 mt-1">This wallet is used for etching, releases, snapshot announces, and all treasury operations.</p>
         </div>
       ) : (
         <div className="bg-red-900/10 border border-red-800/30 rounded-xl p-4 text-center">
           <p className="text-sm text-red-400">Treasury not configured for {network}</p>
-          <p className="text-xs text-gray-600 mt-1">Import a treasury key in the Wallet panel, or set the address in Settings</p>
+          <button
+            onClick={() => setShowImportWif(true)}
+            className="mt-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-medium transition-colors"
+            data-testid="import-treasury-btn"
+          >
+            <FiKey size={12} className="inline mr-1" /> Import Treasury Key
+          </button>
+        </div>
+      )}
+
+      {/* Import Treasury WIF */}
+      {showImportWif && (
+        <div className="bg-gray-900/60 border border-amber-800/30 rounded-xl p-4 space-y-3">
+          <h4 className="text-xs font-bold text-amber-400 flex items-center gap-1"><FiKey size={12} /> Import Treasury Key (WIF)</h4>
+          <p className="text-[10px] text-gray-500">This key will be used for all on-chain operations: etching, snapshot CID announces, releases, and treasury transactions.</p>
+          <input
+            type="password"
+            value={importWif}
+            onChange={e => setImportWif(e.target.value)}
+            placeholder="Private key (WIF format)"
+            className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-xs text-gray-200 font-mono focus:outline-none focus:border-amber-500"
+            data-testid="treasury-wif-input"
+          />
+          <input
+            type="password"
+            value={importPw}
+            onChange={e => setImportPw(e.target.value)}
+            placeholder="Encryption password"
+            className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-xs text-gray-200 focus:outline-none focus:border-amber-500"
+            data-testid="treasury-pw-input"
+          />
+          <div className="flex gap-2">
+            <button
+              onClick={handleImportWif}
+              disabled={importLoading || !importWif || !importPw}
+              className="px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-lg text-xs font-medium disabled:opacity-40 transition-colors"
+              data-testid="treasury-import-submit"
+            >
+              {importLoading ? 'Importing...' : 'Import Key'}
+            </button>
+            <button onClick={() => { setShowImportWif(false); setImportResult(null); }} className="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-lg text-xs">Cancel</button>
+          </div>
+          {importResult && (
+            <div className={`p-2 rounded text-xs ${importResult.error ? 'bg-red-900/20 text-red-400' : 'bg-emerald-900/20 text-emerald-400'}`}>
+              {importResult.error ? importResult.error : `Imported! Address: ${importResult.address}`}
+            </div>
+          )}
         </div>
       )}
 
@@ -2778,7 +2858,6 @@ const TABS = [
   { id: 'decoder', label: 'Decoder Health', icon: FiActivity },
   { id: 'snapshot', label: 'Chain Snapshots', icon: FiHardDrive },
   { id: 'releases', label: 'Releases', icon: FiPackage },
-  { id: 'wallet', label: 'Wallet', icon: FiBriefcase },
   { id: 'treasury', label: 'Treasury', icon: FiDollarSign },
   { id: 'checkpoint', label: 'Checkpoints', icon: FiDatabase },
   { id: 'etches', label: 'Etch Manager', icon: FiZap },
@@ -2888,7 +2967,6 @@ export default function AdminDashboard() {
         {tab === 'system' && <SystemStatsPanel />}
         {tab === 'settings' && <SettingsPanel />}
         {tab === 'releases' && <ReleasePanel network={adminNetwork} />}
-        {tab === 'wallet' && <AdminWalletPanel network={adminNetwork} />}
         {tab === 'treasury' && <TreasuryPanel network={adminNetwork} />}
         {tab === 'checkpoint' && <CheckpointPanel network={adminNetwork} />}
         {tab === 'etches' && <EtchManagerPanel adminNetwork={adminNetwork} />}
