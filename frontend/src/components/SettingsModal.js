@@ -1277,6 +1277,27 @@ export default function SettingsModal({ fullPage, onClose, profileImage, network
               {/* Sign Out at bottom */}
               {isConnected && (
                 <div className="px-4 py-3 border-t border-gray-800/60">
+                  {/* Switch Identity — preserves all wallet data and caches */}
+                  <button
+                    onClick={() => {
+                      // Clear only session state, not wallets or caches
+                      localStorage.removeItem('cthulhu_auth_user');
+                      localStorage.removeItem('cthulhu_auth_recovery');
+                      localStorage.removeItem('cthulhu_pending_mints');
+                      localStorage.removeItem('cthulhu-pending-posts');
+                      localStorage.removeItem('cthulhu_pending_txs');
+                      logout();
+                      disconnectWallet();
+                      onClose();
+                      navigate('/auth');
+                    }}
+                    className="w-full py-3 text-sm text-cyan-400 hover:text-cyan-300 hover:bg-cyan-500/10 rounded-xl transition-colors text-center font-medium"
+                    data-testid="settings-switch-identity"
+                  >
+                    Switch Identity
+                  </button>
+                  <p className="text-[10px] text-gray-600 text-center -mt-1 mb-2">Sign in as a different URN or create a new one. Your current wallet stays saved.</p>
+
                   {!signingOut ? (
                     <button
                       onClick={() => setSigningOut(true)}
