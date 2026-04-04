@@ -29,7 +29,7 @@ router = APIRouter(prefix="/api/snapshot", tags=["snapshot"])
 
 # ─── Rate Limiter (1.5 req/sec = 15 per 10s) ────────────────────────────────
 
-_RATE_INTERVAL = 0.67  # seconds between requests (~1.5/sec)
+_RATE_INTERVAL = 0.25  # seconds between requests (~4/sec)
 
 # ─── Vacuum State (in-memory, survives only within process) ──────────────────
 
@@ -859,23 +859,31 @@ async def _consume_snapshot(cid: str, network: str = "btc-testnet") -> dict:
 
         # Hydrate cache
         conn = await get_conn()
-        mainnet = "mainnet" in network
+        snap_chain = snapshot.get("chain", network)
+        mainnet = "mainnet" in snap_chain
         imported = 0
+        skipped = 0
 
         # Import roots
-        for root in snapshot.get("roots", []):
+        roots_list = snapshot.get("roots", [])
+        for root in roots_list:
             txid = root.get("TransactionId", "")
             if not txid:
                 continue
             cache_key = f"p2fk:GetRootByTransactionID/{txid}:{mainnet}:None"
-            await conn.execute(
+            cursor = await conn.execute(
                 "INSERT OR IGNORE INTO api_cache (_id, data) VALUES (?, ?)",
                 (cache_key, json.dumps({"data": root}, default=str)),
             )
-            imported += 1
+            if cursor.rowcount > 0:
+                imported += 1
+            else:
+                skipped += 1
 
         # Import profiles
-        for profile in snapshot.get("profiles", []):
+        profiles_list = snapshot.get("profiles", [])
+        profiles_imported = 0
+        for profile in profiles_list:
             addr = profile.get("Address", profile.get("address", ""))
             if not addr:
                 continue
@@ -885,15 +893,19 @@ async def _consume_snapshot(cid: str, network: str = "btc-testnet") -> dict:
                 (cache_key, json.dumps({"data": profile}, default=str)),
             )
             imported += 1
+            profiles_imported += 1
 
         # Import keywords
-        for kw, addr in snapshot.get("keywords", {}).items():
+        keywords_dict = snapshot.get("keywords", {})
+        keywords_imported = 0
+        for kw, addr in keywords_dict.items():
             cache_key = f"p2fk:GetPublicAddressByKeyword/{kw}:{mainnet}:None"
             await conn.execute(
                 "INSERT OR IGNORE INTO api_cache (_id, data) VALUES (?, ?)",
                 (cache_key, json.dumps({"data": addr}, default=str)),
             )
             imported += 1
+            keywords_imported += 1
 
         await conn.commit()
 
@@ -922,12 +934,21 @@ async def _consume_snapshot(cid: str, network: str = "btc-testnet") -> dict:
 
         return {
             "success": True,
+            "cid": cid,
             "imported": imported,
+            "skipped": skipped,
             "users_registered": registered,
+            "breakdown": {
+                "roots": len(roots_list),
+                "profiles": profiles_imported,
+                "keywords": keywords_imported,
+            },
+            "snapshot_type": snapshot.get("type", "unknown"),
             "snapshot_stats": snapshot.get("stats", {}),
-            "chain": snapshot.get("chain"),
-            "timestamp": snapshot.get("timestamp"),
+            "chain": snap_chain,
+            "timestamp": snapshot.get("timestamp", "unknown"),
             "previous_cid": snapshot.get("previous_cid"),
+            "has_previous": bool(snapshot.get("previous_cid")),
         }
 
     except Exception as e:

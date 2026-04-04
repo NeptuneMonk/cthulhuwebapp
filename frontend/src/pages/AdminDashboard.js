@@ -1513,7 +1513,7 @@ function SnapshotPanel({ network }) {
         <div className="flex items-center justify-between mb-3">
           <div>
             <h3 className="text-sm font-bold text-gray-200">Vacuum p2fk.io</h3>
-            <p className="text-[10px] text-gray-500">Crawl the full P2FK index at ~1.5 req/sec. Runs in background.</p>
+            <p className="text-[10px] text-gray-500">Crawl the full P2FK index at ~4 req/sec. Runs in background.</p>
           </div>
           <div className="flex items-center gap-2">
             {/* Network selector for vacuum */}
@@ -1662,7 +1662,7 @@ function SnapshotPanel({ network }) {
       {/* Consume Snapshot */}
       <div className="bg-gray-900/60 border border-gray-800 rounded-xl p-5">
         <h3 className="text-sm font-bold text-gray-200 mb-2">Consume Snapshot</h3>
-        <p className="text-[10px] text-gray-500 mb-3">Fetch a snapshot from IPFS by CID and hydrate your local cache.</p>
+        <p className="text-[10px] text-gray-500 mb-3">Fetch a snapshot from IPFS by CID and hydrate your local cache. The latest CID gives access to the full daisy-chain.</p>
         <div className="flex gap-2">
           <input
             value={consumeCid}
@@ -1678,15 +1678,61 @@ function SnapshotPanel({ network }) {
             data-testid="consume-snapshot-btn"
           >
             <FiDownload size={12} />
-            {consuming ? 'Loading...' : 'Consume'}
+            {consuming ? 'Fetching from IPFS...' : 'Consume'}
           </button>
         </div>
         {consumeResult && (
-          <div className={`mt-2 p-2 rounded-lg text-xs ${consumeResult.error ? 'bg-red-900/20 text-red-400' : 'bg-emerald-900/20 text-emerald-400'}`}>
-            {consumeResult.error
-              ? `Error: ${consumeResult.error}`
-              : `Imported ${consumeResult.imported} entries from ${consumeResult.chain} (${consumeResult.timestamp})`
-            }
+          <div className={`mt-3 p-3 rounded-lg text-xs border ${consumeResult.error ? 'bg-red-900/20 text-red-400 border-red-800/30' : 'bg-emerald-900/20 text-emerald-400 border-emerald-800/30'}`}
+               data-testid="consume-result">
+            {consumeResult.error ? (
+              <div className="space-y-1">
+                <p className="font-medium flex items-center gap-1"><FiX size={12} /> Consume Failed</p>
+                <p className="text-red-300">{consumeResult.error}</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <p className="font-medium flex items-center gap-1"><FiCheck size={12} /> Snapshot Consumed Successfully</p>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-[10px]">
+                  <div className="bg-gray-800/40 rounded px-2 py-1">
+                    <span className="text-gray-500">Type: </span>
+                    <span className={consumeResult.snapshot_type === 'full' ? 'text-emerald-400' : 'text-amber-400'}>{consumeResult.snapshot_type}</span>
+                  </div>
+                  <div className="bg-gray-800/40 rounded px-2 py-1">
+                    <span className="text-gray-500">Chain: </span>
+                    <span className="text-cyan-400">{consumeResult.chain}</span>
+                  </div>
+                  <div className="bg-gray-800/40 rounded px-2 py-1">
+                    <span className="text-gray-500">Imported: </span>
+                    <span className="text-emerald-400">{consumeResult.imported}</span>
+                    {consumeResult.skipped > 0 && <span className="text-gray-500"> ({consumeResult.skipped} existing)</span>}
+                  </div>
+                  <div className="bg-gray-800/40 rounded px-2 py-1">
+                    <span className="text-gray-500">Users: </span>
+                    <span className="text-purple-400">+{consumeResult.users_registered}</span>
+                  </div>
+                </div>
+                {consumeResult.breakdown && (
+                  <p className="text-[10px] text-gray-500">
+                    {consumeResult.breakdown.roots} roots · {consumeResult.breakdown.profiles} profiles · {consumeResult.breakdown.keywords} keywords
+                  </p>
+                )}
+                {consumeResult.timestamp && consumeResult.timestamp !== 'unknown' && (
+                  <p className="text-[10px] text-gray-500">Snapshot created: {new Date(consumeResult.timestamp).toLocaleString()}</p>
+                )}
+                {consumeResult.has_previous ? (
+                  <p className="text-[10px] text-cyan-500 flex items-center gap-1">
+                    <FiExternalLink size={10} /> Chain continues — previous CID:
+                    <span className="font-mono text-cyan-400 cursor-pointer hover:underline"
+                          onClick={() => { setConsumeCid(consumeResult.previous_cid); }}
+                          title="Click to load into consume input">
+                      {consumeResult.previous_cid?.slice(0, 24)}...
+                    </span>
+                  </p>
+                ) : (
+                  <p className="text-[10px] text-emerald-500 flex items-center gap-1"><FiCheck size={10} /> Genesis snapshot — end of chain</p>
+                )}
+              </div>
+            )}
           </div>
         )}
       </div>
