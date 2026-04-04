@@ -83,6 +83,7 @@ export default function ActiveCall({
   const viaMeshRef = useRef(false);
   const meshRelaySenderStopRef = useRef(null);
   const meshRelayReceiverRef = useRef(null);
+  const answerAppliedRef = useRef(false);
   const [connectionRoute, setConnectionRoute] = useState(''); // visual route indicator
 
   // Audible tone management based on call state
@@ -185,12 +186,20 @@ export default function ActiveCall({
     // Wire up mesh callbacks for receiving signals during a call
     phone.setOnAnswer(({ from, sdp }) => {
       callLog('MESH', `ANSWER VIA MESH FROM ${from?.slice(0, 12)}`);
+      if (answerAppliedRef.current) {
+        callLog('WARN', 'DUPLICATE MESH ANSWER IGNORED');
+        return;
+      }
       const pc = pcRef.current;
       if (pc && sdp) {
+        answerAppliedRef.current = true;
         applyAnswer(pc, sdp).then(() => {
           callLog('SDP', 'MESH ANSWER APPLIED');
           setCallState('connecting');
-        }).catch(e => callLog('ERROR', `MESH ANSWER FAILED: ${e.message}`));
+        }).catch(e => {
+          callLog('ERROR', `MESH ANSWER FAILED: ${e.message}`);
+          answerAppliedRef.current = false;
+        });
       }
     });
 
@@ -291,6 +300,7 @@ export default function ActiveCall({
 
     try {
       setCallState('initiating');
+      answerAppliedRef.current = false;
       callLog('INFO', `REQUESTING ${isVideo ? 'CAMERA + MICROPHONE' : 'MICROPHONE'} ACCESS...`);
       let pc, localStream;
       try {
@@ -383,17 +393,25 @@ export default function ActiveCall({
         const signalAddrs = [signal.from, ...(signal.inputAddresses || [])];
         if (signalAddrs.includes(userAddress)) return;
         if (signal.type === 'ANSW') {
+          // Guard: only apply the first answer — ignore duplicates/stale answers
+          if (answerAppliedRef.current) {
+            callLog('WARN', `DUPLICATE ANSW IGNORED (answer already applied) | txid=${signal.txid?.slice(0, 12)}`);
+            return;
+          }
           try {
             callLog('RX', 'ANSW DETECTED IN MEMPOOL — DECRYPTING...');
             const decrypted = await decryptCallSignal(signal, privateKeyBytes);
             if (decrypted?.type === 'ANSW') {
               callLog('SDP', `ANSW DECRYPTED — ${decrypted.sdp.length} bytes`);
+              answerAppliedRef.current = true;
               await applyAnswer(pc, decrypted.sdp);
               setCallState('connecting');
               callLog('ICE', 'REMOTE SDP APPLIED — ICE IN PROGRESS');
             }
           } catch (e) {
             callLog('ERROR', `ANSW FAILED: ${e.message}`);
+            // If apply failed, allow retry with next answer
+            answerAppliedRef.current = false;
           }
         }
       });
