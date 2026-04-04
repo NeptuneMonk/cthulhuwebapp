@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { FiSettings, FiAlertCircle, FiMessageSquare, FiBarChart2, FiLogOut, FiLock, FiSave, FiRefreshCw, FiChevronDown, FiChevronUp, FiSend, FiTrash2, FiKey, FiActivity, FiFilm, FiCpu, FiDatabase, FiGlobe, FiMusic, FiPhone, FiZap, FiDollarSign, FiFile, FiEdit, FiCheck, FiX, FiCopy, FiUpload, FiPlus, FiExternalLink, FiLoader, FiBriefcase, FiPackage, FiHardDrive, FiDownload, FiPlay, FiPause, FiRadio } from 'react-icons/fi';
+import { FiSettings, FiAlertCircle, FiMessageSquare, FiBarChart2, FiLogOut, FiLock, FiSave, FiRefreshCw, FiChevronDown, FiChevronUp, FiSend, FiTrash2, FiKey, FiActivity, FiFilm, FiCpu, FiDatabase, FiGlobe, FiMusic, FiPhone, FiZap, FiDollarSign, FiFile, FiEdit, FiCheck, FiX, FiCopy, FiUpload, FiPlus, FiExternalLink, FiLoader, FiBriefcase, FiPackage, FiHardDrive, FiDownload, FiPlay, FiPause, FiRadio, FiShield } from 'react-icons/fi';
 import { getCallLogs, clearCallLogs, exportCallLogs } from '@/utils/callDebugLog';
 import AdminWalletPanel from '@/components/admin/AdminWalletPanel';
 import CheckpointPanel from '@/components/admin/CheckpointPanel';
@@ -1278,6 +1278,11 @@ function SnapshotPanel({ network }) {
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState(null);
   const importFileRef = useRef(null);
+  const [cidHealth, setCidHealth] = useState({});
+  const [verifyingCids, setVerifyingCids] = useState(false);
+  const [repinningCid, setRepinningCid] = useState(null);
+  const [etchingCid, setEtchingCid] = useState(null);
+  const [etchResult, setEtchResult] = useState(null);
 
   const fetchStatus = useCallback(async () => {
     try {
@@ -1356,6 +1361,49 @@ function SnapshotPanel({ network }) {
     }
     setImporting(false);
     if (importFileRef.current) importFileRef.current.value = '';
+  };
+
+  const verifyCids = async (snapshotList) => {
+    setVerifyingCids(true);
+    const health = {};
+    for (const s of snapshotList) {
+      try {
+        const res = await fetch(`${ROOT_API}/snapshot/verify-cid?cid=${encodeURIComponent(s.cid)}`, { method: 'POST' });
+        if (res.ok) health[s.cid] = await res.json();
+        else health[s.cid] = { pinned_local: false, available_public: false };
+      } catch {
+        health[s.cid] = { pinned_local: false, available_public: false };
+      }
+    }
+    setCidHealth(health);
+    setVerifyingCids(false);
+  };
+
+  const repinCid = async (cid) => {
+    setRepinningCid(cid);
+    try {
+      const res = await fetch(`${ROOT_API}/snapshot/repin-cid?cid=${encodeURIComponent(cid)}`, { method: 'POST' });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success) {
+          setCidHealth(prev => ({ ...prev, [cid]: { ...prev[cid], pinned_local: true } }));
+        }
+      }
+    } catch {}
+    setRepinningCid(null);
+  };
+
+  const etchCid = async (cid) => {
+    setEtchingCid(cid);
+    setEtchResult(null);
+    try {
+      const res = await fetch(`${ROOT_API}/snapshot/etch-cid?cid=${encodeURIComponent(cid)}`, { method: 'POST' });
+      const data = await res.json();
+      setEtchResult({ cid, ...data });
+    } catch (err) {
+      setEtchResult({ cid, error: err.message });
+    }
+    setEtchingCid(null);
   };
 
   const produceSnapshot = async () => {
@@ -1704,10 +1752,36 @@ function SnapshotPanel({ network }) {
       {/* Snapshot History (Daisy Chain) */}
       {snapshots.length > 0 && (
         <div className="bg-gray-900/60 border border-gray-800 rounded-xl p-5">
-          <h3 className="text-sm font-bold text-gray-200 mb-3">Snapshot Chain</h3>
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-bold text-gray-200">Snapshot Chain</h3>
+            <button
+              onClick={() => verifyCids(snapshots)}
+              disabled={verifyingCids}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-medium bg-gray-800 hover:bg-gray-700 text-gray-300 border border-gray-700 transition-colors disabled:opacity-50"
+              data-testid="verify-cids-btn"
+            >
+              {verifyingCids ? <FiLoader size={10} className="animate-spin" /> : <FiShield size={10} />}
+              {verifyingCids ? 'Checking...' : 'Verify All CIDs'}
+            </button>
+          </div>
+
+          {/* Etch result banner */}
+          {etchResult && (
+            <div className={`mb-3 p-3 rounded-lg text-xs ${etchResult.error ? 'bg-red-900/20 text-red-400 border border-red-800/30' : 'bg-emerald-900/20 text-emerald-400 border border-emerald-800/30'}`}
+                 data-testid="etch-result">
+              {etchResult.error
+                ? `Etch failed: ${etchResult.error}`
+                : <>Etched on-chain! TXID: <a href={`https://mempool.space/testnet/tx/${etchResult.txid}`} target="_blank" rel="noreferrer" className="underline hover:text-emerald-300">{etchResult.txid?.slice(0, 20)}...</a> · Cost: {etchResult.cost_sats} sats</>
+              }
+            </div>
+          )}
+
           <div className="space-y-2">
-            {snapshots.map((s, i) => (
-              <div key={i} className="flex items-start gap-3">
+            {snapshots.map((s, i) => {
+              const health = cidHealth[s.cid];
+              const isLatest = i === 0;
+              return (
+              <div key={i} className="flex items-start gap-3" data-testid={`snapshot-row-${i}`}>
                 {/* Chain connector */}
                 <div className="flex flex-col items-center pt-1">
                   <div className={`w-3 h-3 rounded-full border-2 ${s.type === 'delta' ? 'bg-amber-500 border-amber-300/30' : 'bg-emerald-500 border-emerald-300/30'}`} />
@@ -1719,28 +1793,83 @@ function SnapshotPanel({ network }) {
                       <span className={`text-[9px] px-1.5 py-0.5 rounded font-medium ${s.type === 'delta' ? 'bg-amber-900/30 text-amber-400' : 'bg-emerald-900/30 text-emerald-400'}`}>
                         {s.type || 'full'}
                       </span>
-                      <span className="text-xs font-mono text-emerald-400 truncate max-w-[220px]" title={s.cid}>{s.cid}</span>
+                      {/* CID Health indicators */}
+                      {health && (
+                        <div className="flex items-center gap-1">
+                          <span title={health.pinned_local ? 'Pinned locally' : 'NOT pinned locally'}
+                                className={`w-2 h-2 rounded-full ${health.pinned_local ? 'bg-emerald-400' : 'bg-red-500'}`}
+                                data-testid={`health-local-${i}`} />
+                          <span title={health.available_public ? 'Available on public gateway' : 'NOT available publicly'}
+                                className={`w-2 h-2 rounded-full ${health.available_public ? 'bg-cyan-400' : 'bg-red-500'}`}
+                                data-testid={`health-public-${i}`} />
+                        </div>
+                      )}
+                      {health && !health.pinned_local && !health.available_public && (
+                        <span className="text-[9px] text-red-400 font-medium animate-pulse">LOST</span>
+                      )}
+                      <span className="text-xs font-mono text-emerald-400 truncate max-w-[180px]" title={s.cid}>{s.cid}</span>
                     </div>
-                    <button
-                      onClick={() => { navigator.clipboard.writeText(s.cid); }}
-                      className="text-gray-600 hover:text-gray-300 p-1"
-                      title="Copy CID"
-                    >
-                      <FiCopy size={10} />
-                    </button>
+                    <div className="flex items-center gap-1">
+                      {/* Re-pin button (if not pinned locally) */}
+                      {health && !health.pinned_local && (
+                        <button
+                          onClick={() => repinCid(s.cid)}
+                          disabled={repinningCid === s.cid}
+                          className="text-amber-400 hover:text-amber-300 p-1 disabled:opacity-50"
+                          title="Re-pin to local IPFS node"
+                          data-testid={`repin-btn-${i}`}
+                        >
+                          {repinningCid === s.cid ? <FiLoader size={10} className="animate-spin" /> : <FiDownload size={10} />}
+                        </button>
+                      )}
+                      {/* Etch to chain button */}
+                      <button
+                        onClick={() => etchCid(s.cid)}
+                        disabled={etchingCid === s.cid}
+                        className={`p-1 transition-colors disabled:opacity-50 ${isLatest ? 'text-purple-400 hover:text-purple-300' : 'text-gray-600 hover:text-gray-400'}`}
+                        title={`Etch CID on-chain${isLatest ? ' (latest — gives access to full chain)' : ''}`}
+                        data-testid={`etch-btn-${i}`}
+                      >
+                        {etchingCid === s.cid ? <FiLoader size={10} className="animate-spin" /> : <FiZap size={10} />}
+                      </button>
+                      <button
+                        onClick={() => { navigator.clipboard.writeText(s.cid); }}
+                        className="text-gray-600 hover:text-gray-300 p-1"
+                        title="Copy CID"
+                      >
+                        <FiCopy size={10} />
+                      </button>
+                    </div>
                   </div>
                   <div className="flex gap-4 mt-1 text-[10px] text-gray-500">
                     <span>{s.root_count} roots</span>
                     <span>{s.size_bytes ? `${(s.size_bytes/1024).toFixed(0)}KB` : '-'}</span>
                     <span>{s.created_at ? new Date(s.created_at).toLocaleString() : ''}</span>
+                    {health && (
+                      <span className="flex items-center gap-1">
+                        {health.pinned_local && <span className="text-emerald-500">local</span>}
+                        {health.available_public && <span className="text-cyan-500">public</span>}
+                      </span>
+                    )}
                   </div>
                   {s.previous_cid && (
                     <p className="text-[9px] text-gray-600 mt-1 font-mono truncate" title={s.previous_cid}>← {s.previous_cid}</p>
                   )}
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
+
+          {/* Legend */}
+          {Object.keys(cidHealth).length > 0 && (
+            <div className="flex items-center gap-4 mt-3 pt-3 border-t border-gray-800 text-[10px] text-gray-500">
+              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-400" /> Pinned Local</span>
+              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-cyan-400" /> Public Gateway</span>
+              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-500" /> Unavailable</span>
+              <span className="flex items-center gap-1"><FiZap size={10} className="text-purple-400" /> Etch to Chain</span>
+            </div>
+          )}
         </div>
       )}
     </div>

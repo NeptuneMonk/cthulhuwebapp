@@ -1016,6 +1016,83 @@ async def produce_snapshot(
     return result
 
 
+@router.post("/verify-cid")
+async def verify_cid(cid: str = Query(...)):
+    """Check if a CID is pinned locally (Kubo) and reachable on a public gateway."""
+    client = get_client()
+    result = {"cid": cid, "pinned_local": False, "available_public": False}
+
+    # Check local Kubo pin
+    try:
+        resp = await client.post(
+            "http://127.0.0.1:5001/api/v0/pin/ls",
+            params={"arg": cid, "type": "recursive"},
+            timeout=10.0,
+        )
+        if resp.status_code == 200:
+            data = resp.json()
+            keys = data.get("Keys", {})
+            result["pinned_local"] = cid in keys
+    except Exception:
+        pass
+
+    # Check public gateway reachability (HEAD request, fast timeout)
+    try:
+        resp = await client.head(f"https://ipfs.io/ipfs/{cid}", timeout=15.0, follow_redirects=True)
+        result["available_public"] = resp.status_code == 200
+    except Exception:
+        pass
+
+    return result
+
+
+@router.post("/repin-cid")
+async def repin_cid(cid: str = Query(...)):
+    """Re-pin a CID to the local Kubo daemon (fetches from public gateways if needed)."""
+    client = get_client()
+    try:
+        resp = await client.post(
+            "http://127.0.0.1:5001/api/v0/pin/add",
+            params={"arg": cid},
+            timeout=120.0,
+        )
+        if resp.status_code == 200:
+            data = resp.json()
+            pins = data.get("Pins", [])
+            return {"success": True, "pinned": cid in pins, "pins": pins}
+        return {"success": False, "error": f"Kubo returned {resp.status_code}"}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@router.post("/etch-cid")
+async def etch_cid_onchain(cid: str = Query(...)):
+    """Manually etch a snapshot CID on-chain via the treasury wallet.
+    This immortalizes the index state so any node can discover it."""
+    await _ensure_snapshot_table()
+    conn = await get_conn()
+
+    # Verify CID exists in our snapshot history
+    async with conn.execute("SELECT chain, type, root_count FROM snapshots WHERE cid = ?", (cid,)) as cursor:
+        row = await cursor.fetchone()
+    if not row:
+        return {"error": "CID not found in snapshot history"}
+
+    chain, snap_type, root_count = row
+
+    # Call the existing announce function (bypassing cooldown for manual etch)
+    saved_last = _announce_state["last_announced_at"]
+    _announce_state["last_announced_at"] = None  # bypass cooldown
+
+    result = await _announce_cid_onchain(cid, chain, snap_type, root_count or 0)
+
+    if not result.get("success"):
+        # Restore cooldown state if failed
+        _announce_state["last_announced_at"] = saved_last
+
+    return result
+
+
 @router.post("/consume")
 async def consume_snapshot(
     cid: str = Query(..., description="IPFS CID of the snapshot to consume"),
