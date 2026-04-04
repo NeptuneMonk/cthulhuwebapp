@@ -24,6 +24,7 @@ Build a modern, responsive frontend for a blockchain-based decentralized social 
 - WebRTC mesh relay gossip
 
 ## Recently Completed (April 2026)
+- **P0: Admin Vacuum Controls** — Added graceful vacuum stop (kill switch), network selector (testnet/mainnet), and snapshot history export/import for porting between instances (preview → live). Backend: `POST /api/snapshot/vacuum/stop`, `GET /api/snapshot/history/export`, `POST /api/snapshot/history/import`. Frontend: Stop button, network dropdown, Export/Import UI in Admin Dashboard Chain Snapshots tab. (Tested: iteration_238, 100% pass)
 - **P0 Fix: IPFS Deployment Failure** — Bundled Kubo IPFS binaries (amd64 + arm64) in `/app/backend/bin/`. Download fallback URL changed from `dist.ipfs.tech` (502) to GitHub releases.
 - **P0 Fix: Releases Route MongoDB→SQLite** — Rewrote `routes/releases.py` to use SQLite via `get_conn()` instead of MongoDB. Added migration for existing tables missing columns. Created `build_package.py` script.
 - **P0 Fix: "Unnamed" Object View** — Added data validation and self-healing re-fetch to SingleObjectPage.
@@ -63,6 +64,9 @@ Build a modern, responsive frontend for a blockchain-based decentralized social 
 - `GET /api/profile/{address}` — Fetch profile data
 - `GET /api/object/addr/{address}?fresh=true` — Fetch object with cache bypass
 - `GET /api/polls/{network}?fresh=true` — Fetch polls with cache bypass
+- `POST /api/snapshot/vacuum/stop` — Gracefully stop running vacuum (NEW)
+- `GET /api/snapshot/history/export` — Export snapshot history as JSON (NEW)
+- `POST /api/snapshot/history/import` — Import snapshot history from JSON (NEW)
 
 ## DB Schema (SQLite)
 - `api_cache`, `known_users`, `object_cache`, `p2fk_snapshot_history`, `burned_objects`
