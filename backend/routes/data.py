@@ -127,13 +127,16 @@ async def root():
 
 @router.get("/health")
 async def health_check():
-    """Real health check — verify MongoDB and IPFS daemon connectivity."""
+    """Real health check — verify SQLite and IPFS daemon connectivity."""
     health = {"status": "healthy", "services": {}}
     try:
-        await db.command("ping")
-        health["services"]["mongodb"] = "up"
+        from db_sqlite import get_conn
+        conn = await get_conn()
+        async with conn.execute("SELECT 1") as cursor:
+            await cursor.fetchone()
+        health["services"]["sqlite"] = "up"
     except Exception:
-        health["services"]["mongodb"] = "down"
+        health["services"]["sqlite"] = "down"
         health["status"] = "degraded"
     try:
         from utils.http_pool import get_client

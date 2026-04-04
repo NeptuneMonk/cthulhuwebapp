@@ -873,7 +873,7 @@ function SystemStatsPanel() {
   if (error) return <div className="text-red-400 text-sm">{error}</div>;
   if (!stats) return null;
 
-  const { tracker, mongodb, system } = stats;
+  const { tracker, sqlite, system } = stats;
 
   return (
     <div className="space-y-6" data-testid="system-stats-panel">
@@ -969,29 +969,25 @@ function SystemStatsPanel() {
         </div>
       )}
 
-      {/* MongoDB Collections */}
+      {/* SQLite Tables */}
       <div>
         <h3 className="text-sm font-bold text-gray-200 flex items-center gap-2 mb-3">
-          <FiDatabase size={14} className="text-green-400" /> MongoDB Cache
-          <span className="text-[10px] text-gray-600 font-normal ml-2">Total: {mongodb.total_data_size_mb}MB across {mongodb.total_documents} docs</span>
+          <FiDatabase size={14} className="text-green-400" /> SQLite Database
+          <span className="text-[10px] text-gray-600 font-normal ml-2">{sqlite?.db_size_mb}MB · {sqlite?.total_rows?.toLocaleString()} rows</span>
         </h3>
         <div className="bg-gray-900/60 border border-gray-800/50 rounded-xl overflow-hidden">
           <table className="w-full text-xs">
             <thead>
               <tr className="border-b border-gray-800/50">
-                <th className="text-left py-2 px-3 text-gray-500 font-medium">Collection</th>
-                <th className="text-right py-2 px-3 text-gray-500 font-medium">Documents</th>
-                <th className="text-right py-2 px-3 text-gray-500 font-medium">Data Size</th>
-                <th className="text-right py-2 px-3 text-gray-500 font-medium">Storage</th>
+                <th className="text-left py-2 px-3 text-gray-500 font-medium">Table</th>
+                <th className="text-right py-2 px-3 text-gray-500 font-medium">Rows</th>
               </tr>
             </thead>
             <tbody>
-              {Object.entries(mongodb.collections || {}).sort((a, b) => b[1].data_size_mb - a[1].data_size_mb).map(([name, col]) => (
+              {Object.entries(sqlite?.tables || {}).sort((a, b) => b[1].documents - a[1].documents).map(([name, tbl]) => (
                 <tr key={name} className="border-b border-gray-800/30 hover:bg-gray-800/30">
                   <td className="py-1.5 px-3 text-gray-300 font-mono">{name}</td>
-                  <td className="py-1.5 px-3 text-right text-green-400">{col.documents.toLocaleString()}</td>
-                  <td className="py-1.5 px-3 text-right text-gray-400">{col.data_size_mb}MB</td>
-                  <td className="py-1.5 px-3 text-right text-gray-500">{col.storage_size_mb}MB</td>
+                  <td className="py-1.5 px-3 text-right text-green-400">{tbl.documents.toLocaleString()}</td>
                 </tr>
               ))}
             </tbody>

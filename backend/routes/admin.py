@@ -517,33 +517,43 @@ async def get_dashboard_stats(_=Depends(_verify_admin)):
 
 @router.get("/system-stats")
 async def get_system_stats(_=Depends(_verify_admin)):
-    """Full system stats: external API calls, cache metrics, MongoDB sizes, CPU/memory."""
+    """Full system stats: external API calls, cache metrics, SQLite table sizes, CPU/memory."""
     import psutil
     from utils.stats_tracker import get_stats
+    from db_sqlite import get_conn, DB_PATH
 
     # 1. In-memory call/cache stats
     tracker_stats = get_stats()
 
-    # 2. MongoDB collection sizes
-    collection_names = await db.list_collection_names()
-    mongo_stats = {}
+    # 2. SQLite table stats
+    conn = await get_conn()
+    table_stats = {}
     total_docs = 0
     total_size_bytes = 0
-    for col_name in sorted(collection_names):
-        try:
-            stats = await db.command("collStats", col_name)
-            doc_count = stats.get("count", 0)
-            size = stats.get("size", 0)  # data size in bytes
-            storage = stats.get("storageSize", 0)
-            mongo_stats[col_name] = {
-                "documents": doc_count,
-                "data_size_mb": round(size / 1024 / 1024, 2),
-                "storage_size_mb": round(storage / 1024 / 1024, 2),
-            }
-            total_docs += doc_count
-            total_size_bytes += size
-        except Exception:
-            mongo_stats[col_name] = {"documents": 0, "data_size_mb": 0, "storage_size_mb": 0}
+
+    try:
+        async with conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+        ) as cursor:
+            table_names = [row[0] for row in await cursor.fetchall()]
+
+        for tbl in sorted(table_names):
+            try:
+                async with conn.execute(f'SELECT COUNT(*) FROM "{tbl}"') as cursor:
+                    doc_count = (await cursor.fetchone())[0]
+                table_stats[tbl] = {
+                    "documents": doc_count,
+                }
+                total_docs += doc_count
+            except Exception:
+                table_stats[tbl] = {"documents": 0}
+
+        # Get overall DB file size
+        import os
+        db_size_bytes = os.path.getsize(str(DB_PATH)) if DB_PATH.exists() else 0
+        total_size_bytes = db_size_bytes
+    except Exception as e:
+        logger.warning(f"SQLite stats error: {e}")
 
     # 3. System resources
     cpu_percent = psutil.cpu_percent(interval=0.5)
@@ -565,10 +575,10 @@ async def get_system_stats(_=Depends(_verify_admin)):
 
     return {
         "tracker": tracker_stats,
-        "mongodb": {
-            "collections": mongo_stats,
-            "total_documents": total_docs,
-            "total_data_size_mb": round(total_size_bytes / 1024 / 1024, 2),
+        "sqlite": {
+            "tables": table_stats,
+            "total_rows": total_docs,
+            "db_size_mb": round(total_size_bytes / 1024 / 1024, 2),
         },
         "system": system,
     }
