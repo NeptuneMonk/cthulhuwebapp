@@ -48,11 +48,44 @@ export function useOffchainDM(partnerAddr, myAddress, myUrn, partnerProfile, pri
   const checkTimerRef = useRef(null);
   const meshListenerSetRef = useRef(false);
 
-  // Load cached messages on mount
+  // Load cached messages on mount + fetch inbox (missed while offline)
   useEffect(() => {
-    if (!roomKey) return;
-    getRoomMessages(roomKey).then(msgs => setOffchainMessages(msgs));
-  }, [roomKey]);
+    if (!roomKey || !myAddress) return;
+    (async () => {
+      // 1. Load local cache
+      const cached = await getRoomMessages(roomKey);
+      setOffchainMessages(cached);
+
+      // 2. Fetch messages missed while offline from server inbox
+      try {
+        const lastTs = cached.length > 0
+          ? cached[cached.length - 1].timestamp
+          : '';
+        const params = lastTs ? `?since=${encodeURIComponent(lastTs)}` : '';
+        const res = await fetch(`${API}/api/chat/inbox/${myAddress}${params}`);
+        if (res.ok) {
+          const data = await res.json();
+          const missed = data.rooms?.[roomKey] || [];
+          for (const msg of missed) {
+            const incoming = {
+              id: msg.msg_id,
+              room: roomKey,
+              sender: msg.sender,
+              senderUrn: msg.senderUrn || '',
+              content: msg.content,
+              encrypted: msg.encrypted,
+              timestamp: msg.timestamp,
+              type: 'text',
+              source: 'inbox',
+            };
+            await handleIncomingMessage(incoming);
+          }
+        }
+      } catch (e) {
+        console.warn('[useOffchainDM] Inbox fetch failed:', e.message);
+      }
+    })();
+  }, [roomKey, myAddress]);
 
   // Handle incoming encrypted message from any transport
   const handleIncomingMessage = useCallback(async (msg) => {
@@ -100,6 +133,8 @@ export function useOffchainDM(partnerAddr, myAddress, myUrn, partnerProfile, pri
     ws.onopen = () => {
       wsConnectedRef.current = true;
       ws.send(JSON.stringify({ type: 'join', address: myAddress, urn: myUrn }));
+      // Mark room as read on the server (user is actively viewing this DM)
+      fetch(`${API}/api/chat/mark-read/${roomKey}?address=${myAddress}`, { method: 'POST' }).catch(() => {});
     };
 
     ws.onmessage = (event) => {

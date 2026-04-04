@@ -221,6 +221,66 @@ async def mark_room_read(room_address: str, address: str = ""):
     return {"success": True}
 
 
+@router.get("/inbox/{address}")
+async def get_inbox(address: str, since: str = ""):
+    """Return messages sent to rooms this user is registered in while they were away.
+    `since` is an ISO timestamp — only returns messages newer than this.
+    Messages are returned grouped by room with sender info."""
+    if not address or not ADDRESS_RE.match(address):
+        return {"rooms": {}, "total": 0}
+
+    # Find all rooms this user is in
+    cursor = db.chat_unread.find(
+        {"address": address},
+        {"_id": 0, "room": 1, "last_read": 1},
+    )
+    user_rooms = {}
+    async for r in cursor:
+        user_rooms[r["room"]] = r.get("last_read", "")
+
+    if not user_rooms:
+        return {"rooms": {}, "total": 0}
+
+    # For each room, fetch messages newer than last_read (or since param)
+    result = {}
+    total = 0
+    for room, last_read in user_rooms.items():
+        cutoff = since if since else last_read
+        query = {
+            "room": room,
+            "sender": {"$ne": address},  # Don't return user's own messages
+        }
+        if cutoff:
+            query["timestamp"] = {"$gt": cutoff}
+
+        msgs_cursor = db.chat_relay_messages.find(
+            query,
+            {"_id": 0, "room": 1, "msg_id": 1, "content": 1, "encrypted": 1,
+             "sender": 1, "senderUrn": 1, "timestamp": 1},
+        ).sort("timestamp", 1).limit(200)
+
+        msgs = await msgs_cursor.to_list(200)
+        if msgs:
+            result[room] = msgs
+            total += len(msgs)
+
+    return {"rooms": result, "total": total}
+
+
+@router.get("/unread/{address}")
+async def get_unread_counts(address: str):
+    """Return unread message counts per room for an address."""
+    if not address or not ADDRESS_RE.match(address):
+        return {"rooms": []}
+
+    cursor = db.chat_unread.find(
+        {"address": address, "unread_count": {"$gt": 0}},
+        {"_id": 0, "room": 1, "unread_count": 1},
+    )
+    rooms = await cursor.to_list(50)
+    return {"rooms": rooms}
+
+
 @router.post("/register-room")
 async def register_for_room(address: str = "", room: str = ""):
     """Register a user for unread tracking in a room (called on first visit)."""

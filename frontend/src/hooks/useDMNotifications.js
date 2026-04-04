@@ -66,6 +66,22 @@ export function useDMNotifications(network) {
         }
       }
       setUnreadDM(newUnreadDM);
+
+      // Also merge server-side unread counts from chat relay (P2P instant msgs missed while offline)
+      try {
+        const inboxRes = await fetch(`${API}/api/chat/unread/${myAddress}`);
+        if (inboxRes.ok) {
+          const inboxData = await inboxRes.json();
+          for (const room of (inboxData.rooms || [])) {
+            const count = room.unread_count || 0;
+            if (count > 0 && room.room) {
+              // Room address is the partner address for 1-on-1 DMs
+              newUnreadDM[room.room] = (newUnreadDM[room.room] || 0) + count;
+            }
+          }
+          setUnreadDM({ ...newUnreadDM });
+        }
+      } catch {}
     } catch (e) {
       // silent
     }
