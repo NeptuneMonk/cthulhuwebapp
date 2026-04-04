@@ -43,6 +43,8 @@ _vacuum_state = {
     "started_at": None,
     "last_update": None,
     "log": [],
+    "stop_requested": False,
+    "network": None,
 }
 
 
@@ -406,7 +408,7 @@ async def _vacuum_crawl_address(address: str, mainnet: bool, network: str):
         if isinstance(roots, list):
             return len(roots)
         return 0
-    except Exception as e:
+    except Exception:
         _vacuum_state["errors"] += 1
         return 0
 
@@ -444,6 +446,8 @@ async def _run_vacuum(network: str = "btc-testnet"):
         "errors": 0,
         "started_at": time.time(),
         "log": [],
+        "stop_requested": False,
+        "network": network,
     })
 
     try:
@@ -452,7 +456,11 @@ async def _run_vacuum(network: str = "btc-testnet"):
         _vlog(f"VACUUM CRASHED: {e}")
         _vacuum_state["phase"] = "error"
     finally:
+        if _vacuum_state["stop_requested"]:
+            _vlog("Vacuum stopped by admin")
+            _vacuum_state["phase"] = "stopped"
         _vacuum_state["running"] = False
+        _vacuum_state["stop_requested"] = False
 
 
 async def _run_vacuum_inner(network: str):
@@ -468,6 +476,9 @@ async def _run_vacuum_inner(network: str):
     discovered_addresses = set()
 
     for i, addr in enumerate(seeds):
+        if _vacuum_state["stop_requested"]:
+            _vlog("Stop requested during seed crawl")
+            return
         _vacuum_state["progress"] = i + 1
         _vlog(f"Seed {i+1}/{len(seeds)}: {addr[:20]}...")
 
@@ -490,7 +501,7 @@ async def _run_vacuum_inner(network: str):
                     await _register_burned_object(addr, root.get("TransactionId", ""), network)
         else:
             _vacuum_state["errors"] += 1
-            _vlog(f"  → failed or empty")
+            _vlog("  → failed or empty")
 
         _vacuum_state["crawled"] += 1
         await asyncio.sleep(_RATE_INTERVAL)
@@ -528,6 +539,9 @@ async def _run_vacuum_inner(network: str):
     roots_found = 0
 
     for i, addr in enumerate(disc_for_roots):
+        if _vacuum_state["stop_requested"]:
+            _vlog("Stop requested during deep root crawl")
+            return
         _vacuum_state["progress"] = i + 1
         if i % 50 == 0:
             _vlog(f"Deep roots: {i}/{len(disc_for_roots)} (+{len(deep_discovered)} new addresses)")
@@ -571,6 +585,9 @@ async def _run_vacuum_inner(network: str):
     _vacuum_state["progress"] = 0
 
     for i, addr in enumerate(disc_list):
+        if _vacuum_state["stop_requested"]:
+            _vlog("Stop requested during profile crawl")
+            return
         _vacuum_state["progress"] = i + 1
         if i % 20 == 0:
             _vlog(f"Profiles: {i}/{len(disc_list)}")
@@ -598,6 +615,9 @@ async def _run_vacuum_inner(network: str):
     _vacuum_state["total"] = len(disc_list)
 
     for i, addr in enumerate(disc_list):
+        if _vacuum_state["stop_requested"]:
+            _vlog("Stop requested during object crawl")
+            return
         _vacuum_state["progress"] = i + 1
         if i % 20 == 0:
             _vlog(f"Objects: {i}/{len(disc_list)}")
@@ -617,6 +637,9 @@ async def _run_vacuum_inner(network: str):
     _vacuum_state["progress"] = 0
 
     for i, kw in enumerate(common_keywords):
+        if _vacuum_state["stop_requested"]:
+            _vlog("Stop requested during keyword crawl")
+            return
         _vacuum_state["progress"] = i + 1
         try:
             await p2fk_get("GetKnownRootsBySearchString", mainnet, {"search": kw, "qty": 50})
@@ -946,6 +969,8 @@ async def vacuum_status():
             "crawled": _vacuum_state["crawled"],
             "errors": _vacuum_state["errors"],
             "started_at": _vacuum_state["started_at"],
+            "stop_requested": _vacuum_state["stop_requested"],
+            "network": _vacuum_state.get("network"),
             "log": _vacuum_state["log"][-20:],
         },
         "cache": {
@@ -969,6 +994,17 @@ async def start_vacuum(
     return {"started": True, "network": network}
 
 
+@router.post("/vacuum/stop")
+async def stop_vacuum():
+    """Gracefully stop a running vacuum crawl."""
+    if not _vacuum_state["running"]:
+        return {"error": "No vacuum is currently running", "phase": _vacuum_state["phase"]}
+
+    _vacuum_state["stop_requested"] = True
+    _vlog("Stop requested by admin — will halt after current crawl item")
+    return {"stopping": True, "phase": _vacuum_state["phase"]}
+
+
 @router.post("/produce")
 async def produce_snapshot(
     network: str = Query("btc-testnet"),
@@ -988,6 +1024,92 @@ async def consume_snapshot(
     """Fetch a snapshot from IPFS and hydrate the local cache."""
     result = await _consume_snapshot(cid, network)
     return result
+
+
+@router.get("/history/export")
+async def export_snapshot_history():
+    """Export the full snapshot history table as JSON for porting to another instance."""
+    await _ensure_snapshot_table()
+    conn = await get_conn()
+
+    async with conn.execute(
+        "SELECT id, cid, block_height, chain, type, root_count, size_bytes, previous_cid, created_at FROM snapshots ORDER BY id ASC"
+    ) as cursor:
+        snapshots = [
+            {"id": r[0], "cid": r[1], "block_height": r[2], "chain": r[3], "type": r[4],
+             "root_count": r[5], "size_bytes": r[6], "previous_cid": r[7], "created_at": r[8]}
+            for r in await cursor.fetchall()
+        ]
+
+    async with conn.execute("SELECT txid, chain, snapshot_id FROM snapshot_txids") as cursor:
+        txids = [
+            {"txid": r[0], "chain": r[1], "snapshot_id": r[2]}
+            for r in await cursor.fetchall()
+        ]
+
+    return {
+        "version": SNAPSHOT_VERSION,
+        "exported_at": datetime.now(timezone.utc).isoformat(),
+        "snapshots": snapshots,
+        "snapshot_txids": txids,
+        "totals": {
+            "snapshots": len(snapshots),
+            "txids": len(txids),
+        },
+    }
+
+
+class SnapshotHistoryImport(BaseModel):
+    version: int = SNAPSHOT_VERSION
+    snapshots: list
+    snapshot_txids: list = []
+
+
+@router.post("/history/import")
+async def import_snapshot_history(payload: SnapshotHistoryImport):
+    """Import snapshot history from another instance (e.g., preview → live).
+    Uses INSERT OR IGNORE to avoid duplicating existing entries."""
+    await _ensure_snapshot_table()
+    conn = await get_conn()
+
+    imported_snaps = 0
+    imported_txids = 0
+
+    for s in payload.snapshots:
+        try:
+            await conn.execute(
+                """INSERT OR IGNORE INTO snapshots (cid, block_height, chain, type, root_count, size_bytes, previous_cid, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                (s["cid"], s.get("block_height", 0), s["chain"], s["type"],
+                 s.get("root_count", 0), s.get("size_bytes", 0), s.get("previous_cid"), s["created_at"]),
+            )
+            if conn.total_changes:
+                imported_snaps += 1
+        except Exception as e:
+            logger.warning(f"Snapshot history import error: {e}")
+
+    for t in payload.snapshot_txids:
+        try:
+            await conn.execute(
+                "INSERT OR IGNORE INTO snapshot_txids (txid, chain, snapshot_id) VALUES (?, ?, ?)",
+                (t["txid"], t["chain"], t.get("snapshot_id", 0)),
+            )
+            if conn.total_changes:
+                imported_txids += 1
+        except Exception:
+            pass
+
+    await conn.commit()
+
+    return {
+        "success": True,
+        "imported_snapshots": imported_snaps,
+        "imported_txids": imported_txids,
+        "total_in_payload": {
+            "snapshots": len(payload.snapshots),
+            "txids": len(payload.snapshot_txids),
+        },
+    }
 
 
 @router.get("/chain")

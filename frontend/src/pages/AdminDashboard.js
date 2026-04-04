@@ -1265,6 +1265,8 @@ function SnapshotPanel({ network }) {
   const [status, setStatus] = useState(null);
   const [loading, setLoading] = useState(true);
   const [vacuumStarting, setVacuumStarting] = useState(false);
+  const [vacuumStopping, setVacuumStopping] = useState(false);
+  const [vacuumNetwork, setVacuumNetwork] = useState(network);
   const [producing, setProducing] = useState(false);
   const [isDelta, setIsDelta] = useState(false);
   const [consumeCid, setConsumeCid] = useState('');
@@ -1272,6 +1274,10 @@ function SnapshotPanel({ network }) {
   const [consumeResult, setConsumeResult] = useState(null);
   const [bootstrapping, setBootstrapping] = useState(false);
   const [bootstrapResult, setBootstrapResult] = useState(null);
+  const [exporting, setExporting] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState(null);
+  const importFileRef = useRef(null);
 
   const fetchStatus = useCallback(async () => {
     try {
@@ -1290,10 +1296,66 @@ function SnapshotPanel({ network }) {
   const startVacuum = async () => {
     setVacuumStarting(true);
     try {
-      await fetch(`${ROOT_API}/snapshot/vacuum?network=${network}`, { method: 'POST' });
+      await fetch(`${ROOT_API}/snapshot/vacuum?network=${vacuumNetwork}`, { method: 'POST' });
       setTimeout(fetchStatus, 1000);
     } catch {}
     setVacuumStarting(false);
+  };
+
+  const stopVacuum = async () => {
+    setVacuumStopping(true);
+    try {
+      await fetch(`${ROOT_API}/snapshot/vacuum/stop`, { method: 'POST' });
+      setTimeout(fetchStatus, 1000);
+    } catch {}
+    setVacuumStopping(false);
+  };
+
+  const exportHistory = async () => {
+    setExporting(true);
+    try {
+      const res = await fetch(`${ROOT_API}/snapshot/history/export`);
+      if (res.ok) {
+        const data = await res.json();
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `cthulhu-snapshot-history-${new Date().toISOString().slice(0, 10)}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }
+    } catch {}
+    setExporting(false);
+  };
+
+  const importHistory = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImporting(true);
+    setImportResult(null);
+    try {
+      const text = await file.text();
+      const payload = JSON.parse(text);
+      const res = await fetch(`${ROOT_API}/snapshot/history/import`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setImportResult(data);
+        fetchStatus();
+      } else {
+        setImportResult({ error: `HTTP ${res.status}` });
+      }
+    } catch (err) {
+      setImportResult({ error: err.message });
+    }
+    setImporting(false);
+    if (importFileRef.current) importFileRef.current.value = '';
   };
 
   const produceSnapshot = async () => {
@@ -1409,34 +1471,56 @@ function SnapshotPanel({ network }) {
             <h3 className="text-sm font-bold text-gray-200">Vacuum p2fk.io</h3>
             <p className="text-[10px] text-gray-500">Crawl the full P2FK index at ~1.5 req/sec. Runs in background.</p>
           </div>
-          <button
-            onClick={startVacuum}
-            disabled={isVacuumRunning || vacuumStarting}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-medium transition-colors ${
-              isVacuumRunning
-                ? 'bg-amber-600/20 text-amber-400 border border-amber-700/30'
-                : 'bg-purple-600 hover:bg-purple-500 text-white'
-            } disabled:opacity-60`}
-            data-testid="start-vacuum-btn"
-          >
-            {isVacuumRunning ? (
-              <><FiLoader size={12} className="animate-spin" /> Running...</>
-            ) : (
-              <><FiPlay size={12} /> {vacuumStarting ? 'Starting...' : 'Start Vacuum'}</>
+          <div className="flex items-center gap-2">
+            {/* Network selector for vacuum */}
+            {!isVacuumRunning && (
+              <select
+                value={vacuumNetwork}
+                onChange={e => setVacuumNetwork(e.target.value)}
+                className="bg-gray-800 border border-gray-700 rounded-lg px-2 py-2 text-xs text-gray-200 focus:outline-none focus:border-purple-500"
+                data-testid="vacuum-network-select"
+              >
+                <option value="btc-testnet">Testnet</option>
+                <option value="btc-mainnet">Mainnet</option>
+              </select>
             )}
-          </button>
+            {isVacuumRunning ? (
+              <button
+                onClick={stopVacuum}
+                disabled={vacuumStopping || v?.stop_requested}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-medium transition-colors bg-red-600/20 text-red-400 border border-red-700/30 hover:bg-red-600/30 disabled:opacity-60"
+                data-testid="stop-vacuum-btn"
+              >
+                <FiX size={12} />
+                {v?.stop_requested ? 'Stopping...' : vacuumStopping ? 'Requesting...' : 'Stop Vacuum'}
+              </button>
+            ) : (
+              <button
+                onClick={startVacuum}
+                disabled={vacuumStarting}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-medium transition-colors bg-purple-600 hover:bg-purple-500 text-white disabled:opacity-60"
+                data-testid="start-vacuum-btn"
+              >
+                <FiPlay size={12} /> {vacuumStarting ? 'Starting...' : 'Start Vacuum'}
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Vacuum Progress */}
         {isVacuumRunning && (
           <div className="space-y-2 mt-3">
             <div className="flex items-center justify-between text-xs">
-              <span className="text-gray-400 capitalize">{v.phase?.replace(/_/g, ' ')}</span>
+              <span className="text-gray-400 capitalize">
+                {v.phase?.replace(/_/g, ' ')}
+                {v.network && <span className="text-gray-600 ml-1">({v.network})</span>}
+                {v.stop_requested && <span className="text-red-400 ml-2 animate-pulse">stopping...</span>}
+              </span>
               <span className="text-gray-500">{v.progress}/{v.total} · {v.crawled} crawled · {v.errors} errors</span>
             </div>
             <div className="h-2 rounded-full bg-gray-800 overflow-hidden">
               <div
-                className="h-full bg-purple-500 transition-all duration-500"
+                className={`h-full transition-all duration-500 ${v.stop_requested ? 'bg-red-500' : 'bg-purple-500'}`}
                 style={{ width: v.total > 0 ? `${(v.progress / v.total) * 100}%` : '0%' }}
               />
             </div>
@@ -1570,6 +1654,51 @@ function SnapshotPanel({ network }) {
 
         {/* On-Chain Discovery */}
         <OnChainDiscoverySection network={network} latestCid={snapshots[0]?.cid} />
+      </div>
+
+      {/* Snapshot History Export/Import */}
+      <div className="bg-gray-900/60 border border-gray-800 rounded-xl p-5">
+        <h3 className="text-sm font-bold text-gray-200 mb-1">Snapshot History Transfer</h3>
+        <p className="text-[10px] text-gray-500 mb-4">
+          Export your snapshot history to push it to another instance (e.g., preview → live), or import one to bootstrap the daisy-chain.
+        </p>
+        <div className="flex items-center gap-3 flex-wrap">
+          <button
+            onClick={exportHistory}
+            disabled={exporting || snapshots.length === 0}
+            className="flex items-center gap-2 px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg text-xs font-medium disabled:opacity-40 transition-colors"
+            data-testid="export-history-btn"
+          >
+            <FiUpload size={12} />
+            {exporting ? 'Exporting...' : `Export History (${snapshots.length})`}
+          </button>
+          <button
+            onClick={() => importFileRef.current?.click()}
+            disabled={importing}
+            className="flex items-center gap-2 px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-lg text-xs font-medium disabled:opacity-40 transition-colors"
+            data-testid="import-history-btn"
+          >
+            <FiDownload size={12} />
+            {importing ? 'Importing...' : 'Import History'}
+          </button>
+          <input
+            ref={importFileRef}
+            type="file"
+            accept=".json"
+            onChange={importHistory}
+            className="hidden"
+            data-testid="import-history-file-input"
+          />
+        </div>
+        {importResult && (
+          <div className={`mt-3 p-3 rounded-lg text-xs ${importResult.error ? 'bg-red-900/20 text-red-400' : 'bg-emerald-900/20 text-emerald-400'}`}
+               data-testid="import-result">
+            {importResult.error
+              ? `Error: ${importResult.error}`
+              : `Imported ${importResult.imported_snapshots} snapshots, ${importResult.imported_txids} tracked TXIDs`
+            }
+          </div>
+        )}
       </div>
 
       {/* Snapshot History (Daisy Chain) */}
