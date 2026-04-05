@@ -14,6 +14,7 @@ from utils.helpers import (
     register_known_user, get_known_addresses, format_profile,
     format_message, format_object_for_api,
     fetch_keyword_messages,
+    batch_verify_burns,
 )
 from utils.p2fk import txid_to_reply_address, derive_address_from_pkxy
 
@@ -1713,7 +1714,38 @@ async def proxy_search_objects(searchString: str = '', qty: int = 20, skip: int 
     data = await p2fk_get("GetKnownObjectsBySearchString", is_mainnet, {
         "searchString": searchString, "qty": str(qty), "skip": str(skip)
     })
-    return data if data is not None else []
+    results = data if data is not None else []
+    if not isinstance(results, list) or not results:
+        return results
+
+    # Filter burned objects from search results
+    try:
+        # Extract object addresses from wrapped {object, blockchain} or flat format
+        obj_addrs = []
+        for item in results:
+            obj = item.get('object', item) if isinstance(item, dict) else {}
+            creators = obj.get('Creators') or {}
+            if isinstance(creators, dict):
+                addr = next(iter(creators.keys()), '')
+                if addr:
+                    obj_addrs.append(addr)
+            else:
+                obj_addrs.append('')
+
+        if obj_addrs:
+            burned = await batch_verify_burns(
+                [a for a in obj_addrs if a], is_mainnet, network
+            )
+            if burned:
+                filtered = []
+                for item, addr in zip(results, obj_addrs):
+                    if addr not in burned:
+                        filtered.append(item)
+                results = filtered
+    except Exception:
+        pass
+
+    return results
 
 
 @router.get("/p2fk/search/profiles")

@@ -12,6 +12,7 @@ from utils.helpers import (
     fetch_objects_created_by_address, fetch_object_by_txid,
     fetch_profile_by_address, get_cached_profile, _profile_cache,
     format_object_for_api, fetch_profile_by_urn,
+    batch_verify_burns,
 )
 from utils.http_pool import get_client
 
@@ -1205,14 +1206,16 @@ async def get_storefront(network: str, skip: int = 0, limit: int = 10, keyword: 
         # ── If cache can serve this page, return immediately ──
         if cache_fresh and skip + limit <= len(cached_objects):
             all_objects = cached_objects
-            # Filter out burned objects from cached results
+            # Filter out burned objects — registry + proactive BRN root verification
             try:
-                from routes.snapshot import get_burned_set
-                burned_addrs = await get_burned_set(network)
+                obj_addrs = [o.get('object_address') for o in all_objects if o.get('object_address')]
+                burned_addrs = await batch_verify_burns(obj_addrs, is_mainnet, network)
                 if burned_addrs:
                     all_objects = [o for o in all_objects if o.get('object_address') not in burned_addrs]
             except Exception:
                 pass
+            # Also filter objects with 0 total supply (stale data)
+            all_objects = [o for o in all_objects if o.get('total_supply', 1) > 0]
             if data_source and data_source != 'ALL':
                 all_objects = [o for o in all_objects if _detect_data_repo(o) == data_source]
             page = all_objects[skip:skip + limit]
@@ -1237,8 +1240,16 @@ async def get_storefront(network: str, skip: int = 0, limit: int = 10, keyword: 
             kw_to_fetch = [KEYWORDS[cached_kw_index]]
             kw_index = cached_kw_index + 1
         else:
-            # All keywords exhausted — serve what we have
+            # All keywords exhausted — serve what we have (with burn filtering)
             all_objects = cached_objects
+            try:
+                obj_addrs = [o.get('object_address') for o in all_objects if o.get('object_address')]
+                burned_addrs = await batch_verify_burns(obj_addrs, is_mainnet, network)
+                if burned_addrs:
+                    all_objects = [o for o in all_objects if o.get('object_address') not in burned_addrs]
+            except Exception:
+                pass
+            all_objects = [o for o in all_objects if o.get('total_supply', 1) > 0]
             if data_source and data_source != 'ALL':
                 all_objects = [o for o in all_objects if _detect_data_repo(o) == data_source]
             page = all_objects[skip:skip + limit]
@@ -1274,16 +1285,18 @@ async def get_storefront(network: str, skip: int = 0, limit: int = 10, keyword: 
         formatted_new = [format_object_for_api(obj) for obj in new_objects]
         formatted_new = [f for f in formatted_new if f.get('urn') or f.get('name', 'Unnamed') != 'Unnamed']
 
-        # Filter out burned objects
+        all_formatted = cached_objects + formatted_new
+
+        # Filter out burned objects from ALL objects (cached + new)
         try:
-            from routes.snapshot import get_burned_set
-            burned_addrs = await get_burned_set(network)
+            obj_addrs = [o.get('object_address') for o in all_formatted if o.get('object_address')]
+            burned_addrs = await batch_verify_burns(obj_addrs, is_mainnet, network)
             if burned_addrs:
-                formatted_new = [f for f in formatted_new if f.get('object_address') not in burned_addrs]
+                all_formatted = [f for f in all_formatted if f.get('object_address') not in burned_addrs]
         except Exception:
             pass
-
-        all_formatted = cached_objects + formatted_new
+        # Also filter objects with 0 total supply
+        all_formatted = [f for f in all_formatted if f.get('total_supply', 1) > 0]
 
         # Sort: listed first by price, then by change date
         all_formatted.sort(key=lambda x: (

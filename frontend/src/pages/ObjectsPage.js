@@ -249,6 +249,22 @@ export default function ObjectsPage({ network }) {
         const normalized = freshItems
           .map(item => item._fromStorefront ? { ...item, _blockchain: item._blockchain || '' } : normalizeItem(item))
           .filter(o => {
+            // Filter out fully burned objects (total_supply == 0)
+            const supply = o.total_supply ?? o.TotalSupply;
+            if (supply !== undefined && supply <= 0) return false;
+            const owners = o.Owners || o.owners;
+            if (owners) {
+              const ownerArr = Array.isArray(owners) ? owners : Object.values(owners);
+              const totalQty = ownerArr.reduce((sum, v) => {
+                if (typeof v === 'number') return sum + v;
+                if (typeof v === 'object') return sum + (v.Item1 ?? v.quantity ?? 0);
+                return sum;
+              }, 0);
+              if (ownerArr.length > 0 && totalQty <= 0) return false;
+            }
+            return true;
+          })
+          .filter(o => {
             const name = o.Name || o.name;
             const image = o.Image || o.image;
             const license = o.License || o.license || '';
@@ -276,6 +292,23 @@ export default function ObjectsPage({ network }) {
 
       const normalized = items
         .map(item => item._fromStorefront ? { ...item, _blockchain: item._blockchain || '' } : normalizeItem(item))
+        .filter(o => {
+          // Filter out fully burned objects (total_supply == 0)
+          const supply = o.total_supply ?? o.TotalSupply;
+          if (supply !== undefined && supply <= 0) return false;
+          // Also check Owners dict — if all owners have qty 0, object is burned
+          const owners = o.Owners || o.owners;
+          if (owners) {
+            const ownerArr = Array.isArray(owners) ? owners : Object.values(owners);
+            const totalQty = ownerArr.reduce((sum, v) => {
+              if (typeof v === 'number') return sum + v;
+              if (typeof v === 'object') return sum + (v.Item1 ?? v.quantity ?? 0);
+              return sum;
+            }, 0);
+            if (ownerArr.length > 0 && totalQty <= 0) return false;
+          }
+          return true;
+        })
         .filter(o => {
           const name = o.Name || o.name;
           const image = o.Image || o.image;

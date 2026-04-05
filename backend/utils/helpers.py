@@ -591,6 +591,62 @@ async def p2fk_get(path: str, mainnet: bool = False, extra_params: dict = None, 
     return None
 
 
+async def batch_verify_burns(object_addresses: list, is_mainnet: bool, network: str) -> set:
+    """Check multiple object addresses for BRN roots.
+    For objects with BRN roots, verify via p2fk.io that total_supply == 0.
+    Returns set of fully-burned object addresses."""
+    from routes.snapshot import get_burned_set, _register_burned_object
+
+    # Start with known burned objects
+    known_burned = await get_burned_set(network)
+    newly_burned = set()
+
+    # Only check objects not already known to be burned
+    to_check = [a for a in object_addresses if a and a not in known_burned]
+    if not to_check:
+        return known_burned
+
+    async def _check_one(addr):
+        try:
+            roots = await p2fk_get(f"GetRootsByAddress/{addr}", is_mainnet)
+            if not isinstance(roots, list):
+                return
+            has_brn = any(
+                isinstance(r.get('File'), dict) and 'BRN' in r.get('File', {})
+                for r in roots
+            )
+            if not has_brn:
+                return
+            # Object has BRN roots — verify current state via p2fk.io
+            # Use skip_cache to get fresh data from p2fk.io
+            obj_data = await p2fk_get(f"GetObjectByAddress/{addr}", is_mainnet, skip_cache=True)
+            if obj_data is None:
+                # p2fk.io says it doesn't exist → fully burned
+                await _register_burned_object(addr, "", network)
+                newly_burned.add(addr)
+                return
+            owners = obj_data.get('Owners') or {}
+            total = sum(
+                v.get('Item1', 0) if isinstance(v, dict) else (v if isinstance(v, int) else 0)
+                for v in owners.values()
+            )
+            if total <= 0:
+                await _register_burned_object(addr, "", network)
+                newly_burned.add(addr)
+        except Exception:
+            pass
+
+    # Run checks in parallel (max 5 concurrent)
+    sem = asyncio.Semaphore(5)
+    async def _bounded(addr):
+        async with sem:
+            await _check_one(addr)
+
+    await asyncio.gather(*[_bounded(a) for a in to_check[:30]], return_exceptions=True)
+
+    return known_burned | newly_burned
+
+
 async def fetch_profile_by_urn(urn: str, mainnet: bool = False):
     data = await p2fk_get(f"GetProfileByURN/{urn}", mainnet)
     if data and data.get('Id', 0) > 0 and data.get('URN'):
