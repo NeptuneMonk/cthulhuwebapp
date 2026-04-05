@@ -259,12 +259,24 @@ async def _local_fetch_objects_by_keyword(keyword: str, network: str, version_by
 
 
 async def _local_search_objects(extra_params: dict, network: str, version_byte: int):
-    """Search through cached storefront objects AND try the search term as a keyword."""
+    """Search through cached storefront objects AND try the search term as a keyword.
+    Returns results in p2fk.io GetKnownObjectsBySearchString format:
+    [{object: {...}, blockchain: "BTC-testnet"}, ...]
+    Returns None for empty search to allow p2fk.io fallthrough."""
     search_str = (extra_params or {}).get('searchString', '').strip().lower()
     qty = int((extra_params or {}).get('qty', '20'))
     skip = int((extra_params or {}).get('skip', '0'))
     if not search_str:
-        return []
+        return None  # Let p2fk.io handle empty/browse queries
+
+    # Determine blockchain label for wrapping
+    bc_label = 'BTC-testnet'
+    if 'mainnet' in network:
+        bc_label = 'BTC'
+    elif 'doge' in network.lower():
+        bc_label = 'DOG-testnet' if 'testnet' in network else 'DOG'
+    elif 'ltc' in network.lower():
+        bc_label = 'LTC-testnet' if 'testnet' in network else 'LTC'
 
     results = []
     seen_txids = set()
@@ -296,7 +308,10 @@ async def _local_search_objects(extra_params: dict, network: str, version_byte: 
         pass
 
     # Apply pagination
-    return results[skip:skip + qty]
+    paged = results[skip:skip + qty]
+
+    # Wrap in p2fk.io GetKnownObjectsBySearchString format
+    return [{"object": obj, "blockchain": bc_label} for obj in paged]
 
 
 async def _try_reconstruct_obj_json(txid: str, network: str):

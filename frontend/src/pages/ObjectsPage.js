@@ -38,12 +38,12 @@ function CrossNetworkModal({ object, userNetwork, onClose, navigate }) {
       let found = [];
       for (const term of searchTerms) {
         if (!term || term === 'Unnamed Object') continue;
-        const res = await axios.get(`${API}/api/p2fk/search/objects?searchString=${encodeURIComponent(term)}&qty=10&skip=0`);
+        const res = await axios.get(`${API}/api/p2fk/search/objects?searchString=${encodeURIComponent(term)}&qty=10&skip=0&network=${encodeURIComponent(userNetwork)}`);
         const items = Array.isArray(res.data) ? res.data : [];
         // Filter to objects on the user's network
         const isUserTestnet = (userNetwork || '').includes('testnet');
         const matches = items.filter(item => {
-          const chain = (item.blockchain || '').toLowerCase();
+          const chain = (item.blockchain || item.object?.blockchain || '').toLowerCase();
           return isUserTestnet ? chain.includes('testnet') : !chain.includes('testnet');
         });
         if (matches.length > 0) {
@@ -206,31 +206,65 @@ export default function ObjectsPage({ network }) {
     };
   });
 
+  /** Normalize a single API response item to a flat object with _blockchain.
+   *  Handles both p2fk.io wrapped format {object:{...}, blockchain:"BTC"}
+   *  and flat format {TransactionId, Name, ...} from the local decoder. */
+  const normalizeItem = useCallback((item) => {
+    if (item?.object && typeof item.object === 'object') {
+      return { ...item.object, _blockchain: item.blockchain || '' };
+    }
+    // Flat object — use as-is, try to detect blockchain from address
+    return { ...item, _blockchain: item._blockchain || item.blockchain || '' };
+  }, []);
+
   /** Fetch objects via backend proxy with caching */
   const fetchObjects = useCallback(async (searchString, skip, qty, isReset = false) => {
     if (loading) return;
     setLoading(true);
     try {
-      const cacheId = `objs_${searchString}_${skip}_${qty}`;
+      const isSearchMode = searchString && searchString.trim().length > 0
+        && !['all', 'BTC', 'LTC', 'DOG', 'MZC', 'IPFS'].includes(searchString.trim());
+
+      const cacheId = `objs_${searchString}_${skip}_${qty}_${network}`;
       const doFetch = async () => {
-        const url = `${API}/api/p2fk/search/objects?searchString=${encodeURIComponent(searchString)}&qty=${qty}&skip=${skip}`;
-        const res = await axios.get(url);
-        return Array.isArray(res.data) ? res.data : [];
+        if (isSearchMode) {
+          // User search: use the search proxy
+          const url = `${API}/api/p2fk/search/objects?searchString=${encodeURIComponent(searchString)}&qty=${qty}&skip=${skip}&network=${encodeURIComponent(network)}`;
+          const res = await axios.get(url);
+          return Array.isArray(res.data) ? res.data : [];
+        } else {
+          // Storefront browse: use the dedicated storefront endpoint
+          const kw = searchString && searchString.trim().length > 0 ? `&keyword=${encodeURIComponent(searchString)}` : '';
+          const url = `${API}/api/objects/storefront/${encodeURIComponent(network)}?skip=${skip}&limit=${qty}${kw}`;
+          const res = await axios.get(url);
+          const objects = res.data?.objects || [];
+          // Storefront returns format_object_for_api format (lowercase keys)
+          // Mark them so normalizeItem passes them through correctly
+          return objects.map(o => ({ ...o, _fromStorefront: true }));
+        }
       };
 
       const items = await cachedFetch('objects', cacheId, doFetch, (freshItems) => {
         // Background update with fresh data
         const normalized = freshItems
-          .filter(item => item?.object)
-          .map(item => ({ ...item.object, _blockchain: item.blockchain || '' }))
-          .filter(o => !(o.License || '').toLowerCase().startsWith('cthulhu:tether'))
-          .filter(o => (o.Name && o.Name !== 'Unnamed Object') || o.Image)
+          .map(item => item._fromStorefront ? { ...item, _blockchain: item._blockchain || '' } : normalizeItem(item))
           .filter(o => {
-            const creators = o.Creators || {};
-            const addr = Object.keys(creators)[0] || '';
+            const name = o.Name || o.name;
+            const image = o.Image || o.image;
+            const license = o.License || o.license || '';
+            if (license.toLowerCase().startsWith('cthulhu:tether')) return false;
+            if ((!name || name === 'Unnamed Object' || name === 'Unnamed') && !image) return false;
+            return true;
+          })
+          .filter(o => {
+            const creators = o.Creators || o.creators;
+            const addr = creators
+              ? (typeof creators === 'object' && !Array.isArray(creators))
+                ? Object.keys(creators)[0] || ''
+                : Array.isArray(creators) ? (creators[0]?.address || creators[0] || '') : ''
+              : '';
             return !burnedSetRef.current.has(addr);
           });
-        // Apply strict blockchain filter
         const activeChainFilter = CHAIN_FILTERS.find(f => f.key === activeFilter);
         const chainMatch = activeChainFilter?.match;
         const finalObjects = chainMatch
@@ -241,13 +275,22 @@ export default function ObjectsPage({ network }) {
       });
 
       const normalized = items
-        .filter(item => item?.object)
-        .map(item => ({ ...item.object, _blockchain: item.blockchain || '' }))
-        .filter(o => !(o.License || '').toLowerCase().startsWith('cthulhu:tether'))
-        .filter(o => (o.Name && o.Name !== 'Unnamed Object') || o.Image)
+        .map(item => item._fromStorefront ? { ...item, _blockchain: item._blockchain || '' } : normalizeItem(item))
         .filter(o => {
-          const creators = o.Creators || {};
-          const addr = Object.keys(creators)[0] || '';
+          const name = o.Name || o.name;
+          const image = o.Image || o.image;
+          const license = o.License || o.license || '';
+          if (license.toLowerCase().startsWith('cthulhu:tether')) return false;
+          if ((!name || name === 'Unnamed Object' || name === 'Unnamed') && !image) return false;
+          return true;
+        })
+        .filter(o => {
+          const creators = o.Creators || o.creators;
+          const addr = creators
+            ? (typeof creators === 'object' && !Array.isArray(creators))
+              ? Object.keys(creators)[0] || ''
+              : Array.isArray(creators) ? (creators[0]?.address || creators[0] || '') : ''
+            : '';
           return !burnedSetRef.current.has(addr);
         });
 
@@ -268,7 +311,7 @@ export default function ObjectsPage({ network }) {
     } finally {
       setLoading(false);
     }
-  }, [loading]);
+  }, [loading, network, normalizeItem, activeFilter]);
 
   // Load on mount and when filter changes
   useEffect(() => {
@@ -445,7 +488,7 @@ export default function ObjectsPage({ network }) {
               )}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
                 {objects.map((obj, idx) => (
-                  <ObjectCard key={`${obj.TransactionId || obj.Id || idx}`} object={obj} network={network} onCrossNetwork={setCrossNetObj} />
+                  <ObjectCard key={`${obj.TransactionId || obj.transaction_id || obj.Id || obj.id || idx}`} object={obj} network={network} onCrossNetwork={setCrossNetObj} />
                 ))}
               </div>
 

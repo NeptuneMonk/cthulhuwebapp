@@ -1,0 +1,75 @@
+{
+  "summary": "Iteration 242: Tested storefront/search UI fix for data format mismatch. All core features working. Found and fixed a stale closure bug in chain filter switching.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "IPFS gateway", "issue": "504 timeout errors on some IPFS image loads - external dependency, not a bug"}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/test_reports/iteration_242.json"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "FIXED: ObjectsPage.js Line 314 - Added 'activeFilter' to useCallback dependency array to fix stale closure bug causing 'All' filter to show 0 objects after switching from other filters"
+  ],
+  "updated_files": [
+    "/app/frontend/src/pages/ObjectsPage.js"
+  ],
+  "success_rate": {
+    "backend": "N/A (frontend-only testing)",
+    "frontend": "100% (all 8 test cases passed)"
+  },
+  "test_credentials": {
+    "base_url": "https://dark-telegram-ui.preview.emergentagent.com"
+  },
+  "seed_data_creation": "None",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Storefront/search UI fix verified. All features working: (1) Initial load shows 20 objects, (2) Search for 'fox' returns 'The Fox' object, (3) Search for 'art' returns 14 objects, (4) Back to Storefront works correctly, (5) Chain filter switching now works correctly after fix, (6) Object cards display name/image/owner info, (7) Object card navigation to detail page works. Fixed stale closure bug in fetchObjects useCallback.",
+  "features_tested": {
+    "storefront_initial_load": {
+      "status": "PASS",
+      "details": "Shows 20 object cards on initial load (not 'No objects found')"
+    },
+    "search_fox": {
+      "status": "PASS",
+      "details": "Search for 'fox' returns 1 result - 'The Fox' object with correct details"
+    },
+    "search_art": {
+      "status": "PASS",
+      "details": "Search for 'art' returns 14 objects"
+    },
+    "back_to_storefront": {
+      "status": "PASS",
+      "details": "Clicking 'Back to Storefront' returns to storefront with 20 objects"
+    },
+    "chain_filter_switching": {
+      "status": "PASS (after fix)",
+      "details": "Fixed stale closure bug - All filter now shows objects after switching from BTC/IPFS filters"
+    },
+    "object_card_display": {
+      "status": "PASS",
+      "details": "Object cards show name, image, owner info, chain badges (IPFS, BTC-testnet, etc.)"
+    },
+    "object_card_navigation": {
+      "status": "PASS",
+      "details": "Clicking 'The Fox' card navigates to /object/448f1c610f68161327f1b561ef97157e68c79d4e325b7bdfab8d9dfd40f9af08"
+    },
+    "object_detail_page": {
+      "status": "PASS",
+      "details": "Detail page shows: name, image, supply (20), max supply (20), owners (1), creator (Neptune), transaction ID"
+    }
+  },
+  "bug_fixed": {
+    "description": "Chain filter switching caused 'All' filter to show 0 objects after switching from BTC/LTC/IPFS filters",
+    "root_cause": "Stale closure in fetchObjects useCallback - activeFilter was used inside the function but not in the dependency array",
+    "fix_applied": "Added 'activeFilter' to useCallback dependency array on line 314 of ObjectsPage.js",
+    "verification": "After fix, All filter correctly shows 20 objects after switching from any other filter"
+  }
+}
