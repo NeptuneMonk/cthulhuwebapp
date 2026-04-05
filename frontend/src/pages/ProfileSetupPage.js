@@ -28,7 +28,7 @@ function preserveIpfsRef(ref) {
 
 export default function ProfileSetupPage() {
   const navigate = useNavigate();
-  const { user, wif, isConnected, token, isMinted } = useAuth();
+  const { user, wif, isConnected, token, isMinted, updateUser } = useAuth();
   const { addPendingMint } = usePendingMint();
   const { image: myImage, urn: myUrn } = useMyProfile(user?.network || 'btc-testnet');
   const [step, setStep] = useState(0);
@@ -36,6 +36,7 @@ export default function ProfileSetupPage() {
 
   // Unified profile form state
   const [form, setForm] = useState({
+    urn: '',
     displayName: '',
     firstName: '',
     middleName: '',
@@ -72,9 +73,11 @@ export default function ProfileSetupPage() {
     if (!isConnected) navigate('/auth');
   }, [isConnected, navigate]);
 
-  // Pre-fill display name from URN (only for new profiles)
+  // Pre-fill display name from URN (only for existing minted profiles)
   useEffect(() => {
-    if (user?.urn && !form.displayName && !isMinted) setForm(f => ({ ...f, displayName: user.urn }));
+    if (isMinted && user?.urn && user.urn !== user?.address && !form.displayName) {
+      setForm(f => ({ ...f, displayName: user.urn }));
+    }
   }, [user?.urn]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Fetch and pre-fill existing profile when updating
@@ -157,7 +160,7 @@ export default function ProfileSetupPage() {
     for (const e of (form.locEntries || [])) { if (e.key && e.value) locDict[e.key] = e.value; }
 
     return {
-      urn: user.urn,
+      urn: isMinted ? user.urn : (form.urn || '').trim(),
       displayName: form.displayName || undefined,
       firstName: form.firstName || undefined,
       middleName: form.middleName || undefined,
@@ -172,7 +175,8 @@ export default function ProfileSetupPage() {
 
   // Mint profile — fully client-side signing
   const handleMint = async () => {
-    if (!wif || !user?.urn) return;
+    const urnToMint = isMinted ? user.urn : (form.urn || '').trim();
+    if (!wif || !urnToMint) return;
     setMinting(true);
     setMintError('');
     try {
@@ -214,13 +218,18 @@ export default function ProfileSetupPage() {
 
       addTransaction(senderAddress, {
         txid: txResult.txid, type: 'PRO', network: user.network || 'btc-testnet',
-        addresses, label: `Profile ${isMinted ? 'update' : 'mint'}: @${user.urn}`,
+        addresses, label: `Profile ${isMinted ? 'update' : 'mint'}: @${urnToMint}`,
       });
 
       addPendingMint(txResult.txid, user.network || 'btc-testnet', 'profile');
 
       sessionStorage.removeItem('cthulhu_setup_imageRef');
       sessionStorage.removeItem('cthulhu_setup_imagePreview');
+
+      // Update user's URN in auth state if this is a new mint
+      if (!isMinted && urnToMint !== user.urn) {
+        updateUser({ urn: urnToMint, is_minted: true });
+      }
 
       // Register on backend (no key material)
       fetch(`${API}/wallet/register-profile`, {
@@ -229,7 +238,7 @@ export default function ProfileSetupPage() {
         body: JSON.stringify({
           address: senderAddress,
           network: user.network || 'btc-testnet',
-          urn: user.urn,
+          urn: urnToMint,
           image: form.imageRef || null,
           display_name: form.displayName || null,
         }),
@@ -265,9 +274,11 @@ export default function ProfileSetupPage() {
         {/* Profile header */}
         {isConnected && (
           <div className="flex items-center gap-3 mb-6">
-            <ProfileThumb name={myUrn || user?.urn || '?'} image={myImage || form.imagePreview} size="lg" />
+            <ProfileThumb name={(!isMinted ? form.urn : myUrn) || '?'} image={myImage || form.imagePreview} size="lg" />
             <div className="flex-1 min-w-0">
-              <p className="text-base font-bold text-gray-100 truncate">{myUrn || user?.urn}</p>
+              <p className="text-base font-bold text-gray-100 truncate">
+                {(!isMinted ? form.urn : myUrn) || 'New Profile'}
+              </p>
               <p className="text-xs text-gray-500 truncate font-mono cursor-pointer hover:text-gray-300 transition-colors inline-flex items-center gap-1"
                 onClick={() => navigator.clipboard?.writeText(user?.address)}
                 title="Copy address"
@@ -308,14 +319,28 @@ export default function ProfileSetupPage() {
         </div>
 
         {step === 0 && (
-          <ProfileFormStep
+          <>
+            {mintError && (
+              <div className="mb-4 p-3 bg-red-500/10 border border-red-500/30 rounded-lg">
+                <p className="text-sm text-red-400" data-testid="urn-validation-error">{mintError}</p>
+              </div>
+            )}
+            <ProfileFormStep
             user={user}
             form={form}
             setForm={setForm}
-            onNext={() => setStep(1)}
+            onNext={() => {
+              if (!isMinted && !(form.urn || '').trim()) {
+                setMintError('Please choose a Profile Name (URN) before proceeding.');
+                return;
+              }
+              setMintError('');
+              setStep(1);
+            }}
             onSkip={() => navigate('/feed')}
             isUpdate={isMinted}
           />
+          </>
         )}
 
         {step === 1 && (

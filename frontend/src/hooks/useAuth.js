@@ -570,6 +570,7 @@ export function AuthProvider({ children }) {
       switchActiveWallet,
       removeWallet,
       resetNetworkWallet,
+      updateUser: updateUserState,
       getLocalWallets,
       renameUrn,
       logout,

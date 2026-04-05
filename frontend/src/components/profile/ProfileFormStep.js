@@ -144,14 +144,27 @@ export default function ProfileFormStep({ user, form, setForm, onNext, onSkip, i
           : 'This info will be minted on the blockchain as a SUP profile.'}
       </p>
 
-      {/* URN (read-only) */}
+      {/* URN — editable for new profiles, read-only for updates */}
       <div className="mb-4">
         <label className="text-xs text-gray-400 block mb-1.5">Profile Name (URN)</label>
-        <input
-          type="text" value={user.urn} disabled
-          className="w-full px-4 py-3 bg-gray-950 border border-gray-800 rounded-lg text-gray-400 cursor-not-allowed"
-          data-testid="setup-urn-input"
-        />
+        {isUpdate ? (
+          <input
+            type="text" value={user.urn} disabled
+            className="w-full px-4 py-3 bg-gray-950 border border-gray-800 rounded-lg text-gray-400 cursor-not-allowed"
+            data-testid="setup-urn-input"
+          />
+        ) : (
+          <input
+            type="text" value={form.urn || ''}
+            onChange={(e) => setForm(f => ({ ...f, urn: e.target.value }))}
+            placeholder="Choose a unique name (e.g. embii, DEDA)"
+            className="w-full px-4 py-3 bg-gray-950 border border-gray-800 rounded-lg text-gray-100 focus:border-purple-500 focus:outline-none"
+            data-testid="setup-urn-input"
+          />
+        )}
+        <p className="text-xs text-gray-500 mt-1">
+          {isUpdate ? 'URN cannot be changed after minting.' : 'This is your on-chain identity. It cannot be changed later.'}
+        </p>
       </div>
 
       {/* Display Name */}
