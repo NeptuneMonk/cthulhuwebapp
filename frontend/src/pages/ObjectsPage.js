@@ -206,6 +206,23 @@ export default function ObjectsPage({ network }) {
     };
   });
 
+  /** Detect the data repository from an object's URN prefix.
+   *  URN examples: "IPFS:Qm...", "DOG:txid...", "LTC:txid...", "BTC:txid..." */
+  const getDataRepo = useCallback((obj) => {
+    const urn = (obj.URN || obj.urn || '').toUpperCase();
+    if (urn.startsWith('LTC:')) return 'LTC';
+    if (urn.startsWith('DOG:')) return 'DOG';
+    if (urn.startsWith('MZC:')) return 'MZC';
+    if (urn.startsWith('IPFS:')) return 'IPFS';
+    if (urn.startsWith('BTC:')) return 'BTC';
+    // Fallback: check _blockchain field
+    const bc = (obj._blockchain || '').toUpperCase();
+    if (bc.includes('LTC')) return 'LTC';
+    if (bc.includes('DOG')) return 'DOG';
+    if (bc.includes('MZC')) return 'MZC';
+    return 'BTC';
+  }, []);
+
   /** Normalize a single API response item to a flat object with _blockchain.
    *  Handles both p2fk.io wrapped format {object:{...}, blockchain:"BTC"}
    *  and flat format {TransactionId, Name, ...} from the local decoder. */
@@ -222,8 +239,9 @@ export default function ObjectsPage({ network }) {
     if (loading) return;
     setLoading(true);
     try {
-      const isSearchMode = searchString && searchString.trim().length > 0
-        && !['all', 'BTC', 'LTC', 'DOG', 'MZC', 'IPFS'].includes(searchString.trim());
+      // Any non-empty search string uses the cross-chain search proxy
+      // Empty string uses the storefront for browse
+      const isSearchMode = searchString && searchString.trim().length > 0;
 
       const cacheId = `objs_${searchString}_${skip}_${qty}_${network}`;
       const doFetch = async () => {
@@ -284,7 +302,7 @@ export default function ObjectsPage({ network }) {
         const activeChainFilter = CHAIN_FILTERS.find(f => f.key === activeFilter);
         const chainMatch = activeChainFilter?.match;
         const finalObjects = chainMatch
-          ? normalized.filter(o => (o._blockchain || '').toUpperCase().includes(chainMatch))
+          ? normalized.filter(o => getDataRepo(o) === chainMatch)
           : normalized;
         setObjects(finalObjects);
         setHasMore(freshItems.length >= qty);
@@ -327,11 +345,12 @@ export default function ObjectsPage({ network }) {
           return !burnedSetRef.current.has(addr);
         });
 
-      // Apply strict blockchain filter when a chain filter is active
+      // Apply strict data-repo filter when a chain filter is active
+      // Checks URN prefix (DOG:, LTC:, MZC:, IPFS:, BTC:) not just _blockchain
       const activeChainFilter = CHAIN_FILTERS.find(f => f.key === activeFilter);
       const chainMatch = activeChainFilter?.match;
       const finalObjects = chainMatch
-        ? normalized.filter(o => (o._blockchain || '').toUpperCase().includes(chainMatch))
+        ? normalized.filter(o => getDataRepo(o) === chainMatch)
         : normalized;
 
       setObjects(finalObjects);
@@ -344,7 +363,7 @@ export default function ObjectsPage({ network }) {
     } finally {
       setLoading(false);
     }
-  }, [loading, network, normalizeItem, activeFilter]);
+  }, [loading, network, normalizeItem, activeFilter, getDataRepo]);
 
   // Load on mount and when filter changes
   useEffect(() => {

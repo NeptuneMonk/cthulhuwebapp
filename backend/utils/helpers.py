@@ -310,6 +310,10 @@ async def _local_search_objects(extra_params: dict, network: str, version_byte: 
     # Apply pagination
     paged = results[skip:skip + qty]
 
+    # If no local results found, return None to let p2fk.io try
+    if not paged:
+        return None
+
     # Wrap in p2fk.io GetKnownObjectsBySearchString format
     return [{"object": obj, "blockchain": bc_label} for obj in paged]
 
