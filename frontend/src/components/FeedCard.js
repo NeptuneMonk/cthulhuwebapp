@@ -6,6 +6,7 @@ import { MessageContent } from '@/components/MessageContent';
 import { ComposeModal } from '@/components/ComposeModal';
 import { ReactionBar } from '@/components/ReactionBar';
 import { getLocalReactions } from '@/hooks/useFeedMonitor';
+import { useOfficialCheck } from '@/hooks/useUrnVerify';
 import PollCard from '@/components/PollCard';
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -129,6 +130,14 @@ export const FeedCard = React.forwardRef(({ item, network, currentUserAddress, c
   const recipients = message.recipients || [];
   const blockTime = message.block_time || message.created_at;
   const firstSeen = message.first_seen;
+
+  // Check if this sender is the official owner of their claimed URN
+  const hasRealUrn = message.sender_urn && message.sender_urn !== message.from_address;
+  const isOfficial = useOfficialCheck(
+    hasRealUrn ? message.sender_urn : null,
+    senderAddress,
+    network
+  );
 
   // Check if the post was deleted by its author (on-chain delete)
   const [isAuthorDeleted, setIsAuthorDeleted] = useState(false);
@@ -340,6 +349,17 @@ export const FeedCard = React.forwardRef(({ item, network, currentUserAddress, c
                 >
                   {senderUrn}
                 </button>
+
+                {/* Unofficial badge — shown when impersonation detected */}
+                {isOfficial === false && (
+                  <span
+                    className="px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide bg-red-500/20 text-red-400 border border-red-500/30 rounded"
+                    title="This URN was claimed earlier by another address"
+                    data-testid="unofficial-badge"
+                  >
+                    Unofficial
+                  </span>
+                )}
 
                 {/* Status indicator */}
                 <div className="flex items-center gap-1 flex-shrink-0">

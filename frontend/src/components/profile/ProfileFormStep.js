@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
 import {
-  FiImage, FiUpload, FiArrowRight, FiPlus, FiTrash2, FiChevronDown, FiChevronUp
+  FiImage, FiUpload, FiArrowRight, FiPlus, FiTrash2, FiChevronDown, FiChevronUp,
+  FiCheck, FiX, FiLoader
 } from 'react-icons/fi';
 import { compressImage, formatFileSize } from '@/utils/imageCompress';
+import { useUrnAvailability } from '@/hooks/useUrnVerify';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -88,7 +90,7 @@ function KeyValueEditor({ entries, onChange, presets, placeholder }) {
   );
 }
 
-export default function ProfileFormStep({ user, form, setForm, onNext, onSkip, isUpdate }) {
+export default function ProfileFormStep({ user, form, setForm, onNext, onSkip, isUpdate, onUrnStatusChange }) {
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState('');
   const [showAdvanced, setShowAdvanced] = useState(
@@ -96,6 +98,12 @@ export default function ProfileFormStep({ user, form, setForm, onNext, onSkip, i
     !!(form.firstName || form.middleName || form.lastName || form.suffix ||
        form.urls?.length > 0 || form.locEntries?.length > 0)
   );
+  const { checkUrn, urnStatus, urnError } = useUrnAvailability(user?.network || 'btc-testnet');
+
+  // Notify parent of URN check status changes
+  React.useEffect(() => {
+    onUrnStatusChange?.(urnStatus);
+  }, [urnStatus, onUrnStatusChange]);
 
   const handleImageUpload = async (e) => {
     const file = e.target.files?.[0];
@@ -154,17 +162,42 @@ export default function ProfileFormStep({ user, form, setForm, onNext, onSkip, i
             data-testid="setup-urn-input"
           />
         ) : (
-          <input
-            type="text" value={form.urn || ''}
-            onChange={(e) => setForm(f => ({ ...f, urn: e.target.value }))}
-            placeholder="Choose a unique name (e.g. embii, DEDA)"
-            className="w-full px-4 py-3 bg-gray-950 border border-gray-800 rounded-lg text-gray-100 focus:border-purple-500 focus:outline-none"
-            data-testid="setup-urn-input"
-          />
+          <div className="relative">
+            <input
+              type="text" value={form.urn || ''}
+              onChange={(e) => {
+                const val = e.target.value;
+                setForm(f => ({ ...f, urn: val }));
+                checkUrn(val);
+              }}
+              placeholder="Choose a unique name (e.g. embii, DEDA)"
+              className={`w-full px-4 py-3 pr-10 bg-gray-950 border rounded-lg text-gray-100 focus:outline-none ${
+                urnStatus === 'taken' ? 'border-red-500 focus:border-red-500' :
+                urnStatus === 'available' ? 'border-emerald-500 focus:border-emerald-500' :
+                'border-gray-800 focus:border-purple-500'
+              }`}
+              data-testid="setup-urn-input"
+            />
+            {urnStatus === 'checking' && (
+              <FiLoader size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 animate-spin" />
+            )}
+            {urnStatus === 'available' && (
+              <FiCheck size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-emerald-400" />
+            )}
+            {urnStatus === 'taken' && (
+              <FiX size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-red-400" />
+            )}
+          </div>
         )}
-        <p className="text-xs text-gray-500 mt-1">
-          {isUpdate ? 'URN cannot be changed after minting.' : 'This is your on-chain identity. It cannot be changed later.'}
-        </p>
+        {urnError ? (
+          <p className="text-xs text-red-400 mt-1">{urnError}</p>
+        ) : urnStatus === 'available' ? (
+          <p className="text-xs text-emerald-400 mt-1">This name is available!</p>
+        ) : (
+          <p className="text-xs text-gray-500 mt-1">
+            {isUpdate ? 'URN cannot be changed after minting.' : 'This is your on-chain identity. It cannot be changed later.'}
+          </p>
+        )}
       </div>
 
       {/* Display Name */}

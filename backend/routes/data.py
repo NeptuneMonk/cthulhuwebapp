@@ -1705,11 +1705,21 @@ async def verify_urn(urn: str, network: str = 'btc-testnet'):
 
         # If no known_users, try p2fk.io keyword lookup
         if not addresses:
-            result = await p2fk_get(f"GetPublicAddressByKeyword/{urn}", is_mainnet)
-            if result:
-                addr = result if isinstance(result, str) else result.get("Address", "")
+            keyword_addr = await p2fk_get(f"GetPublicAddressByKeyword/{urn}", is_mainnet)
+            if keyword_addr:
+                addr = keyword_addr if isinstance(keyword_addr, str) else keyword_addr.get("Address", "")
                 if addr:
-                    addresses.add(addr)
+                    # Verify this keyword address actually has profile data (roots)
+                    # GetPublicAddressByKeyword returns an address for ANY keyword —
+                    # we must check if anyone actually signed transactions to it
+                    roots = await p2fk_get(f"GetRootsByAddress/{addr}", is_mainnet)
+                    if roots and isinstance(roots, list) and len(roots) > 0:
+                        # Real profile exists — find who signed it
+                        for root in roots:
+                            signed_by = root.get("SignedBy", root.get("signedBy", ""))
+                            if signed_by:
+                                addresses.add(signed_by)
+                    # If no roots found, URN is unclaimed — addresses stays empty
 
         if len(addresses) <= 1:
             official = list(addresses)[0] if addresses else None

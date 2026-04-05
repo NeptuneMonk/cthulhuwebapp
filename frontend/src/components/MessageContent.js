@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useCachedIPFS } from '@/hooks/useCachedIPFS';
 import { FiFile, FiLoader, FiDownload, FiMaximize2, FiX } from 'react-icons/fi';
 import { LinkPreview } from '@/components/LinkPreview';
+import { resolveUrnOfficial } from '@/hooks/useUrnVerify';
 
 /**
  * Parse SUP protocol message content and render inline media.
@@ -385,6 +386,31 @@ const FileAttachment = ({ filename, fileSize, txid }) => {
   );
 };
 
+/** @mention link that resolves to the official profile address */
+const MentionLink = ({ urn, display }) => {
+  const handleClick = async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const net = (() => { try { return localStorage.getItem('cthulhu_network') || 'btc-testnet'; } catch { return 'btc-testnet'; } })();
+    try {
+      const result = await resolveUrnOfficial(urn, net);
+      if (result?.official_address) {
+        window.location.href = `/profile/${result.official_address}?network=${net}`;
+        return;
+      }
+    } catch { /* fall through to search */ }
+    window.location.href = `/search?q=${encodeURIComponent(urn)}`;
+  };
+
+  return (
+    <a href={`/search?q=${encodeURIComponent(urn)}`}
+      className="text-blue-400 hover:text-blue-300 font-medium transition-colors cursor-pointer"
+      data-testid="post-mention"
+      onClick={handleClick}
+    >{display}</a>
+  );
+};
+
 const TextSegment = ({ text }) => {
   // Split on URLs, @mentions, and #hashtags
   const tokenRegex = /(https?:\/\/[^\s<>]+)|(@[A-Za-z0-9_]+)|(#[A-Za-z0-9_]+)/g;
@@ -425,11 +451,7 @@ const TextSegment = ({ text }) => {
         if (t.type === 'mention') {
           const urn = t.value.slice(1); // strip @
           return (
-            <a key={i} href={`/search?q=${encodeURIComponent(urn)}`}
-              className="text-blue-400 hover:text-blue-300 font-medium transition-colors"
-              data-testid="post-mention"
-              onClick={e => e.stopPropagation()}
-            >{t.value}</a>
+            <MentionLink key={i} urn={urn} display={t.value} />
           );
         }
         if (t.type === 'hashtag') {

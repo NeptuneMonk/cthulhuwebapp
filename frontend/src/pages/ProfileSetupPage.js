@@ -58,6 +58,8 @@ export default function ProfileSetupPage() {
   const [mintResult, setMintResult] = useState(null);
   const [mintError, setMintError] = useState('');
 
+  // URN check status (passed up from ProfileFormStep)
+  const [urnCheckStatus, setUrnCheckStatus] = useState(null);
   const balanceInterval = useRef(null);
 
   // Persist IPFS ref across refreshes
@@ -329,9 +331,18 @@ export default function ProfileSetupPage() {
             user={user}
             form={form}
             setForm={setForm}
+            onUrnStatusChange={setUrnCheckStatus}
             onNext={() => {
               if (!isMinted && !(form.urn || '').trim()) {
                 setMintError('Please choose a Profile Name (URN) before proceeding.');
+                return;
+              }
+              if (!isMinted && urnCheckStatus === 'taken') {
+                setMintError('This URN is already claimed. Choose a different name.');
+                return;
+              }
+              if (!isMinted && urnCheckStatus === 'checking') {
+                setMintError('Still checking URN availability. Please wait.');
                 return;
               }
               setMintError('');
