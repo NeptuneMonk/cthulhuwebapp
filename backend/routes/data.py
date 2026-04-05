@@ -1714,10 +1714,18 @@ async def verify_urn(urn: str, network: str = 'btc-testnet'):
                     # we must check if anyone actually signed transactions to it
                     roots = await p2fk_get(f"GetRootsByAddress/{addr}", is_mainnet)
                     if roots and isinstance(roots, list) and len(roots) > 0:
-                        # Real profile exists — find who signed it
+                        # Only count roots with a PRO file as profile claims.
+                        # OBJ/MSG/SEC roots sent to the same keyword address
+                        # are NOT profile claims — just objects/data named the same.
                         for root in roots:
                             signed_by = root.get("SignedBy", root.get("signedBy", ""))
-                            if signed_by:
+                            file_data = root.get("File", root.get("file", {}))
+                            has_pro = False
+                            if isinstance(file_data, dict):
+                                has_pro = "PRO" in file_data
+                            elif isinstance(file_data, str):
+                                has_pro = "PRO" in file_data
+                            if signed_by and has_pro:
                                 addresses.add(signed_by)
                     # If no roots found, URN is unclaimed — addresses stays empty
 
