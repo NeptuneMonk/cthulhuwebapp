@@ -8,7 +8,7 @@ import json
 from cachetools import TTLCache
 from datetime import datetime, timezone
 
-from db import known_users_col, api_cache_col
+from db import known_users_col, api_cache_col, db
 from config import P2FK_API_BASE, SEED_ADDRESSES
 from utils.stats_tracker import track_api_call, track_cache, track_decoder_source
 from utils.http_pool import get_client
@@ -130,32 +130,7 @@ async def _local_fetch_objects_for_address(address: str, network: str, version_b
         # Reconstruct OBJ file bytes from the transaction outputs
         obj_json = None
         try:
-            is_mainnet = 'mainnet' in network
-            chain = 'BTC'
-            if 'doge' in network.lower():
-                chain = 'DOGE'
-            elif 'ltc' in network.lower():
-                chain = 'LTC'
-
-            outputs = await fetch_tx_outputs(txid, chain=chain, mainnet=is_mainnet)
-            if outputs:
-                raw = bytearray()
-                for addr in outputs:
-                    try:
-                        payload = base58_decode_check(addr)
-                        raw.extend(payload)
-                    except Exception:
-                        continue
-
-                # Find OBJ file pattern: OBJ + delimiter + size + delimiter + content
-                known_seps = rb'[\\/:\*\?"<>\|]'
-                pattern = re.compile(rb'OBJ' + known_seps + rb'(\d+)' + known_seps)
-                match = pattern.search(bytes(raw))
-                if match:
-                    size = int(match.group(1))
-                    content_start = match.end()
-                    obj_bytes = bytes(raw)[content_start:content_start + size]
-                    obj_json = json.loads(obj_bytes.decode('utf-8', errors='replace'))
+            obj_json = await _try_reconstruct_obj_json(txid, network)
         except Exception as e:
             logger.debug(f"OBJ reconstruction for {txid}: {e}")
 
@@ -216,7 +191,153 @@ async def _local_fetch_objects_for_address(address: str, network: str, version_b
     return objects
 
 
-async def _local_p2fk_fallback(path: str, mainnet: bool = False):
+async def _local_fetch_objects_by_keyword(keyword: str, network: str, version_byte: int):
+    """Fetch objects from the blockchain by keyword.
+    Converts keyword → keyword address, fetches all roots there,
+    and returns formatted OBJ data."""
+    from p2fk_decoder import keyword_to_address
+
+    keyword_addr = keyword_to_address(keyword, version_byte=version_byte)
+    if not keyword_addr:
+        return []
+
+    txs = await local_fetch_addr_txs(keyword_addr, network, max_pages=2)
+    results = []
+    seen = set()
+
+    for tx in txs:
+        txid = tx.get('txid', '')
+        if not txid or txid in seen:
+            continue
+        seen.add(txid)
+
+        root = decode_root_from_raw_tx(txid, tx, version_byte)
+        if not root or 'OBJ' not in root.files:
+            continue
+
+        rd = root.to_dict()
+        obj_entry = {
+            'TransactionId': txid,
+            'SignedBy': root.signed_by,
+            'Signed': root.signed,
+            'BlockDate': rd.get('BlockDate'),
+            'BlockHeight': rd.get('BlockHeight'),
+            'Confirmations': rd.get('Confirmations', 0),
+            'Keyword': keyword,
+        }
+
+        # Try to reconstruct OBJ file for metadata
+        obj_json = await _try_reconstruct_obj_json(txid, network)
+        if obj_json and isinstance(obj_json, dict):
+            obj_entry['URN'] = obj_json.get('urn', obj_json.get('URN', ''))
+            obj_entry['Name'] = obj_json.get('nme', obj_json.get('Name', keyword))
+            obj_entry['Description'] = obj_json.get('dsc', obj_json.get('Description', ''))
+            obj_entry['Image'] = obj_json.get('img', obj_json.get('Image', ''))
+            obj_entry['URI'] = obj_json.get('uri', obj_json.get('URI', ''))
+            obj_entry['License'] = obj_json.get('lic', obj_json.get('License', ''))
+            obj_entry['Attributes'] = obj_json.get('atr', obj_json.get('Attributes', {}))
+            raw_cre = obj_json.get('cre', [])
+            obj_entry['Creators'] = {root.signed_by: "0001-01-01T00:00:00"} if isinstance(raw_cre, list) else raw_cre
+            raw_own = obj_json.get('own', {})
+            if isinstance(raw_own, dict):
+                obj_entry['Owners'] = {
+                    (root.signed_by if k in ('0', '1') else k): {"Item1": v if isinstance(v, int) else 1, "Item2": None}
+                    for k, v in raw_own.items()
+                } or {root.signed_by: {"Item1": 1, "Item2": None}}
+            else:
+                obj_entry['Owners'] = {root.signed_by: {"Item1": 1, "Item2": None}}
+            obj_entry['Maximum'] = obj_json.get('max', 0)
+        else:
+            obj_entry['URN'] = txid
+            obj_entry['Name'] = keyword
+            obj_entry['Creators'] = {root.signed_by: "0001-01-01T00:00:00"}
+            obj_entry['Owners'] = {root.signed_by: {"Item1": 1, "Item2": None}}
+
+        results.append(obj_entry)
+
+    return results
+
+
+async def _local_search_objects(extra_params: dict, network: str, version_byte: int):
+    """Search through cached storefront objects AND try the search term as a keyword."""
+    search_str = (extra_params or {}).get('searchString', '').strip().lower()
+    qty = int((extra_params or {}).get('qty', '20'))
+    skip = int((extra_params or {}).get('skip', '0'))
+    if not search_str:
+        return []
+
+    results = []
+    seen_txids = set()
+
+    # 1. Search through cached objects in object_cache
+    try:
+        cursor = db.object_cache.find({})
+        cached_objs = await cursor.to_list(1000)
+        for obj_doc in cached_objs:
+            obj = obj_doc.get('data', obj_doc)
+            searchable = json.dumps(obj, default=str).lower()
+            if search_str in searchable:
+                txid = obj.get('TransactionId', obj.get('transaction_id', ''))
+                if txid and txid not in seen_txids:
+                    seen_txids.add(txid)
+                    results.append(obj)
+    except Exception:
+        pass
+
+    # 2. Also try the search term as a keyword (fetches from chain)
+    try:
+        kw_results = await _local_fetch_objects_by_keyword(search_str, network, version_byte)
+        for obj in (kw_results or []):
+            txid = obj.get('TransactionId', '')
+            if txid and txid not in seen_txids:
+                seen_txids.add(txid)
+                results.append(obj)
+    except Exception:
+        pass
+
+    # Apply pagination
+    return results[skip:skip + qty]
+
+
+async def _try_reconstruct_obj_json(txid: str, network: str):
+    """Try to reconstruct the OBJ file JSON from a transaction."""
+    import re
+    try:
+        is_mainnet = 'mainnet' in network
+        chain = 'BTC'
+        if 'doge' in network.lower():
+            chain = 'DOGE'
+        elif 'ltc' in network.lower():
+            chain = 'LTC'
+
+        from utils.blockchain import fetch_tx_outputs
+        from utils.p2fk import base58_decode_check
+        outputs = await fetch_tx_outputs(txid, chain=chain, mainnet=is_mainnet)
+        if not outputs:
+            return None
+
+        raw = bytearray()
+        for addr in outputs:
+            try:
+                payload = base58_decode_check(addr)
+                raw.extend(payload)
+            except Exception:
+                continue
+
+        known_seps = rb'[\\/:\*\?"<>\|]'
+        pattern = re.compile(rb'OBJ' + known_seps + rb'(\d+)' + known_seps)
+        match = pattern.search(bytes(raw))
+        if match:
+            size = int(match.group(1))
+            content_start = match.end()
+            obj_bytes = bytes(raw)[content_start:content_start + size]
+            return json.loads(obj_bytes.decode('utf-8', errors='replace'))
+    except Exception as e:
+        logger.debug(f"OBJ reconstruct for {txid}: {e}")
+    return None
+
+
+async def _local_p2fk_fallback(path: str, mainnet: bool = False, extra_params: dict = None):
     """Try to handle a p2fk.io API path using the local decoder.
     Returns None if the path is not supported locally."""
     try:
@@ -311,6 +432,15 @@ async def _local_p2fk_fallback(path: str, mainnet: bool = False):
             address = path.split('/', 1)[1]
             return await _local_fetch_objects_for_address(address, network, version_byte)
 
+        # GetObjectsByKeyword/{keyword} — objects sent to a keyword address
+        if path.startswith('GetObjectsByKeyword/'):
+            keyword = path.split('/', 1)[1]
+            return await _local_fetch_objects_by_keyword(keyword, network, version_byte)
+
+        # GetKnownObjectsBySearchString — search across cached + keyword-based objects
+        if path == 'GetKnownObjectsBySearchString':
+            return await _local_search_objects(extra_params, network, version_byte)
+
     except Exception as e:
         logger.debug(f"Local fallback error [{path}]: {e}")
     return None
@@ -346,7 +476,7 @@ async def p2fk_get(path: str, mainnet: bool = False, extra_params: dict = None, 
     # ── LOCAL DECODER FIRST ──
     # Try our own P2FK decoder before hitting p2fk.io
     t0_local = time.time()
-    local_result = await _local_p2fk_fallback(path, mainnet)
+    local_result = await _local_p2fk_fallback(path, mainnet, extra_params)
     local_ms = (time.time() - t0_local) * 1000
     if local_result is not None:
         logger.info(f"Local decoder served [{path}] in {local_ms:.0f}ms")
@@ -418,7 +548,9 @@ async def p2fk_get(path: str, mainnet: bool = False, extra_params: dict = None, 
                     and data.get('Id', 0) == 0
                     and not data.get('URN')
                 )
-                if not is_empty_profile:
+                # Don't cache empty list results (objects, roots) — likely API hiccup
+                is_empty_list = isinstance(data, list) and len(data) == 0
+                if not is_empty_profile and not is_empty_list:
                     asyncio.create_task(_set_api_cache(cache_key, data))
                     track_decoder_source(path, "p2fk_io", duration_ms)
                 else:
