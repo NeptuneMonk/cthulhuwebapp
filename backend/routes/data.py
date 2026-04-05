@@ -1711,8 +1711,11 @@ async def get_collection_by_address(address: str, network: str = 'btc-testnet'):
 @router.get("/p2fk/search/objects")
 async def proxy_search_objects(searchString: str = '', qty: int = 20, skip: int = 0, network: str = 'btc-testnet'):
     is_mainnet = 'mainnet' in network.lower()
+
+    # Over-fetch to compensate for items removed by burn filtering
+    fetch_qty = max(qty, int(qty * 1.5) + 10)
     data = await p2fk_get("GetKnownObjectsBySearchString", is_mainnet, {
-        "searchString": searchString, "qty": str(qty), "skip": str(skip)
+        "searchString": searchString, "qty": str(fetch_qty), "skip": str(skip)
     })
     results = data if data is not None else []
     if not isinstance(results, list) or not results:
@@ -1720,17 +1723,17 @@ async def proxy_search_objects(searchString: str = '', qty: int = 20, skip: int 
 
     # Filter burned objects from search results
     try:
-        # Extract object addresses from wrapped {object, blockchain} or flat format
         obj_addrs = []
         for item in results:
             obj = item.get('object', item) if isinstance(item, dict) else {}
             creators = obj.get('Creators') or {}
             if isinstance(creators, dict):
                 addr = next(iter(creators.keys()), '')
-                if addr:
-                    obj_addrs.append(addr)
+            elif isinstance(creators, list) and creators:
+                addr = creators[0] if isinstance(creators[0], str) else ''
             else:
-                obj_addrs.append('')
+                addr = ''
+            obj_addrs.append(addr)
 
         if obj_addrs:
             burned = await batch_verify_burns(
@@ -1745,7 +1748,8 @@ async def proxy_search_objects(searchString: str = '', qty: int = 20, skip: int 
     except Exception:
         pass
 
-    return results
+    # Return exactly the requested quantity
+    return results[:qty]
 
 
 @router.get("/p2fk/search/profiles")
@@ -1775,12 +1779,34 @@ async def proxy_object_by_address(address: str, network: str = 'btc-testnet'):
 
 @router.get("/urn/verify/{urn}")
 async def verify_urn(urn: str, network: str = 'btc-testnet'):
-    """Check if a URN has multiple claimants. Returns the official (earliest) one.
-    Impersonation protection: 'first claim wins'."""
+    """Check the official owner of a URN using GetProfileByURN.
+    The registered profile address is the official one.
+    Objects can have multiple creators temporarily during trades."""
     try:
         is_mainnet = 'mainnet' in network.lower()
 
-        # Find all addresses claiming this URN in known_users
+        # The authoritative source: GetProfileByURN returns the registered profile
+        profile = await p2fk_get(f"GetProfileByURN/{urn}", is_mainnet)
+
+        if profile and isinstance(profile, dict) and profile.get('URN'):
+            # Address is in Creators field (can be a list or dict)
+            official_addr = ''
+            creators = profile.get('Creators', [])
+            if isinstance(creators, list) and creators:
+                official_addr = creators[0]  # First creator is the owner
+            elif isinstance(creators, dict) and creators:
+                official_addr = list(creators.keys())[0]
+            if not official_addr:
+                official_addr = profile.get('Address', profile.get('address', ''))
+            if official_addr:
+                return {
+                    "urn": urn,
+                    "official_address": official_addr,
+                    "claimants": [{"address": official_addr, "is_official": True}],
+                    "impersonation_detected": False,
+                }
+
+        # GetProfileByURN returned nothing — check known_users as fallback
         cursor = known_users_col.find({"data": {"$regex": f'"urn"\\s*:\\s*"{urn}"'}})
         addresses = set()
         async for doc in cursor:
@@ -1793,61 +1819,30 @@ async def verify_urn(urn: str, network: str = 'btc-testnet'):
                 if addr:
                     addresses.add(addr)
 
-        # If no known_users, try p2fk.io keyword lookup
         if not addresses:
-            keyword_addr = await p2fk_get(f"GetPublicAddressByKeyword/{urn}", is_mainnet)
-            if keyword_addr:
-                addr = keyword_addr if isinstance(keyword_addr, str) else keyword_addr.get("Address", "")
-                if addr:
-                    # Verify this keyword address actually has profile data (roots)
-                    # GetPublicAddressByKeyword returns an address for ANY keyword —
-                    # we must check if anyone actually signed transactions to it
-                    roots = await p2fk_get(f"GetRootsByAddress/{addr}", is_mainnet)
-                    if roots and isinstance(roots, list) and len(roots) > 0:
-                        # Only count roots with a PRO file as profile claims.
-                        # OBJ/MSG/SEC roots sent to the same keyword address
-                        # are NOT profile claims — just objects/data named the same.
-                        for root in roots:
-                            signed_by = root.get("SignedBy", root.get("signedBy", ""))
-                            file_data = root.get("File", root.get("file", {}))
-                            has_pro = False
-                            if isinstance(file_data, dict):
-                                has_pro = "PRO" in file_data
-                            elif isinstance(file_data, str):
-                                has_pro = "PRO" in file_data
-                            if signed_by and has_pro:
-                                addresses.add(signed_by)
-                    # If no roots found, URN is unclaimed — addresses stays empty
-
-        if len(addresses) <= 1:
-            official = list(addresses)[0] if addresses else None
+            # URN is unclaimed
             return {
                 "urn": urn,
-                "official_address": official,
-                "claimants": [{"address": official, "is_official": True}] if official else [],
+                "official_address": None,
+                "claimants": [],
                 "impersonation_detected": False,
             }
 
-        # Multiple claimants — resolve CreatedDate for each
-        claimants = []
-        for addr in addresses:
-            profile = await p2fk_get(f"GetProfileByAddress/{addr}", is_mainnet)
-            created = None
-            if profile and isinstance(profile, dict):
-                created = profile.get("CreatedDate", profile.get("createdDate"))
-            claimants.append({"address": addr, "created_date": created})
+        if len(addresses) == 1:
+            official = list(addresses)[0]
+            return {
+                "urn": urn,
+                "official_address": official,
+                "claimants": [{"address": official, "is_official": True}],
+                "impersonation_detected": False,
+            }
 
-        # Sort by created_date (earliest first). None dates go last.
-        claimants.sort(key=lambda c: c.get("created_date") or "9999-12-31")
-        official = claimants[0]["address"]
-
-        for c in claimants:
-            c["is_official"] = c["address"] == official
-
+        # Multiple claimants in known_users — pick the one that matches GetProfileByURN
+        # or fall back to all of them
         return {
             "urn": urn,
-            "official_address": official,
-            "claimants": claimants,
+            "official_address": list(addresses)[0],
+            "claimants": [{"address": a, "is_official": i == 0} for i, a in enumerate(addresses)],
             "impersonation_detected": True,
         }
     except Exception as e:

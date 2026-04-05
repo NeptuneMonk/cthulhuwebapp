@@ -64,7 +64,7 @@ async def _ensure_tables():
 async def _get_config() -> dict:
     await _ensure_tables()
     conn = await get_conn()
-    async with conn.execute("SELECT data FROM release_config WHERE key = 'config'") as cur:
+    async with conn.execute("SELECT data FROM release_config WHERE _id = 'config'") as cur:
         row = await cur.fetchone()
     if row:
         return json.loads(row[0])
@@ -77,7 +77,7 @@ async def _set_config(updates: dict):
     config.update(updates)
     conn = await get_conn()
     await conn.execute(
-        "INSERT OR REPLACE INTO release_config (key, data) VALUES ('config', ?)",
+        "INSERT OR REPLACE INTO release_config (_id, data) VALUES ('config', ?)",
         (json.dumps(config),)
     )
     await conn.commit()

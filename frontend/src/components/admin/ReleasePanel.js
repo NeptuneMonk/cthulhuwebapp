@@ -3,7 +3,7 @@ import { FiPackage, FiUpload, FiCheck, FiX, FiExternalLink, FiRefreshCw, FiImage
 
 const API = process.env.REACT_APP_BACKEND_URL + '/api';
 
-function getToken() { return sessionStorage.getItem('admin_token'); }
+function getToken() { return localStorage.getItem('cthulhu_admin_token'); }
 
 async function adminFetch(path, opts = {}) {
   const token = getToken();

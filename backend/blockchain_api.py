@@ -131,7 +131,8 @@ def get_version_byte(network: str) -> int:
 # ─── Custom Node RPC ─────────────────────────────────────────────────────────
 
 async def _rpc_call(method: str, params: list) -> Optional[dict]:
-    """Call Bitcoin Core JSON-RPC (for custom node support)."""
+    """Call Bitcoin Core JSON-RPC (for custom node support).
+    Returns result dict on success, None on failure. Raises descriptive errors."""
     if not _custom_node_url:
         return None
     try:
@@ -141,13 +142,29 @@ async def _rpc_call(method: str, params: list) -> Optional[dict]:
             json={"jsonrpc": "1.0", "id": "cthulhu", "method": method, "params": params},
             timeout=10.0,
         )
+        if resp.status_code == 401 or resp.status_code == 403:
+            raise ConnectionError(f"Authentication failed (HTTP {resp.status_code}). Check rpcuser/rpcpassword in bitcoin.conf")
         if resp.status_code == 200:
             data = resp.json()
-            if data.get("error") is None:
-                return data.get("result")
+            if data.get("error") is not None:
+                rpc_err = data["error"]
+                raise ConnectionError(f"RPC error: {rpc_err.get('message', rpc_err)}")
+            return data.get("result")
+        raise ConnectionError(f"Unexpected HTTP {resp.status_code}")
+    except ConnectionError:
+        raise
     except Exception as e:
+        err_str = str(e)
+        if "ConnectError" in err_str or "Connection refused" in err_str.lower() or "connect" in type(e).__name__.lower():
+            raise ConnectionError(
+                "Connection refused. The server cannot reach this host. "
+                "If your node is on your local machine, you need the Cthulhu desktop app — "
+                "the cloud-hosted version cannot reach 127.0.0.1 on your computer."
+            )
+        if "timeout" in err_str.lower() or "Timeout" in type(e).__name__:
+            raise ConnectionError(f"Connection timed out. Host may be unreachable from this server.")
         logger.debug(f"RPC {method} failed: {e}")
-    return None
+        raise ConnectionError(f"Connection failed: {err_str}")
 
 
 async def _fetch_tx_from_node(txid: str) -> Optional[dict]:
@@ -396,6 +413,8 @@ async def test_custom_node() -> dict:
                 "verification_progress": info.get("verificationprogress", 0),
                 "pruned": info.get("pruned", False),
             }
-        return {"connected": False, "error": "RPC call returned no data"}
+        return {"connected": False, "error": "RPC call returned no data — node may not be reachable from this server"}
+    except ConnectionError as e:
+        return {"connected": False, "error": str(e)}
     except Exception as e:
         return {"connected": False, "error": str(e)}

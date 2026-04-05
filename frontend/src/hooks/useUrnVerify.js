@@ -35,6 +35,8 @@ export async function resolveUrnOfficial(urn, network = 'btc-testnet') {
 
 /**
  * Check if a given address is the official owner of a URN.
+ * An object can temporarily have two creators during trades,
+ * so we check if the official address is one of the creators.
  * Returns: true (official), false (impersonator), null (unknown/not yet checked).
  */
 export function isOfficialCached(urn, address, network = 'btc-testnet') {
@@ -43,6 +45,7 @@ export function isOfficialCached(urn, address, network = 'btc-testnet') {
   const cached = urnCache[key];
   if (!cached || Date.now() - cached.ts > CACHE_TTL) return null;
   if (!cached.impersonation_detected) return true; // No dupes — they're the real one
+  // Check if the given address matches the official registered address
   return cached.official_address === address;
 }
 

@@ -283,6 +283,15 @@ function ConnectNodeSection({ network }) {
           {showForm && (
             <div className="bg-gray-900/50 border border-gray-700/30 rounded-lg p-3 space-y-2">
               <p className="text-[10px] text-gray-500 font-medium">Bitcoin Core RPC Connection</p>
+
+              {/* Cloud-hosted warning */}
+              {(rpcHost === '127.0.0.1' || rpcHost === 'localhost') && (
+                <div className="bg-amber-900/15 border border-amber-800/30 rounded-lg p-2.5">
+                  <p className="text-[10px] text-amber-400 leading-relaxed">
+                    <span className="font-bold">Note:</span> This app is cloud-hosted. <code className="font-mono bg-amber-900/30 px-1 rounded">127.0.0.1</code> points to the server, not your computer. To connect your local Bitcoin Core node, use the <strong>Cthulhu desktop app</strong> or expose your node via port forwarding / tunnel.
+                  </p>
+                </div>
+              )}
               <div className="grid grid-cols-3 gap-2">
                 <div className="col-span-2">
                   <label className="text-[10px] text-gray-600 block mb-0.5">Host</label>
@@ -339,7 +348,9 @@ function ConnectNodeSection({ network }) {
           )}
 
           {error && (
-            <p className="text-[10px] text-red-400">{error}</p>
+            <div className="bg-red-900/15 border border-red-800/30 rounded-lg p-2.5">
+              <p className="text-[10px] text-red-400 leading-relaxed" data-testid="node-error">{error}</p>
+            </div>
           )}
         </div>
       )}

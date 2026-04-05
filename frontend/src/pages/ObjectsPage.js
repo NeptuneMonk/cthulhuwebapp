@@ -10,7 +10,7 @@ import { cachedFetch } from '@/utils/apiCache';
 
 const API = process.env.REACT_APP_BACKEND_URL;
 
-const DEFAULT_QTY = 20;
+const DEFAULT_QTY = 40;
 const DEFAULT_SEARCH = '';
 const INITIAL_QTY = 20;
 /** Cross-network discovery prompt */
@@ -239,33 +239,18 @@ export default function ObjectsPage({ network }) {
     if (loading) return;
     setLoading(true);
     try {
-      // Any non-empty search string uses the cross-chain search proxy
-      // Empty string uses the storefront for browse
-      const isSearchMode = searchString && searchString.trim().length > 0;
-
       const cacheId = `objs_${searchString}_${skip}_${qty}_${network}`;
       const doFetch = async () => {
-        if (isSearchMode) {
-          // User search: use the search proxy
-          const url = `${API}/api/p2fk/search/objects?searchString=${encodeURIComponent(searchString)}&qty=${qty}&skip=${skip}&network=${encodeURIComponent(network)}`;
-          const res = await axios.get(url);
-          return Array.isArray(res.data) ? res.data : [];
-        } else {
-          // Storefront browse: use the dedicated storefront endpoint
-          const kw = searchString && searchString.trim().length > 0 ? `&keyword=${encodeURIComponent(searchString)}` : '';
-          const url = `${API}/api/objects/storefront/${encodeURIComponent(network)}?skip=${skip}&limit=${qty}${kw}`;
-          const res = await axios.get(url);
-          const objects = res.data?.objects || [];
-          // Storefront returns format_object_for_api format (lowercase keys)
-          // Mark them so normalizeItem passes them through correctly
-          return objects.map(o => ({ ...o, _fromStorefront: true }));
-        }
+        // Always use the cross-chain search proxy — works for both browse (empty) and search
+        const url = `${API}/api/p2fk/search/objects?searchString=${encodeURIComponent(searchString)}&qty=${qty}&skip=${skip}&network=${encodeURIComponent(network)}`;
+        const res = await axios.get(url);
+        return Array.isArray(res.data) ? res.data : [];
       };
 
       const items = await cachedFetch('objects', cacheId, doFetch, (freshItems) => {
         // Background update with fresh data
         const normalized = freshItems
-          .map(item => item._fromStorefront ? { ...item, _blockchain: item._blockchain || '' } : normalizeItem(item))
+          .map(normalizeItem)
           .filter(o => {
             // Filter out fully burned objects (total_supply == 0)
             const supply = o.total_supply ?? o.TotalSupply;
@@ -309,7 +294,7 @@ export default function ObjectsPage({ network }) {
       });
 
       const normalized = items
-        .map(item => item._fromStorefront ? { ...item, _blockchain: item._blockchain || '' } : normalizeItem(item))
+        .map(normalizeItem)
         .filter(o => {
           // Filter out fully burned objects (total_supply == 0)
           const supply = o.total_supply ?? o.TotalSupply;
