@@ -102,6 +102,120 @@ def _root_to_p2fk_format(root_dict: dict) -> dict:
     return out
 
 
+async def _local_fetch_objects_for_address(address: str, network: str, version_byte: int):
+    """Locally reconstruct objects owned/created by an address.
+    Scans all transactions for the address, finds OBJ roots,
+    and reconstructs the OBJ JSON metadata from the raw payload."""
+    from utils.blockchain import fetch_tx_outputs
+    from utils.p2fk import base58_decode_check
+    import re
+
+    txs = await local_fetch_addr_txs(address, network, max_pages=3)
+    objects = []
+    seen_txids = set()
+
+    for tx in txs:
+        txid = tx.get('txid', '')
+        if not txid or txid in seen_txids:
+            continue
+        seen_txids.add(txid)
+
+        root = decode_root_from_raw_tx(txid, tx, version_byte)
+        if not root or 'OBJ' not in root.files:
+            continue
+        # Only include objects signed by this address
+        if root.signed_by != address:
+            continue
+
+        # Reconstruct OBJ file bytes from the transaction outputs
+        obj_json = None
+        try:
+            is_mainnet = 'mainnet' in network
+            chain = 'BTC'
+            if 'doge' in network.lower():
+                chain = 'DOGE'
+            elif 'ltc' in network.lower():
+                chain = 'LTC'
+
+            outputs = await fetch_tx_outputs(txid, chain=chain, mainnet=is_mainnet)
+            if outputs:
+                raw = bytearray()
+                for addr in outputs:
+                    try:
+                        payload = base58_decode_check(addr)
+                        raw.extend(payload)
+                    except Exception:
+                        continue
+
+                # Find OBJ file pattern: OBJ + delimiter + size + delimiter + content
+                known_seps = rb'[\\/:\*\?"<>\|]'
+                pattern = re.compile(rb'OBJ' + known_seps + rb'(\d+)' + known_seps)
+                match = pattern.search(bytes(raw))
+                if match:
+                    size = int(match.group(1))
+                    content_start = match.end()
+                    obj_bytes = bytes(raw)[content_start:content_start + size]
+                    obj_json = json.loads(obj_bytes.decode('utf-8', errors='replace'))
+        except Exception as e:
+            logger.debug(f"OBJ reconstruction for {txid}: {e}")
+
+        # Build p2fk.io-compatible object dict
+        rd = root.to_dict()
+        obj_entry = {
+            'TransactionId': txid,
+            'SignedBy': root.signed_by,
+            'Signed': root.signed,
+            'BlockDate': rd.get('BlockDate'),
+            'BlockHeight': rd.get('BlockHeight'),
+            'Confirmations': rd.get('Confirmations', 0),
+        }
+
+        if obj_json and isinstance(obj_json, dict):
+            # Map standard OBJ fields
+            obj_entry['URN'] = obj_json.get('urn', obj_json.get('URN', ''))
+            obj_entry['Name'] = obj_json.get('nme', obj_json.get('Name', ''))
+            obj_entry['Description'] = obj_json.get('dsc', obj_json.get('Description', ''))
+            obj_entry['Image'] = obj_json.get('img', obj_json.get('Image', ''))
+            obj_entry['URI'] = obj_json.get('uri', obj_json.get('URI', ''))
+            obj_entry['License'] = obj_json.get('lic', obj_json.get('License', ''))
+            obj_entry['Attributes'] = obj_json.get('atr', obj_json.get('Attributes', {}))
+
+            # Normalize Creators to p2fk.io format: {address: date_str}
+            raw_cre = obj_json.get('cre', obj_json.get('Creators', []))
+            if isinstance(raw_cre, list):
+                obj_entry['Creators'] = {root.signed_by: "0001-01-01T00:00:00"}
+            elif isinstance(raw_cre, dict):
+                obj_entry['Creators'] = raw_cre
+            else:
+                obj_entry['Creators'] = {root.signed_by: "0001-01-01T00:00:00"}
+
+            # Normalize Owners to p2fk.io format: {address: {Item1: qty, Item2: null}}
+            raw_own = obj_json.get('own', obj_json.get('Owners', {}))
+            if isinstance(raw_own, dict):
+                normalized_own = {}
+                for k, v in raw_own.items():
+                    # Raw format uses index keys; map "0" to signer address
+                    owner_addr = root.signed_by if k in ('0', '1') else k
+                    qty = v if isinstance(v, int) else 1
+                    normalized_own[owner_addr] = {"Item1": qty, "Item2": None}
+                obj_entry['Owners'] = normalized_own if normalized_own else {root.signed_by: {"Item1": 1, "Item2": None}}
+            else:
+                obj_entry['Owners'] = {root.signed_by: {"Item1": 1, "Item2": None}}
+
+            # Maximum supply
+            obj_entry['Maximum'] = obj_json.get('max', obj_json.get('Maximum', 0))
+        else:
+            # Couldn't parse OBJ JSON — use minimal info from root
+            obj_entry['URN'] = txid
+            obj_entry['Name'] = 'Unknown Object'
+            obj_entry['Creators'] = {root.signed_by: "0001-01-01T00:00:00"}
+            obj_entry['Owners'] = {root.signed_by: {"Item1": 1, "Item2": None}}
+
+        objects.append(obj_entry)
+
+    return objects
+
+
 async def _local_p2fk_fallback(path: str, mainnet: bool = False):
     """Try to handle a p2fk.io API path using the local decoder.
     Returns None if the path is not supported locally."""
@@ -190,6 +304,12 @@ async def _local_p2fk_fallback(path: str, mainnet: bool = False):
             if path.startswith('GetObjectsByAddress/'):
                 return results
             return results[0] if results else None
+
+        # GetObjectsOwnedByAddress/{address} — objects currently owned by address
+        # GetObjectsCreatedByAddress/{address} — objects created (signed) by address
+        if path.startswith('GetObjectsOwnedByAddress/') or path.startswith('GetObjectsCreatedByAddress/'):
+            address = path.split('/', 1)[1]
+            return await _local_fetch_objects_for_address(address, network, version_byte)
 
     except Exception as e:
         logger.debug(f"Local fallback error [{path}]: {e}")

@@ -26,7 +26,8 @@ Build a modern, responsive frontend for a blockchain-based decentralized social 
 ## Recently Completed (April 2026)
 - **P0 Fix: Admin Wallet Reset Lockout** — Fixed broken `POST /api/admin/wallet/reset` endpoint (previous agent inserted reset function inside init_wallet body, breaking both). Restored init_wallet code structure, added reset endpoint properly, and cleared stale wallet_config from SQLite so user can re-initialize with a fresh password from the UI.
 - **P0 Fix: Mint Profile URN Defaulting to Address** — URN field in profile setup was read-only and defaulted to the bitcoin address. Now editable for new profiles with placeholder "Choose a unique name". Updates user auth state with chosen URN after successful mint. Read-only for profile updates.
-- **URN Impersonation Protection (First Claim Wins)** — Three-layer protection:
+- **Local P2FK Decoder for Objects (DONE)**
+- **URN Impersonation Protection (First Claim Wins)** — Three-layer protection: — Added `_local_fetch_objects_for_address()` to reconstruct OBJ metadata directly from raw blockchain transactions. The local decoder is now the primary source for `GetObjectsOwnedByAddress` and `GetObjectsCreatedByAddress`, with p2fk.io as fallback. Fixed OBJ JSON reconstruction (Creators/Owners format normalization to match p2fk.io schema).
   1. Pre-mint check: URN availability verified against on-chain data with real-time feedback (red border + "already claimed by..." error). Blocks minting through Cthulhu.
   2. Unofficial badge: FeedCard shows red "Unofficial" badge for impersonating profiles. ProfileDetailPage shows "NOT OFFICIAL" badge with link to the real profile.
   3. @mention resolution: All @mentions resolve to the official (earliest) URN claimant's profile page.
