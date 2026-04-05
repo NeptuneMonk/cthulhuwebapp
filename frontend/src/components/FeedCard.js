@@ -204,6 +204,61 @@ export const FeedCard = React.forwardRef(({ item, network, currentUserAddress, c
   // Filter out author-deleted posts — completely hidden from everyone's view
   if (isAuthorDeleted) return null;
 
+  // ─── System Announcement Card ───
+  if (message.type === 'system_announcement') {
+    const isObjMint = message.subtype === 'object_minted';
+    return (
+      <div
+        className={`mx-2 my-2 px-4 py-3 rounded-xl border ${
+          isObjMint
+            ? 'border-purple-500/20 bg-gradient-to-r from-purple-500/5 to-transparent'
+            : 'border-teal-500/20 bg-gradient-to-r from-teal-500/5 to-transparent'
+        }`}
+        data-testid="system-announcement"
+      >
+        <div className="flex items-center gap-3">
+          <ProfileThumb
+            name={isObjMint ? (message.object_name || '?') : (message.sender_urn || '?')}
+            image={isObjMint ? message.object_image : message.sender_image}
+            size="sm"
+          />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm text-gray-200">
+              <button
+                onClick={() => message.from_address && navigate(`/profile/${message.from_address}?network=${network}`)}
+                className={`font-semibold transition-colors ${
+                  isObjMint ? 'text-purple-400 hover:text-purple-300' : 'text-teal-400 hover:text-teal-300'
+                }`}
+                data-testid="announcement-profile-link"
+              >@{message.sender_urn}</button>
+              {isObjMint
+                ? <> just minted <span className="font-semibold text-gray-100">"{message.object_name}"</span>!</>
+                : <> just minted their profile!</>
+              }
+            </p>
+            <p className="text-xs text-gray-500 mt-0.5">
+              {(() => {
+                try {
+                  const d = new Date(message.block_time || message.created_at);
+                  const now = new Date();
+                  const diffMin = Math.floor((now - d) / 60000);
+                  if (diffMin < 1) return 'just now';
+                  if (diffMin < 60) return `${diffMin}m ago`;
+                  const diffH = Math.floor(diffMin / 60);
+                  if (diffH < 24) return `${diffH}h ago`;
+                  return `${Math.floor(diffH / 24)}d ago`;
+                } catch { return ''; }
+              })()}
+            </p>
+          </div>
+          <span className={`text-xs font-medium uppercase tracking-wide ${
+            isObjMint ? 'text-purple-500/60' : 'text-teal-500/60'
+          }`}>{isObjMint ? 'New Object' : 'New Profile'}</span>
+        </div>
+      </div>
+    );
+  }
+
   // Right-click handler (desktop)
   const handleContextMenu = (e) => {
     e.preventDefault();

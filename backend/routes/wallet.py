@@ -420,10 +420,84 @@ async def discover_addresses(address: str, network: str = 'btc-testnet'):
 async def register_profile_known(req: RegisterProfileRequest):
     try:
         await register_known_user(req.address, req.network, req.urn, req.image, req.display_name)
+
+        # Create ephemeral "new profile minted" announcement for the global feed
+        from db import db
+        from datetime import datetime, timezone
+
+        # Look up the user's actual profile image from known_users
+        profile_image = req.image
+        try:
+            known = await db.known_users.find_one({"address": req.address, "network": req.network})
+            if known and known.get("image"):
+                profile_image = known["image"]
+        except Exception:
+            pass
+
+        announcement = {
+            "type": "profile_minted",
+            "address": req.address,
+            "urn": req.urn or req.address[:12],
+            "display_name": req.display_name or req.urn or req.address[:12],
+            "image": profile_image,
+            "network": req.network,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+        await db.system_announcements.insert_one(announcement)
+        logger.info(f"System announcement: @{req.urn} minted profile on {req.network}")
+
         return {"success": True, "address": req.address, "urn": req.urn}
     except Exception as e:
         logger.error(f"Register profile error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+
+class AnnounceObjectRequest(BaseModel):
+    address: str
+    network: str = 'btc-testnet'
+    urn: str = ''
+    object_name: str = ''
+    object_image: str = ''
+    txid: str = ''
+
+@router.post("/wallet/announce-object")
+async def announce_object_minted(req: AnnounceObjectRequest):
+    """Create an ephemeral 'new object minted' announcement for the global feed."""
+    try:
+        from db import db
+        from datetime import datetime, timezone
+
+        # Look up creator's profile for avatar
+        profile_image = None
+        creator_urn = req.urn or req.address[:12]
+        try:
+            known = await db.known_users.find_one({"address": req.address, "network": req.network})
+            if known:
+                profile_image = known.get("image")
+                creator_urn = known.get("urn") or creator_urn
+        except Exception:
+            pass
+
+        announcement = {
+            "type": "object_minted",
+            "address": req.address,
+            "urn": creator_urn,
+            "display_name": creator_urn,
+            "image": profile_image,  # Creator's profile avatar
+            "object_name": req.object_name or "an object",
+            "object_image": req.object_image or "",
+            "txid": req.txid,
+            "network": req.network,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+        await db.system_announcements.insert_one(announcement)
+        logger.info(f"Object announcement: @{creator_urn} minted '{req.object_name}' on {req.network}")
+        return {"success": True}
+    except Exception as e:
+        logger.error(f"Announce object error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 
 # --- P2FK Transaction Endpoints (server-side signing, kept for backward compat) ---

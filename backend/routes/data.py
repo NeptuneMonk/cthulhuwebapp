@@ -26,6 +26,53 @@ import re as _re
 
 _pinning_in_progress = set()  # Avoid duplicate pin requests
 
+# ─── System Announcements ───
+_ANNOUNCEMENT_TTL_HOURS = 48
+
+async def _get_system_announcements(network: str) -> list:
+    """Fetch unexpired system announcements for the global feed."""
+    try:
+        cutoff = datetime.now(timezone.utc).timestamp() - (_ANNOUNCEMENT_TTL_HOURS * 3600)
+        cursor = db.system_announcements.find({"network": network})
+        announcements = await cursor.to_list(100)
+        results = []
+        for a in announcements:
+            ts = a.get("timestamp", "")
+            try:
+                dt = datetime.fromisoformat(ts)
+                if dt.timestamp() < cutoff:
+                    continue  # expired
+            except Exception:
+                continue
+
+            subtype = a.get("type", "profile_minted")
+            if subtype == "object_minted":
+                obj_name = a.get("object_name", "an object")
+                message = f"@{a.get('urn', a.get('address','')[:12])} just minted \"{obj_name}\"!"
+            else:
+                message = f"@{a.get('urn', a.get('address','')[:12])} just minted their profile!"
+
+            results.append({
+                "type": "system_announcement",
+                "subtype": subtype,
+                "from_address": a.get("address", ""),
+                "sender_urn": a.get("urn", ""),
+                "sender_image": a.get("image"),
+                "display_name": a.get("display_name", ""),
+                "object_name": a.get("object_name", ""),
+                "object_image": a.get("object_image", ""),
+                "message": message,
+                "block_time": ts,
+                "created_at": ts,
+                "txid": f"announce_{a.get('_id', '')}",
+                "network": network,
+                "is_ephemeral": True,
+            })
+        return results
+    except Exception as e:
+        logger.debug(f"Announcement fetch error: {e}")
+        return []
+
 async def _proactive_pin_feed_cids(messages: list):
     """Extract all IPFS CIDs from feed messages and pin them to local Kubo.
     This ensures our node has a copy of every image/file referenced in posts."""
@@ -482,6 +529,17 @@ async def get_feed(network: str, skip: int = 0, limit: int = 5, mode: str = 'glo
         if cached and cached.get('messages'):
             cache_age = (datetime.now(timezone.utc) - datetime.fromisoformat(cached['timestamp'])).total_seconds()
             all_messages = cached['messages']
+
+            # Inject ephemeral system announcements into global feed only
+            if mode == 'global':
+                announcements = await _get_system_announcements(network)
+                if announcements:
+                    all_messages = announcements + all_messages
+                    # Re-sort so announcements appear in chronological position
+                    all_messages.sort(
+                        key=lambda m: m.get('block_time') or m.get('created_at') or '',
+                        reverse=True,
+                    )
 
             # Filter to followed addresses only
             if mode == 'following' and followed:

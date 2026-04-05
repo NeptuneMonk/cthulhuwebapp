@@ -537,6 +537,21 @@ export const ObjectCreateModal = ({ onClose, network, prefillImage, fullPage, te
             });
           }
         } catch (e) { console.warn('Ink broadcast failed:', e); }
+        // Announce object mint to global feed (ephemeral)
+        try {
+          fetch(`${API}/wallet/announce-object`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              address: activeAddress,
+              network: network || 'btc-testnet',
+              urn: authUser?.urn || '',
+              object_name: name.trim() || urn.trim(),
+              object_image: image.trim() || '',
+              txid: result.txid,
+            }),
+          }).catch(() => {});
+        } catch (e) { console.warn('Announce failed:', e); }
         // Auto-tether if this is a venue/room object
         const licLower = (license || '').toLowerCase();
         if (licLower.startsWith('cthulhu:tether') && tetherRoom) {
