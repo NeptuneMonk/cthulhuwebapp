@@ -112,15 +112,6 @@ async def init_wallet(req: InitWalletRequest, _=Depends(_get_admin_verify())):
     if existing:
         raise HTTPException(status_code=400, detail="Wallet already initialized. Use /reset first to re-initialize with a new password.")
 
-
-@router.post("/reset")
-async def reset_wallet(_=Depends(_get_admin_verify())):
-    """Wipe the admin wallet so it can be re-initialized with a new password.
-    Treasury WIF from .env is never lost — it gets re-imported on next init."""
-    await db.admin_wallet.delete_many({})
-    await db.admin_wallet_addresses.delete_many({})
-    return {"success": True, "message": "Admin wallet wiped. Call /init with your new password."}
-
     is_testnet = "testnet" in req.network
     keys = {}
     addresses = []
@@ -198,6 +189,18 @@ async def reset_wallet(_=Depends(_get_admin_verify())):
         "network": req.network,
         "first_address": addresses[0]["address"] if addresses else None,
     }
+
+
+@router.post("/reset")
+async def reset_wallet(_=Depends(_get_admin_verify())):
+    """Wipe the admin wallet so it can be re-initialized with a new password.
+    Treasury WIF from .env is never lost — it gets re-imported on next init."""
+    await db.admin_wallet.delete_many({})
+    await db.admin_wallet_addresses.delete_many({})
+    _key_cache.clear()
+    return {"success": True, "message": "Admin wallet wiped. Call /init with your new password."}
+
+
 
 
 @router.get("/addresses")
