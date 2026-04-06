@@ -168,6 +168,7 @@ export default function ObjectsPage({ network }) {
   const skipRef = useRef(0);
   const activeSearchRef = useRef(DEFAULT_SEARCH);
   const [isUserSearch, setIsUserSearch] = useState(false);
+  const [totalItems, setTotalItems] = useState(0);
 
   const [crossNetObj, setCrossNetObj] = useState(null);
 
@@ -244,7 +245,7 @@ export default function ObjectsPage({ network }) {
     return { ...item, _blockchain: item._blockchain || item.blockchain || '' };
   }, []);
 
-  /** Fetch objects via backend proxy with caching */
+  /** Fetch objects via backend endpoint with caching */
   const fetchObjects = useCallback(async (searchString, skip, qty, isReset = false) => {
     if (loading) return;
     setLoading(true);
@@ -252,47 +253,28 @@ export default function ObjectsPage({ network }) {
       const activeChainFilter = CHAIN_FILTERS.find(f => f.key === activeFilter);
       const chainMatch = activeChainFilter?.match;
 
-      if (chainMatch) {
-        // Chain filter active: use dedicated backend endpoint that handles
-        // server-side chain filtering (checks URN/URI/Image fields for chain prefix)
-        const cacheId = `chain_${chainMatch}_${skip}_${qty}_${network}`;
-        const doFetch = async () => {
-          const url = `${API}/api/objects/by-chain/${chainMatch}?skip=${skip}&qty=${qty}&network=${encodeURIComponent(network)}`;
-          const res = await axios.get(url);
-          const result = res.data;
-          return result;
-        };
-        const result = await cachedFetch('chain_objects', cacheId, doFetch, (freshResult) => {
-          const items = freshResult?.objects || (Array.isArray(freshResult) ? freshResult : []);
-          const finalObjects = processItems(items, chainMatch);
-          setObjects(finalObjects);
-          setHasMore(freshResult?.has_more ?? false);
-        });
-        const items = result?.objects || (Array.isArray(result) ? result : []);
+      // Use the by-chain endpoint for ALL views (including "All" which uses chain=ALL)
+      const chainParam = chainMatch || 'ALL';
+      const cacheId = `chain_${chainParam}_${skip}_${qty}_${network}`;
+      const doFetch = async () => {
+        const url = `${API}/api/objects/by-chain/${chainParam}?skip=${skip}&qty=${qty}&network=${encodeURIComponent(network)}`;
+        const res = await axios.get(url);
+        return res.data;
+      };
+      const result = await cachedFetch('chain_objects', cacheId, doFetch, (freshResult) => {
+        const items = freshResult?.objects || (Array.isArray(freshResult) ? freshResult : []);
         const finalObjects = processItems(items, chainMatch);
         setObjects(finalObjects);
-        setHasMore(result?.has_more ?? false);
-        setCurrentSkip(skip);
-        skipRef.current = skip + qty;
-      } else {
-        // No chain filter: standard single-page fetch with pagination
-        const cacheId = `objs_${searchString}_${skip}_${qty}_${network}`;
-        const doFetch = async () => {
-          const url = `${API}/api/p2fk/search/objects?searchString=${encodeURIComponent(searchString)}&qty=${qty}&skip=${skip}&network=${encodeURIComponent(network)}`;
-          const res = await axios.get(url);
-          return Array.isArray(res.data) ? res.data : [];
-        };
-        const items = await cachedFetch('objects', cacheId, doFetch, (freshItems) => {
-          const finalObjects = processItems(freshItems, null);
-          setObjects(finalObjects);
-          setHasMore(freshItems.length >= qty);
-        });
-        const finalObjects = processItems(items, null);
-        setObjects(finalObjects);
-        setHasMore(items.length >= qty);
-        setCurrentSkip(skip);
-        skipRef.current = skip + qty;
-      }
+        setHasMore(freshResult?.has_more ?? false);
+        setTotalItems(freshResult?.total ?? 0);
+      });
+      const items = result?.objects || (Array.isArray(result) ? result : []);
+      const finalObjects = processItems(items, chainMatch);
+      setObjects(finalObjects);
+      setHasMore(result?.has_more ?? false);
+      setTotalItems(result?.total ?? 0);
+      setCurrentSkip(skip);
+      skipRef.current = skip + qty;
     } catch (err) {
       console.error('p2fk search error:', err);
       setHasMore(false);
@@ -542,7 +524,9 @@ export default function ObjectsPage({ network }) {
                     </button>
                   )}
                   <span className="text-sm text-gray-500">
-                    {objects.length} item{objects.length !== 1 ? 's' : ''}
+                    Page {Math.floor(currentSkip / DEFAULT_QTY) + 1}
+                    {totalItems > 0 && ` of ${Math.ceil(totalItems / DEFAULT_QTY)}`}
+                    {totalItems > 0 && <span className="text-gray-600"> ({totalItems} total)</span>}
                   </span>
                   {hasMore && (
                     <button
@@ -558,7 +542,9 @@ export default function ObjectsPage({ network }) {
               )}
 
               {!hasMore && objects.length > 0 && currentSkip === 0 && (
-                <p className="text-center py-6 text-gray-600" data-testid="storefront-end">All objects loaded</p>
+                <p className="text-center py-6 text-gray-600" data-testid="storefront-end">
+                  All {totalItems || objects.length} objects loaded
+                </p>
               )}
             </>
           )}

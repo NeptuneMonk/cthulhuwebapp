@@ -750,18 +750,52 @@ def _object_matches_chain(obj: dict, chain: str) -> bool:
     return False
 
 
+async def _fetch_all_known_objects(is_mainnet: bool) -> list:
+    """Fetch ALL known objects from p2fk.io via direct HTTP call (bypasses p2fk_get
+    rate limiter which chokes on large payloads). Returns raw p2fk.io items."""
+    try:
+        from config import P2FK_API_BASE
+        client = get_client()
+        params = {
+            "searchString": "*", "qty": "600", "skip": "0",
+            "mainnet": str(is_mainnet).lower(),
+            "blockchain": "BTC", "showSystemFiles": "true",
+        }
+        resp = await client.get(
+            f"{P2FK_API_BASE}/GetKnownObjectsBySearchString",
+            params=params, timeout=30.0,
+        )
+        if resp.status_code == 200:
+            data = resp.json()
+            return data if isinstance(data, list) else []
+    except Exception as e:
+        logger.warning(f"Direct p2fk.io fetch failed: {e}")
+    return []
+
+
+def _extract_obj_addr(item: dict) -> str:
+    """Extract the object address (first Creator key) from a p2fk.io item."""
+    obj = item.get('object', item) if isinstance(item, dict) else {}
+    creators = obj.get('Creators') or {}
+    if isinstance(creators, dict):
+        return next(iter(creators.keys()), '')
+    if isinstance(creators, list) and creators:
+        return creators[0] if isinstance(creators[0], str) else ''
+    return ''
+
+
 @router.get("/objects/by-chain/{chain}")
 async def get_objects_by_chain(chain: str, network: str = 'btc-testnet', skip: int = 0, qty: int = 40):
-    """Fetch objects filtered by chain prefix (MZC, DOG, LTC, IPFS, BTC).
+    """Fetch objects filtered by chain prefix (ALL, MZC, DOG, LTC, IPFS, BTC).
+    chain=ALL returns every known object (no chain filter).
     Chain detection checks URN, URI, and Image fields for chain-prefixed values.
-    Sidechain objects can be embedded in BTC transactions, so we search broadly
-    and filter server-side. Results are cached per chain for 10 minutes."""
+    Results are cached for 10 minutes."""
     is_mainnet = 'mainnet' in network.lower()
     chain_upper = chain.upper()
-    if chain_upper not in ('MZC', 'DOG', 'LTC', 'IPFS', 'BTC'):
+    if chain_upper not in ('ALL', 'MZC', 'DOG', 'LTC', 'IPFS', 'BTC'):
         return {"objects": [], "chain": chain, "total": 0, "skip": skip, "qty": qty, "has_more": False}
 
-    # Check MongoDB cache first (chain-filtered results are cached for 10 min)
+    # Check MongoDB cache first
     cache_key = f"chain_objects:{chain_upper}:{network}"
     try:
         cached_doc = await api_cache_col.find_one({"_id": cache_key}, {"_id": 0})
@@ -776,75 +810,38 @@ async def get_objects_by_chain(chain: str, network: str = 'btc-testnet', skip: i
     except Exception:
         pass
 
-    # Fetch from p2fk.io: use multiple targeted searches in parallel
-    # 1. Search for chain name directly (e.g., "MZC") — matches objects with chain in name/URN
-    # 2. Also try the wildcard on a single large page as a fallback
-    async def search_by_term(term, fetch_qty=200, fetch_skip=0):
-        try:
-            data = await p2fk_get("GetKnownObjectsBySearchString", is_mainnet, {
-                "searchString": term, "qty": str(fetch_qty), "skip": str(fetch_skip),
-                "blockchain": "BTC", "showSystemFiles": "true"
-            })
-            return data if isinstance(data, list) else []
-        except Exception:
-            return []
+    # Fetch all known objects from p2fk.io (single direct HTTP call)
+    all_raw = await _fetch_all_known_objects(is_mainnet)
 
-    # Run searches in parallel: chain name + chain name with colon + wildcard (limited)
-    search_tasks = [
-        search_by_term(chain_upper, 200),
-        search_by_term(chain_upper + ":", 200),
-    ]
-    # For non-BTC chains, also try a wildcard search with limited scope
-    # BTC is the default chain so wildcard isn't needed
-    if chain_upper != 'BTC':
-        search_tasks.append(search_by_term("*", 300, 0))
-
-    results = await asyncio.gather(*search_tasks, return_exceptions=True)
-
-    # Merge and deduplicate
-    seen_urns = set()
+    # Deduplicate
+    seen_keys = set()
     all_items = []
-    for result in results:
-        if isinstance(result, Exception) or not isinstance(result, list):
+    for item in all_raw:
+        if not isinstance(item, dict):
             continue
-        for item in result:
-            if not isinstance(item, dict):
-                continue
-            obj = item.get('object', item)
-            urn = obj.get('URN', obj.get('urn', ''))
-            txid = obj.get('TransactionId', obj.get('transaction_id', ''))
-            dedup_key = urn or txid
-            if dedup_key and dedup_key in seen_urns:
-                continue
-            if dedup_key:
-                seen_urns.add(dedup_key)
-            all_items.append(item)
+        obj = item.get('object', item)
+        urn = obj.get('URN', obj.get('urn', ''))
+        txid = obj.get('TransactionId', obj.get('transaction_id', ''))
+        dedup_key = urn or txid
+        if dedup_key and dedup_key in seen_keys:
+            continue
+        if dedup_key:
+            seen_keys.add(dedup_key)
+        all_items.append(item)
 
-    # Filter by chain prefix
-    filtered = []
-    for item in all_items:
-        obj = item.get('object', item) if isinstance(item, dict) else {}
-        if _object_matches_chain(obj, chain_upper):
-            filtered.append(item)
+    # Apply chain filter (skip for ALL)
+    if chain_upper != 'ALL':
+        filtered = [item for item in all_items
+                     if _object_matches_chain(item.get('object', item) if isinstance(item, dict) else {}, chain_upper)]
+    else:
+        filtered = all_items
 
     # Apply burn filtering
     try:
-        obj_addrs = []
-        for item in filtered:
-            obj = item.get('object', item) if isinstance(item, dict) else {}
-            creators = obj.get('Creators') or {}
-            if isinstance(creators, dict):
-                addr = next(iter(creators.keys()), '')
-            elif isinstance(creators, list) and creators:
-                addr = creators[0] if isinstance(creators[0], str) else ''
-            else:
-                addr = ''
-            obj_addrs.append(addr)
-
-        if obj_addrs:
-            burned = await batch_verify_burns(
-                [a for a in obj_addrs if a], is_mainnet, network
-            )
+        obj_addrs = [_extract_obj_addr(item) for item in filtered]
+        valid_addrs = [a for a in obj_addrs if a]
+        if valid_addrs:
+            burned = await batch_verify_burns(valid_addrs, is_mainnet, network)
             if burned:
                 filtered = [item for item, addr in zip(filtered, obj_addrs) if addr not in burned]
     except Exception:
