@@ -34,7 +34,7 @@ const isTextFile = (mime) => mime.startsWith('text/') || mime === 'application/j
  * ZipAppViewer: Fetches a zip from IPFS, extracts index.html + all assets,
  * inlines everything, and renders in a sandboxed iframe. No server storage.
  */
-export const ZipAppViewer = ({ ipfsUrl, filename }) => {
+export const ZipAppViewer = ({ ipfsUrl, fallbackUrl, filename }) => {
   const [status, setStatus] = useState('consent'); // consent, loading, ready, error
   const [progress, setProgress] = useState('Fetching zip from IPFS...');
   const [error, setError] = useState(null);
@@ -46,17 +46,55 @@ export const ZipAppViewer = ({ ipfsUrl, filename }) => {
     if (status !== 'loading') return;
     let cancelled = false;
 
+    const fetchWithFallbacks = async (primaryUrl, fallback) => {
+      // Build a list of URLs to try: primary, fallback, then alternate gateways
+      const urls = [primaryUrl];
+      if (fallback && fallback !== primaryUrl) urls.push(fallback);
+
+      // Also try alternate IPFS gateways for each URL pattern
+      const extractCid = (url) => {
+        const m = url?.match(/\/ipfs\/([A-Za-z0-9]+)/);
+        return m ? m[1] : null;
+      };
+      const cid = extractCid(primaryUrl) || extractCid(fallback);
+      if (cid) {
+        const gateways = [
+          `https://dweb.link/ipfs/${cid}`,
+          `https://cloudflare-ipfs.com/ipfs/${cid}`,
+          `https://gateway.pinata.cloud/ipfs/${cid}`,
+        ];
+        for (const gw of gateways) {
+          if (!urls.includes(gw)) urls.push(gw);
+        }
+      }
+
+      for (const url of urls) {
+        if (cancelled) return null;
+        try {
+          setProgress(`Fetching zip from IPFS...`);
+          const resp = await fetch(url, { signal: AbortSignal.timeout(30000) });
+          if (resp.ok) {
+            const ct = resp.headers.get('content-type') || '';
+            // Verify we got a zip (not an HTML error page)
+            if (ct.includes('zip') || ct.includes('octet-stream') || ct.includes('application/')) {
+              return await resp.blob();
+            }
+            // If content-type is ambiguous, still try — some gateways don't set proper types
+            const blob = await resp.blob();
+            if (blob.size > 100) return blob;
+          }
+        } catch { /* try next */ }
+      }
+      throw new Error('All IPFS gateways failed (404 or timeout)');
+    };
+
     const loadZip = async () => {
       try {
         setStatus('loading');
-        setProgress('Fetching zip from IPFS...');
 
-        // Fetch the zip
-        const response = await fetch(ipfsUrl);
-        if (!response.ok) throw new Error(`Failed to fetch: ${response.status}`);
+        const blob = await fetchWithFallbacks(ipfsUrl, fallbackUrl);
+        if (cancelled || !blob) return;
 
-        const blob = await response.blob();
-        if (cancelled) return;
         setProgress('Extracting zip contents...');
 
         // Extract with JSZip
@@ -186,7 +224,7 @@ export const ZipAppViewer = ({ ipfsUrl, filename }) => {
 
     loadZip();
     return () => { cancelled = true; };
-  }, [ipfsUrl, status]);
+  }, [ipfsUrl, fallbackUrl, status]);
 
   if (status === 'consent') {
     return (

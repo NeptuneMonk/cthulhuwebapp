@@ -1456,7 +1456,7 @@ export default function SingleObjectPage({ network, lookupByAddress }) {
     if (hasUrnMedia && primaryParsed) {
       switch (urnMediaType) {
         case 'webapp':
-          return <ZipAppViewer ipfsUrl={primaryParsed.url} filename={primaryParsed.filename} />;
+          return <ZipAppViewer ipfsUrl={primaryParsed.url} fallbackUrl={primaryParsed.fallbackUrl} filename={primaryParsed.filename} />;
         case 'video':
           return <VideoPlayer src={primaryParsed.url} fallbackSrc={primaryParsed.fallbackUrl} poster={imageParsed?.url} posterFallback={imageParsed?.fallbackUrl} filename={primaryParsed.filename} source={primaryParsed.source} chain={primaryParsed.chain} />;
         case 'audio':
