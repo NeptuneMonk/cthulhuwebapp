@@ -385,7 +385,7 @@ async def _local_p2fk_fallback(path: str, mainnet: bool = False, extra_params: d
                 root = decode_root_from_raw_tx(txid, tx, version_byte)
                 if root and address in root.outputs:
                     roots.append(_root_to_p2fk_format(root.to_dict()))
-            return roots
+            return roots if roots else None
 
         # GetPublicAddressByKeyword/{keyword}
         if path.startswith('GetPublicAddressByKeyword/'):
@@ -449,9 +449,11 @@ async def _local_p2fk_fallback(path: str, mainnet: bool = False, extra_params: d
             keyword = path.split('/', 1)[1]
             return await _local_fetch_objects_by_keyword(keyword, network, version_byte)
 
-        # GetKnownObjectsBySearchString — search across cached + keyword-based objects
+        # GetKnownObjectsBySearchString — SKIP local decoder for search queries.
+        # The local cache only holds a tiny subset of all objects, so local search
+        # always returns partial results that block the full p2fk.io index.
         if path == 'GetKnownObjectsBySearchString':
-            return await _local_search_objects(extra_params, network, version_byte)
+            return None
 
     except Exception as e:
         logger.debug(f"Local fallback error [{path}]: {e}")
