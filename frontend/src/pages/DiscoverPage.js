@@ -2,6 +2,7 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { FiSearch, FiArrowLeft, FiBox, FiUser, FiFilm, FiMusic, FiImage, FiFile, FiGlobe, FiPlay, FiHash, FiClock, FiFileText, FiMessageSquare, FiCode, FiDatabase, FiCopy, FiCheck } from 'react-icons/fi';
 import { ProfileThumb } from '@/components/ProfileThumb';
+import { OnchainAppViewer } from '@/components/OnchainAppViewer';
 import { parseMediaString } from '@/utils/media';
 
 const API = process.env.REACT_APP_BACKEND_URL;
@@ -517,6 +518,10 @@ export default function DiscoverPage({ network }) {
                         <Copyable value={item.txid} label={`tx:${item.txid.slice(0, 12)}...`} className="text-gray-500" />
                       )}
                     </div>
+                    {/* Launch button for on-chain apps with index.html */}
+                    {item.txid && item.files.some(f => f.toLowerCase() === 'index.html') && (
+                      <OnchainAppViewer txid={item.txid} files={item.files} network={network} />
+                    )}
                   </div>
                   <ChainBadge chain={item.blockchain} />
                 </div>
