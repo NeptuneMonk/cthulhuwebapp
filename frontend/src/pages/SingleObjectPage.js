@@ -1225,14 +1225,46 @@ export default function SingleObjectPage({ network, lookupByAddress }) {
     // use it directly instead of re-fetching from an unreliable API lookup
     const prefetched = location.state?.prefetchedObject;
     if (prefetched) {
-      setObject({
-        ...prefetched,
-        owners: prefetched.owners || [],
-        creators: prefetched.creators || [],
-        listings: prefetched.listings || [],
-        offers: prefetched.offers || [],
-        royalties: prefetched.royalties || {},
-      });
+      // Normalize p2fk.io uppercase keys to the lowercase format the display code expects
+      const norm = {
+        name: prefetched.name || prefetched.Name,
+        urn: prefetched.urn || prefetched.URN,
+        uri: prefetched.uri || prefetched.URI,
+        image: prefetched.image || prefetched.Image,
+        description: prefetched.description || prefetched.Description,
+        license: prefetched.license || prefetched.License,
+        maximum: prefetched.maximum ?? prefetched.Maximum,
+        total_supply: prefetched.total_supply ?? prefetched.TotalSupply,
+        transaction_id: prefetched.transaction_id || prefetched.TransactionId,
+        created_date: prefetched.created_date || prefetched.CreatedDate,
+        object_address: prefetched.object_address,
+        file: prefetched.file || prefetched.File,
+        attributes: prefetched.attributes || prefetched.Attributes,
+        _blockchain: prefetched._blockchain,
+      };
+      // Normalize owners
+      const rawOwners = prefetched.owners || prefetched.Owners || {};
+      norm.owners = Array.isArray(rawOwners)
+        ? rawOwners
+        : Object.entries(rawOwners).map(([addr, val]) => ({
+            address: addr,
+            quantity: typeof val === 'number' ? val : (val?.Item1 ?? val?.quantity ?? 0),
+          }));
+      // Normalize creators
+      const rawCreators = prefetched.creators || prefetched.Creators || {};
+      norm.creators = Array.isArray(rawCreators)
+        ? rawCreators
+        : Object.entries(rawCreators).map(([addr, val]) => ({
+            address: addr,
+            date: typeof val === 'string' ? val : (val?.date ?? val?.Item2 ?? ''),
+          }));
+      if (!norm.object_address && norm.creators.length > 0) {
+        norm.object_address = norm.creators[0].address;
+      }
+      norm.listings = prefetched.listings || prefetched.Listings || [];
+      norm.offers = prefetched.offers || prefetched.Offers || [];
+      norm.royalties = prefetched.royalties || prefetched.Royalties || {};
+      setObject(norm);
       setLoading(false);
       setError(null);
       return;

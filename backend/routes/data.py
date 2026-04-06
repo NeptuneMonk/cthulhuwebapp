@@ -1735,7 +1735,8 @@ async def proxy_search_objects(searchString: str = '', qty: int = 20, skip: int 
     # Over-fetch to compensate for items removed by burn filtering
     fetch_qty = max(qty, int(qty * 1.5) + 10)
     data = await p2fk_get("GetKnownObjectsBySearchString", is_mainnet, {
-        "searchString": searchString, "qty": str(fetch_qty), "skip": str(skip)
+        "searchString": searchString, "qty": str(fetch_qty), "skip": str(skip),
+        "blockchain": "BTC", "showSystemFiles": "true"
     })
     results = data if data is not None else []
     if not isinstance(results, list) or not results:

@@ -209,19 +209,28 @@ export default function ObjectsPage({ network }) {
 
   /** Detect the data repository from an object's URN prefix.
    *  URN examples: "IPFS:Qm...", "DOG:txid...", "LTC:txid...", "BTC:txid..." */
-  const getDataRepo = useCallback((obj) => {
-    const urn = (obj.URN || obj.urn || '').toUpperCase();
-    if (urn.startsWith('LTC:')) return 'LTC';
-    if (urn.startsWith('DOG:')) return 'DOG';
-    if (urn.startsWith('MZC:')) return 'MZC';
-    if (urn.startsWith('IPFS:')) return 'IPFS';
-    if (urn.startsWith('BTC:')) return 'BTC';
-    // Fallback: check _blockchain field
-    const bc = (obj._blockchain || '').toUpperCase();
-    if (bc.includes('LTC')) return 'LTC';
-    if (bc.includes('DOG')) return 'DOG';
-    if (bc.includes('MZC')) return 'MZC';
-    return 'BTC';
+  /** Extract ALL chain prefixes present in an object's URN, URI, and Image fields.
+   *  An object can belong to multiple chains (e.g., MZC + IPFS). */
+  const getDataChains = useCallback((obj) => {
+    const chains = new Set();
+    for (const field of [obj.URN, obj.urn, obj.URI, obj.uri, obj.Image, obj.image]) {
+      if (field && typeof field === 'string' && field.includes(':')) {
+        const prefix = field.split(':')[0].toUpperCase();
+        if (prefix === 'LTC') chains.add('LTC');
+        else if (prefix === 'DOG' || prefix === 'DOGE') chains.add('DOG');
+        else if (prefix === 'MZC') chains.add('MZC');
+        else if (prefix === 'IPFS') chains.add('IPFS');
+        else if (prefix === 'BTC') chains.add('BTC');
+      }
+    }
+    if (chains.size === 0) {
+      const bc = (obj._blockchain || '').toUpperCase();
+      if (bc.includes('LTC')) chains.add('LTC');
+      else if (bc.includes('DOG')) chains.add('DOG');
+      else if (bc.includes('MZC')) chains.add('MZC');
+      else chains.add('BTC');
+    }
+    return chains;
   }, []);
 
   /** Normalize a single API response item to a flat object with _blockchain.
@@ -292,7 +301,7 @@ export default function ObjectsPage({ network }) {
     } finally {
       setLoading(false);
     }
-  }, [loading, network, activeFilter, getDataRepo]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [loading, network, activeFilter, getDataChains]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /** Shared normalization, deduplication, and filtering pipeline */
   const processItems = useCallback((rawItems, chainMatch) => {
@@ -300,12 +309,13 @@ export default function ObjectsPage({ network }) {
     return rawItems
       .map(normalizeItem)
       .filter(o => {
-        // Skip items with no TransactionId (malformed p2fk.io entries)
-        const txid = o.TransactionId || o.transaction_id || o.Id || o.id;
-        if (!txid) return false;
-        // Deduplicate by TransactionId
-        if (seen.has(txid)) return false;
-        seen.add(txid);
+        // Deduplicate by TransactionId, or by URN for cross-chain objects without a txid
+        const txid = o.TransactionId || o.transaction_id;
+        const urn = o.URN || o.urn || '';
+        const dedupKey = txid || urn;
+        if (!dedupKey) return false; // No identifier at all — truly malformed
+        if (seen.has(dedupKey)) return false;
+        seen.add(dedupKey);
         return true;
       })
       .filter(o => {
@@ -341,8 +351,8 @@ export default function ObjectsPage({ network }) {
           : '';
         return !burnedSetRef.current.has(addr);
       })
-      .filter(o => !chainMatch || getDataRepo(o) === chainMatch);
-  }, [normalizeItem, getDataRepo]);
+      .filter(o => !chainMatch || getDataChains(o).has(chainMatch));
+  }, [normalizeItem, getDataChains]);
 
   // Load on mount and when filter changes
   useEffect(() => {
@@ -388,8 +398,9 @@ export default function ObjectsPage({ network }) {
     skipRef.current = 0;
     setIsUserSearch(false);
     setQuery('');
-    activeSearchRef.current = activeFilter === 'all' ? '' : activeFilter;
-    fetchObjects(activeSearchRef.current, 0, DEFAULT_QTY, true);
+    // Always search with '*' — chain filtering is done client-side after fetching
+    activeSearchRef.current = '*';
+    fetchObjects('*', 0, DEFAULT_QTY, true);
   }, [activeFilter]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSubmit = (e) => {
@@ -407,8 +418,8 @@ export default function ObjectsPage({ network }) {
     setQuery('');
     setObjects([]);
     skipRef.current = 0;
-    activeSearchRef.current = activeFilter === 'all' ? '' : activeFilter;
-    fetchObjects(activeSearchRef.current, 0, DEFAULT_QTY, true);
+    activeSearchRef.current = '*';
+    fetchObjects('*', 0, DEFAULT_QTY, true);
   };
 
   const loadMore = () => {

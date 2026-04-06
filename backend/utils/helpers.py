@@ -392,14 +392,12 @@ async def _local_p2fk_fallback(path: str, mainnet: bool = False, extra_params: d
             keyword = path.split('/', 1)[1]
             return keyword_to_address(keyword, version_byte)
 
-        # GetObjectByTransactionId/{txid} — returns decoded root (objects are roots)
+        # GetObjectByTransactionId — SKIP local decoder.
+        # The local decoder can only return raw P2FK roots (Message, File, Keyword, Output),
+        # not resolved objects (Name, URN, Image, Owners, Creators). Cross-chain objects
+        # (MZC, DOG, LTC) especially need p2fk.io's full resolution pipeline.
         if path.startswith('GetObjectByTransactionId/'):
-            txid = path.split('/', 1)[1]
-            raw_tx = await local_fetch_tx(txid, network)
-            if not raw_tx:
-                return None
-            root = decode_root_from_raw_tx(txid, raw_tx, version_byte)
-            return _root_to_p2fk_format(root.to_dict()) if root else None
+            return None
 
         # GetProfileByAddress/{address} — fetch roots, extract profile-like data
         if path.startswith('GetProfileByAddress/'):
