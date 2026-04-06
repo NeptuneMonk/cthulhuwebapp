@@ -238,11 +238,12 @@ async def _resolve_ledger(ledger_bytes: bytes, filename: str, chain: str, mainne
 
 
 @router.get("/onchain/file/{txid}/{filename:path}")
-async def get_onchain_file(txid: str, filename: str, chain: str = 'BTC', mainnet: bool = True):
+async def get_onchain_file(txid: str, filename: str, chain: str = 'BTC', mainnet: bool = True, fresh: bool = False):
     """Serve an on-chain file. Resolution priority:
     1. Already resolving in background → 202
     2. Fresh cache hit (< 7 days) → serve from cache with X-Source header
     3. No cache → start background blockchain reconstruction → 202
+    If fresh=true, skip cache and re-resolve from blockchain/p2fk.io.
     """
     try:
         cache_key = f"{chain}:{txid}:{filename}"
@@ -251,44 +252,48 @@ async def get_onchain_file(txid: str, filename: str, chain: str = 'BTC', mainnet
         if _onchain_resolving.get(cache_key):
             return JSONResponse(status_code=202, content={"status": "resolving", "key": cache_key})
 
-        cached = await db.onchain_cache.find_one({"key": cache_key}, {"_id": 0})
-        if cached and cached.get("data"):
-            file_bytes = base64.b64decode(cached["data"])
-            ext = filename.rsplit('.', 1)[-1].lower() if '.' in filename else ''
-            mime = EXTENSION_MIME.get(ext, 'application/octet-stream')
-            source_chain = cached.get("chain", chain)
-            cache_age = "unknown"
-            ts = cached.get("timestamp")
-            if ts:
+        # fresh=true: purge stale cache and re-resolve
+        if fresh:
+            await db.onchain_cache.delete_one({"key": cache_key})
+        else:
+            cached = await db.onchain_cache.find_one({"key": cache_key}, {"_id": 0})
+            if cached and cached.get("data"):
+                file_bytes = base64.b64decode(cached["data"])
+                ext = filename.rsplit('.', 1)[-1].lower() if '.' in filename else ''
+                mime = EXTENSION_MIME.get(ext, 'application/octet-stream')
+                source_chain = cached.get("chain", chain)
+                cache_age = "unknown"
+                ts = cached.get("timestamp")
+                if ts:
+                    try:
+                        if isinstance(ts, str):
+                            ts = datetime.fromisoformat(ts)
+                        if ts.tzinfo is None:
+                            ts = ts.replace(tzinfo=timezone.utc)
+                        cache_age = str(int((datetime.now(timezone.utc) - ts).total_seconds()))
+                    except Exception:
+                        pass
+                return Response(content=file_bytes, media_type=mime,
+                              headers={
+                                  "Cache-Control": "public, max-age=86400",
+                                  "Content-Disposition": f'inline; filename="{filename}"',
+                                  "X-Source": f"blockchain-cache ({source_chain})",
+                                  "X-Cache-Age": cache_age,
+                              })
+            if cached and cached.get("failed"):
+                ts = cached.get("timestamp")
                 try:
                     if isinstance(ts, str):
                         ts = datetime.fromisoformat(ts)
-                    if ts.tzinfo is None:
+                    if ts and ts.tzinfo is None:
                         ts = ts.replace(tzinfo=timezone.utc)
-                    cache_age = str(int((datetime.now(timezone.utc) - ts).total_seconds()))
                 except Exception:
-                    pass
-            return Response(content=file_bytes, media_type=mime,
-                          headers={
-                              "Cache-Control": "public, max-age=86400",
-                              "Content-Disposition": f'inline; filename="{filename}"',
-                              "X-Source": f"blockchain-cache ({source_chain})",
-                              "X-Cache-Age": cache_age,
-                          })
-        if cached and cached.get("failed"):
-            ts = cached.get("timestamp")
-            try:
-                if isinstance(ts, str):
-                    ts = datetime.fromisoformat(ts)
-                if ts and ts.tzinfo is None:
-                    ts = ts.replace(tzinfo=timezone.utc)
-            except Exception:
-                ts = None
-            if ts and (datetime.now(timezone.utc) - ts).total_seconds() < 600:
-                return JSONResponse(status_code=404, content={
-                    "status": "failed",
-                    "detail": "Could not reconstruct this file from the blockchain. Will retry in a few minutes."
-                })
+                    ts = None
+                if ts and (datetime.now(timezone.utc) - ts).total_seconds() < 600:
+                    return JSONResponse(status_code=404, content={
+                        "status": "failed",
+                        "detail": "Could not reconstruct this file from the blockchain. Will retry in a few minutes."
+                    })
 
         # No cache — start blockchain reconstruction
         _onchain_resolving[cache_key] = True
@@ -319,7 +324,9 @@ async def _resolve_onchain_background(txid: str, filename: str, chain: str, main
                 if resp.status_code == 200 and len(resp.content) > 100:
                     ct = resp.headers.get('content-type', '')
                     is_html = 'text/html' in ct or resp.content[:50].strip().startswith(b'<')
-                    if not is_html:
+                    # Allow HTML content when the requested filename IS an HTML file
+                    filename_is_html = filename.lower().endswith(('.html', '.htm'))
+                    if not is_html or filename_is_html:
                         file_bytes = resp.content
                         encoded = base64.b64encode(file_bytes).decode('ascii')
                         await db.onchain_cache.update_one(
