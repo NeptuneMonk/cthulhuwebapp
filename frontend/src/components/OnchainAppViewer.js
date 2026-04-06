@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { FiPlay, FiMaximize2, FiMinimize2, FiAlertTriangle, FiLoader, FiRefreshCw } from 'react-icons/fi';
+import { resolveOnchainHtml } from '@/utils/onchainResolver';
 
 const API = process.env.REACT_APP_BACKEND_URL;
 
@@ -77,52 +78,12 @@ export const OnchainAppViewer = ({ txid, files, network }) => {
 
         if (cancelled || !html) return;
 
-        // ── Step 1: Inline same-root CSS files ──
-        // Find <link href="filename.css"> references where the file is in this root
-        const cssFiles = files.filter(f => /\.(css)$/i.test(f));
-        const linkPattern = /<link[^>]+href=["']([^"']+\.css)["'][^>]*>/gi;
-        let cssMatch;
-        const cssInlines = [];
+        // Resolve all same-root and cross-transaction references using shared utility
+        const assembled = await resolveOnchainHtml(html, txid, files, network, (msg) => {
+          if (!cancelled) setProgress(msg);
+        });
 
-        while ((cssMatch = linkPattern.exec(html)) !== null) {
-          const hrefFile = cssMatch[1];
-          // Only inline same-root CSS (no ../ cross-txid refs — those are handled below)
-          const baseName = hrefFile.replace(/^\.\//, '');
-          if (!hrefFile.includes('/') && cssFiles.some(f => f.toLowerCase() === baseName.toLowerCase())) {
-            cssInlines.push({ fullTag: cssMatch[0], filename: baseName });
-          }
-        }
-
-        let assembled = html;
-        for (let ci = 0; ci < cssInlines.length; ci++) {
-          const { fullTag, filename } = cssInlines[ci];
-          try {
-            setProgress(`Loading CSS ${ci + 1}/${cssInlines.length}: ${filename}`);
-            const cssUrl = `${baseUrl}${encodeURIComponent(filename)}${baseQuery}`;
-            let cssText = null;
-            // Retry loop — file may still be resolving (202)
-            for (let attempt = 0; attempt < 4; attempt++) {
-              const r = await fetch(cssUrl, { signal: AbortSignal.timeout(20000) });
-              if (r.ok && r.status === 200) {
-                const txt = await r.text();
-                if (!txt.startsWith('{') || !txt.includes('"status"')) {
-                  cssText = txt;
-                  break;
-                }
-              }
-              if (attempt < 3) await new Promise(r => setTimeout(r, 2000));
-            }
-            if (cssText) {
-              // Replace url() references inside CSS to point to our proxy
-              cssText = cssText.replace(/url\(["']?([^"')]+)["']?\)/g, (match, path) => {
-                if (path.startsWith('data:') || path.startsWith('http')) return match;
-                // Resolve relative path against our proxy
-                return `url(${baseUrl}${encodeURIComponent(path)}${baseQuery})`;
-              });
-              assembled = assembled.replace(fullTag, `<style>/* ${filename} */\n${cssText}</style>`);
-            }
-          } catch (_e) { /* skip */ }
-        }
+        if (!cancelled) {
 
         // ── Step 2: Rewrite same-root image/media src references ──
         // For <img src="logo.png">, rewrite to point to our proxy URL
@@ -141,44 +102,68 @@ export const OnchainAppViewer = ({ txid, files, network }) => {
         });
 
         // ── Step 3: Handle cross-transaction references (../txid/filename) ──
-        const refPattern = /(src|href)=["']\.\.\/([a-fA-F0-9]{64})\/([^"']+)["']/g;
-        let xMatch;
-        const crossRefs = [];
-        while ((xMatch = refPattern.exec(assembled)) !== null) {
-          crossRefs.push({ full: xMatch[0], attr: xMatch[1], refTxid: xMatch[2], refFile: xMatch[3] });
+        // Global replacement: find ALL ../hexTxid/filename patterns regardless
+        // of context (HTML attributes, JS strings, CSS urls) and rewrite to proxy URLs.
+        // For JS and CSS files, also inline them to avoid sandbox loading issues.
+        const crossTxPattern = /\.\.\/([a-fA-F0-9]{64})\/([^"'\s\)><]+)/g;
+        let ctxMatch;
+        const crossRefs = new Map(); // deduplicate by txid+filename
+        // Reset regex
+        const tempHtml = assembled;
+        while ((ctxMatch = crossTxPattern.exec(tempHtml)) !== null) {
+          const key = `${ctxMatch[1]}/${ctxMatch[2]}`;
+          if (!crossRefs.has(key)) {
+            crossRefs.set(key, { refTxid: ctxMatch[1], refFile: ctxMatch[2] });
+          }
         }
 
-        if (crossRefs.length > 0) {
-          setProgress(`Resolving ${crossRefs.length} cross-chain references...`);
-          for (const ref of crossRefs) {
+        if (crossRefs.size > 0) {
+          setProgress(`Resolving ${crossRefs.size} cross-chain references...`);
+
+          // Pre-warm all cross-tx files to trigger resolution
+          const warmPromises = Array.from(crossRefs.values()).map(ref =>
+            fetch(`${API}/api/onchain/file/${ref.refTxid}/${encodeURIComponent(ref.refFile)}${baseQuery}`,
+              { signal: AbortSignal.timeout(10000) }).catch(() => null)
+          );
+          await Promise.allSettled(warmPromises);
+          // Wait for resolution
+          if (crossRefs.size > 2) await new Promise(r => setTimeout(r, 3000));
+
+          for (const [key, ref] of crossRefs) {
             try {
               const refUrl = `${API}/api/onchain/file/${ref.refTxid}/${encodeURIComponent(ref.refFile)}${baseQuery}`;
-              let content = null;
-              for (let a = 0; a < 3; a++) {
-                const r = await fetch(refUrl, { signal: AbortSignal.timeout(15000) });
-                if (r.ok) {
-                  const txt = await r.text();
-                  if (!txt.startsWith('{') || !txt.includes('"status":"resolving"')) {
-                    content = txt;
-                    break;
+              const ext = ref.refFile.split('.').pop()?.toLowerCase();
+              const originalRef = `../${ref.refTxid}/${ref.refFile}`;
+
+              // For JS and CSS: try to inline for reliability inside sandbox
+              if (ext === 'js' || ext === 'css') {
+                let content = null;
+                for (let a = 0; a < 4; a++) {
+                  const r = await fetch(refUrl, { signal: AbortSignal.timeout(15000) });
+                  if (r.ok && r.status === 200) {
+                    const txt = await r.text();
+                    if (!txt.startsWith('{') || !txt.includes('"status":"resolving"')) {
+                      content = txt;
+                      break;
+                    }
                   }
+                  if (a < 3) await new Promise(resolve => setTimeout(resolve, 2000));
                 }
-                await new Promise(resolve => setTimeout(resolve, 3000));
-              }
-              if (content) {
-                const ext = ref.refFile.split('.').pop()?.toLowerCase();
-                if (ext === 'js') {
-                  assembled = assembled.replace(ref.full, '');
-                  assembled = assembled.replace('</head>', `<script>${content}<\/script>\n</head>`);
-                } else if (ext === 'css') {
-                  assembled = assembled.replace(ref.full, '');
-                  assembled = assembled.replace('</head>', `<style>${content}</style>\n</head>`);
-                } else {
-                  // For other files, rewrite to proxy URL
-                  const proxyUrl = `${API}/api/onchain/file/${ref.refTxid}/${encodeURIComponent(ref.refFile)}${baseQuery}`;
-                  assembled = assembled.replace(ref.full, `${ref.attr}="${proxyUrl}"`);
+                if (content) {
+                  if (ext === 'js') {
+                    // Replace all script src references with empty, inject inline
+                    assembled = assembled.split(originalRef).join('');
+                    assembled = assembled.replace('</head>', `<script>/* ${ref.refFile} */\n${content}<\/script>\n</head>`);
+                  } else {
+                    assembled = assembled.split(originalRef).join('');
+                    assembled = assembled.replace('</head>', `<style>/* ${ref.refFile} */\n${content}</style>\n</head>`);
+                  }
+                  continue;
                 }
               }
+
+              // For all other files (images, html links, etc): rewrite URL to proxy
+              assembled = assembled.split(originalRef).join(refUrl);
             } catch (_e) { /* skip unresolvable refs */ }
           }
         }
