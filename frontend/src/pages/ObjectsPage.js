@@ -240,31 +240,52 @@ export default function ObjectsPage({ network }) {
     if (loading) return;
     setLoading(true);
     try {
-      // When a chain filter is active, fetch a bigger batch to find chain-specific items
       const activeChainFilter = CHAIN_FILTERS.find(f => f.key === activeFilter);
       const chainMatch = activeChainFilter?.match;
-      const fetchQty = chainMatch ? 200 : qty;
-      const fetchSkip = chainMatch ? 0 : skip; // For chain filters, always fetch from start
 
-      const cacheId = `objs_${searchString}_${fetchSkip}_${fetchQty}_${network}`;
-      const doFetch = async () => {
-        // Always use the cross-chain search proxy — works for both browse (empty) and search
-        const url = `${API}/api/p2fk/search/objects?searchString=${encodeURIComponent(searchString)}&qty=${fetchQty}&skip=${fetchSkip}&network=${encodeURIComponent(network)}`;
-        const res = await axios.get(url);
-        return Array.isArray(res.data) ? res.data : [];
-      };
-
-      const items = await cachedFetch('objects', cacheId, doFetch, (freshItems) => {
-        const finalObjects = processItems(freshItems, chainMatch);
+      if (chainMatch) {
+        // Chain filter active: paginate through ALL search results to find every
+        // chain-specific item, since they can be scattered across hundreds of results.
+        const PAGE = 100;
+        let allItems = [];
+        let pageSkip = 0;
+        let exhausted = false;
+        while (!exhausted) {
+          const cacheId = `objs_${searchString}_${pageSkip}_${PAGE}_${network}`;
+          const doFetch = async () => {
+            const url = `${API}/api/p2fk/search/objects?searchString=${encodeURIComponent(searchString)}&qty=${PAGE}&skip=${pageSkip}&network=${encodeURIComponent(network)}`;
+            const res = await axios.get(url);
+            return Array.isArray(res.data) ? res.data : [];
+          };
+          const page = await cachedFetch('objects', cacheId, doFetch);
+          allItems = allItems.concat(page);
+          if (page.length < PAGE) exhausted = true;
+          pageSkip += PAGE;
+        }
+        const finalObjects = processItems(allItems, chainMatch);
         setObjects(finalObjects);
-        setHasMore(!chainMatch && freshItems.length >= fetchQty);
-      });
-
-      const finalObjects = processItems(items, chainMatch);
-      setObjects(finalObjects);
-      setHasMore(!chainMatch && items.length >= fetchQty);
-      setCurrentSkip(skip);
-      skipRef.current = skip + qty;
+        setHasMore(false);
+        setCurrentSkip(0);
+        skipRef.current = 0;
+      } else {
+        // No chain filter: standard single-page fetch with pagination
+        const cacheId = `objs_${searchString}_${skip}_${qty}_${network}`;
+        const doFetch = async () => {
+          const url = `${API}/api/p2fk/search/objects?searchString=${encodeURIComponent(searchString)}&qty=${qty}&skip=${skip}&network=${encodeURIComponent(network)}`;
+          const res = await axios.get(url);
+          return Array.isArray(res.data) ? res.data : [];
+        };
+        const items = await cachedFetch('objects', cacheId, doFetch, (freshItems) => {
+          const finalObjects = processItems(freshItems, null);
+          setObjects(finalObjects);
+          setHasMore(freshItems.length >= qty);
+        });
+        const finalObjects = processItems(items, null);
+        setObjects(finalObjects);
+        setHasMore(items.length >= qty);
+        setCurrentSkip(skip);
+        skipRef.current = skip + qty;
+      }
     } catch (err) {
       console.error('p2fk search error:', err);
       setHasMore(false);
