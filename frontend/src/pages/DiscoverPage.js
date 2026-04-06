@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { FiSearch, FiArrowLeft, FiBox, FiUser, FiFilm, FiMusic, FiImage, FiFile, FiGlobe, FiPlay, FiHash, FiClock, FiFileText, FiMessageSquare, FiCode, FiDatabase } from 'react-icons/fi';
+import { FiSearch, FiArrowLeft, FiBox, FiUser, FiFilm, FiMusic, FiImage, FiFile, FiGlobe, FiPlay, FiHash, FiClock, FiFileText, FiMessageSquare, FiCode, FiDatabase, FiCopy, FiCheck } from 'react-icons/fi';
 import { ProfileThumb } from '@/components/ProfileThumb';
 import { parseMediaString } from '@/utils/media';
 
@@ -360,7 +360,7 @@ export default function DiscoverPage({ network }) {
                   <div className="flex-1 min-w-0">
                     <p className="text-sm text-gray-200 line-clamp-3 leading-relaxed">{msg.text}</p>
                     <div className="flex items-center gap-2 mt-1.5">
-                      <span className="text-[10px] text-gray-600 truncate max-w-[140px]">{msg.signedBy}</span>
+                      <Copyable value={msg.signedBy} label={msg.signedBy?.slice(0, 14) + '...'} className="text-gray-500" />
                       {date && (
                         <span className="text-[10px] text-gray-600 inline-flex items-center gap-0.5">
                           <FiClock size={8} />{date}
@@ -370,6 +370,9 @@ export default function DiscoverPage({ network }) {
                         <span className="text-[10px] text-blue-400/60 inline-flex items-center gap-0.5">
                           <FiImage size={8} />{msg.mediaCount}
                         </span>
+                      )}
+                      {msg.txid && (
+                        <Copyable value={msg.txid} label={`tx:${msg.txid.slice(0, 10)}...`} className="text-gray-600" />
                       )}
                     </div>
                   </div>
@@ -397,20 +400,24 @@ export default function DiscoverPage({ network }) {
               } else if (typeof creators === 'object' && creators !== null) {
                 addr = Object.keys(creators)[0] || '';
               }
+              const urn = obj.URN || obj.urn || '';
               return (
-                <button
+                <div
                   key={`obj-${i}`}
+                  className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-white/[0.03] transition-colors text-left cursor-pointer"
                   onClick={() => addr && navigate(`/object/addr/${addr}`)}
-                  className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-white/[0.03] transition-colors text-left"
                   data-testid={`discover-object-${i}`}
                 >
                   <ObjImg src={image} />
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-gray-200 truncate">{name}</p>
-                    <p className="text-xs text-gray-500 truncate">{desc || (addr ? `${addr.slice(0, 18)}...` : '')}</p>
+                    <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
+                      {urn && <Copyable value={urn} label={urn.length > 30 ? urn.slice(0, 28) + '...' : urn} className="text-purple-400/60" />}
+                      {addr && <Copyable value={addr} label={addr.slice(0, 14) + '...'} className="text-gray-500" />}
+                    </div>
                   </div>
                   <ChainBadge chain={chain} />
-                </button>
+                </div>
               );
             })}
             <ShowMoreBtn category="objects" totalCount={show.objects.length} />
@@ -434,19 +441,22 @@ export default function DiscoverPage({ network }) {
               }
               const chain = item.blockchain || '';
               return (
-                <button
+                <div
                   key={`prof-${i}`}
+                  className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-white/[0.03] transition-colors text-left cursor-pointer"
                   onClick={() => addr && navigate(`/profile/${addr}`)}
-                  className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-white/[0.03] transition-colors text-left"
                   data-testid={`discover-profile-${i}`}
                 >
                   <ProfileThumb name={urn || name} image={image ? (parseMediaString(image)?.url || image) : null} size="md" />
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-gray-200 truncate">{name}</p>
-                    {urn && urn !== name && <p className="text-xs text-purple-400/60 truncate">@{urn}</p>}
+                    <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
+                      {urn && <Copyable value={urn} label={`@${urn}`} className="text-purple-400/60" />}
+                      {addr && <Copyable value={addr} label={addr.slice(0, 14) + '...'} className="text-gray-500" />}
+                    </div>
                   </div>
                   <ChainBadge chain={chain} />
-                </button>
+                </div>
               );
             })}
             <ShowMoreBtn category="profiles" totalCount={show.profiles.length} />
@@ -488,12 +498,7 @@ export default function DiscoverPage({ network }) {
                     {/* Meta row */}
                     <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
                       {item.signed && item.signedBy && (
-                        <button
-                          onClick={() => navigate(`/profile/${item.signedBy}`)}
-                          className="text-[10px] text-teal-400/60 hover:text-teal-300 truncate max-w-[120px]"
-                        >
-                          {item.signedBy.slice(0, 12)}...
-                        </button>
+                        <Copyable value={item.signedBy} label={item.signedBy.slice(0, 14) + '...'} className="text-teal-400/60 hover:text-teal-300" />
                       )}
                       {item.keywords.slice(0, 5).map((kw, ki) => (
                         <span key={ki} className="text-[10px] text-amber-400/60 bg-amber-900/10 px-1.5 py-0.5 rounded inline-flex items-center gap-0.5">
@@ -509,7 +514,7 @@ export default function DiscoverPage({ network }) {
                         <span className="text-[10px] text-gray-600">{totalKB} KB</span>
                       )}
                       {item.txid && (
-                        <span className="text-[10px] text-gray-700 truncate max-w-[100px]">{item.txid.slice(0, 12)}...</span>
+                        <Copyable value={item.txid} label={`tx:${item.txid.slice(0, 12)}...`} className="text-gray-500" />
                       )}
                     </div>
                   </div>
@@ -613,4 +618,30 @@ function ObjImg({ src }) {
 function ChainBadge({ chain }) {
   if (!chain) return null;
   return <span className="text-[10px] text-gray-600 bg-gray-800/40 px-1.5 py-0.5 rounded flex-shrink-0">{chain}</span>;
+}
+
+function Copyable({ value, label, className = '' }) {
+  const [copied, setCopied] = useState(false);
+  if (!value) return null;
+  const display = label || (value.length > 16 ? value.slice(0, 14) + '...' : value);
+  return (
+    <button
+      onClick={(e) => {
+        e.stopPropagation();
+        navigator.clipboard.writeText(value).then(() => {
+          setCopied(true);
+          setTimeout(() => setCopied(false), 1500);
+        });
+      }}
+      className={`inline-flex items-center gap-1 text-[10px] hover:text-gray-300 transition-colors group/copy ${className}`}
+      title={`Click to copy: ${value}`}
+      data-testid={`copy-${value.slice(0, 8)}`}
+    >
+      <span className="truncate">{display}</span>
+      {copied
+        ? <FiCheck size={9} className="text-green-400 flex-shrink-0" />
+        : <FiCopy size={9} className="opacity-0 group-hover/copy:opacity-60 flex-shrink-0" />
+      }
+    </button>
+  );
 }
