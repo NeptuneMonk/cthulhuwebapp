@@ -121,7 +121,7 @@ export const OnchainAppViewer = ({ txid, files, network }) => {
               });
               assembled = assembled.replace(fullTag, `<style>/* ${filename} */\n${cssText}</style>`);
             }
-          } catch { /* skip */ }
+          } catch (_e) { /* skip */ }
         }
 
         // ── Step 2: Rewrite same-root image/media src references ──
@@ -179,7 +179,7 @@ export const OnchainAppViewer = ({ txid, files, network }) => {
                   assembled = assembled.replace(ref.full, `${ref.attr}="${proxyUrl}"`);
                 }
               }
-            } catch { /* skip unresolvable refs */ }
+            } catch (_e) { /* skip unresolvable refs */ }
           }
         }
 
