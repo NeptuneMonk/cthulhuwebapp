@@ -772,7 +772,7 @@ async def fetch_objects_created_by_address(address: str, mainnet: bool = False):
 
 
 async def fetch_object_by_txid(txid: str, mainnet: bool = False):
-    data = await p2fk_get(f"GetObjectByTransactionId/{txid}", mainnet)
+    data = await p2fk_get(f"GetObjectByTransactionId/{txid}", mainnet, {"verbose": "true"})
     if isinstance(data, dict) and data.get('Name'):
         return data
     return None
