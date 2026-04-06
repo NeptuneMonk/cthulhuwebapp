@@ -734,9 +734,26 @@ async def get_object_history(address: str, network: str = 'btc-testnet', skip: i
 
 
 def _object_matches_chain(obj: dict, chain: str) -> bool:
-    """Check if an object belongs to a specific chain by inspecting URN, URI, and Image fields."""
+    """Check if an object belongs to a specific chain by inspecting URN, URI, and Image fields.
+    BTC is the default chain — objects with no known prefix in their URN are BTC-native."""
     chain_upper = chain.upper()
-    # Also match DOGE -> DOG
+    KNOWN_PREFIXES = ('LTC:', 'DOG:', 'DOGE:', 'MZC:', 'IPFS:', 'BTC:')
+
+    if chain_upper == 'BTC':
+        # BTC-native objects may have explicit BTC: prefix OR no prefix at all.
+        # Check if URN has a known non-BTC prefix — if not, it's BTC.
+        urn = obj.get('URN', obj.get('urn', '')) or ''
+        if isinstance(urn, str) and urn:
+            urn_upper = urn.upper()
+            if urn_upper.startswith('BTC:'):
+                return True
+            # No known prefix = BTC-native
+            has_other = any(urn_upper.startswith(p) for p in KNOWN_PREFIXES if not p.startswith('BTC'))
+            if not has_other:
+                return True
+        return False
+
+    # Non-BTC chains: match prefix in URN, URI, Image
     match_prefixes = [chain_upper + ':']
     if chain_upper == 'DOG':
         match_prefixes.append('DOGE:')

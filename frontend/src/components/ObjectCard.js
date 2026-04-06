@@ -148,6 +148,8 @@ export const ObjectCard = ({ object, onClick, network, onCrossNetwork }) => {
         }
       }
     });
+    // No prefix found = BTC-native object
+    if (chains.size === 0) chains.add('BTC');
     return [...chains];
   })();
 
