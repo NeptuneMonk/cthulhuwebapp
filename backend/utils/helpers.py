@@ -188,7 +188,8 @@ async def _local_fetch_objects_for_address(address: str, network: str, version_b
 
         objects.append(obj_entry)
 
-    return objects
+    # Return None when no local results so p2fk.io gets called as fallback
+    return objects if objects else None
 
 
 async def _local_fetch_objects_by_keyword(keyword: str, network: str, version_byte: int):
@@ -199,7 +200,7 @@ async def _local_fetch_objects_by_keyword(keyword: str, network: str, version_by
 
     keyword_addr = keyword_to_address(keyword, version_byte=version_byte)
     if not keyword_addr:
-        return []
+        return None
 
     txs = await local_fetch_addr_txs(keyword_addr, network, max_pages=2)
     results = []
@@ -255,7 +256,7 @@ async def _local_fetch_objects_by_keyword(keyword: str, network: str, version_by
 
         results.append(obj_entry)
 
-    return results
+    return results if results else None
 
 
 async def _local_search_objects(extra_params: dict, network: str, version_byte: int):
@@ -442,7 +443,7 @@ async def _local_p2fk_fallback(path: str, mainnet: bool = False, extra_params: d
                 if root and address in root.outputs:
                     results.append(_root_to_p2fk_format(root.to_dict()))
             if path.startswith('GetObjectsByAddress/'):
-                return results
+                return results if results else None
             return results[0] if results else None
 
         # GetObjectsOwnedByAddress/{address} — objects currently owned by address
