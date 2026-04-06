@@ -253,29 +253,27 @@ export default function ObjectsPage({ network }) {
       const chainMatch = activeChainFilter?.match;
 
       if (chainMatch) {
-        // Chain filter active: paginate through ALL search results to find every
-        // chain-specific item, since they can be scattered across hundreds of results.
-        const PAGE = 100;
-        let allItems = [];
-        let pageSkip = 0;
-        let exhausted = false;
-        while (!exhausted) {
-          const cacheId = `objs_${searchString}_${pageSkip}_${PAGE}_${network}`;
-          const doFetch = async () => {
-            const url = `${API}/api/p2fk/search/objects?searchString=${encodeURIComponent(searchString)}&qty=${PAGE}&skip=${pageSkip}&network=${encodeURIComponent(network)}`;
-            const res = await axios.get(url);
-            return Array.isArray(res.data) ? res.data : [];
-          };
-          const page = await cachedFetch('objects', cacheId, doFetch);
-          allItems = allItems.concat(page);
-          if (page.length < PAGE) exhausted = true;
-          pageSkip += PAGE;
-        }
-        const finalObjects = processItems(allItems, chainMatch);
+        // Chain filter active: use dedicated backend endpoint that handles
+        // server-side chain filtering (checks URN/URI/Image fields for chain prefix)
+        const cacheId = `chain_${chainMatch}_${skip}_${qty}_${network}`;
+        const doFetch = async () => {
+          const url = `${API}/api/objects/by-chain/${chainMatch}?skip=${skip}&qty=${qty}&network=${encodeURIComponent(network)}`;
+          const res = await axios.get(url);
+          const result = res.data;
+          return result;
+        };
+        const result = await cachedFetch('chain_objects', cacheId, doFetch, (freshResult) => {
+          const items = freshResult?.objects || (Array.isArray(freshResult) ? freshResult : []);
+          const finalObjects = processItems(items, chainMatch);
+          setObjects(finalObjects);
+          setHasMore(freshResult?.has_more ?? false);
+        });
+        const items = result?.objects || (Array.isArray(result) ? result : []);
+        const finalObjects = processItems(items, chainMatch);
         setObjects(finalObjects);
-        setHasMore(false);
-        setCurrentSkip(0);
-        skipRef.current = 0;
+        setHasMore(result?.has_more ?? false);
+        setCurrentSkip(skip);
+        skipRef.current = skip + qty;
       } else {
         // No chain filter: standard single-page fetch with pagination
         const cacheId = `objs_${searchString}_${skip}_${qty}_${network}`;
@@ -398,7 +396,7 @@ export default function ObjectsPage({ network }) {
     skipRef.current = 0;
     setIsUserSearch(false);
     setQuery('');
-    // Always search with '*' — chain filtering is done client-side after fetching
+    // For 'all' filter, use '*' search. For chain filters, fetchObjects uses the dedicated endpoint.
     activeSearchRef.current = '*';
     fetchObjects('*', 0, DEFAULT_QTY, true);
   }, [activeFilter]); // eslint-disable-line react-hooks/exhaustive-deps
