@@ -240,107 +240,29 @@ export default function ObjectsPage({ network }) {
     if (loading) return;
     setLoading(true);
     try {
-      const cacheId = `objs_${searchString}_${skip}_${qty}_${network}`;
+      // When a chain filter is active, fetch a bigger batch to find chain-specific items
+      const activeChainFilter = CHAIN_FILTERS.find(f => f.key === activeFilter);
+      const chainMatch = activeChainFilter?.match;
+      const fetchQty = chainMatch ? 200 : qty;
+      const fetchSkip = chainMatch ? 0 : skip; // For chain filters, always fetch from start
+
+      const cacheId = `objs_${searchString}_${fetchSkip}_${fetchQty}_${network}`;
       const doFetch = async () => {
         // Always use the cross-chain search proxy — works for both browse (empty) and search
-        const url = `${API}/api/p2fk/search/objects?searchString=${encodeURIComponent(searchString)}&qty=${qty}&skip=${skip}&network=${encodeURIComponent(network)}`;
+        const url = `${API}/api/p2fk/search/objects?searchString=${encodeURIComponent(searchString)}&qty=${fetchQty}&skip=${fetchSkip}&network=${encodeURIComponent(network)}`;
         const res = await axios.get(url);
         return Array.isArray(res.data) ? res.data : [];
       };
 
       const items = await cachedFetch('objects', cacheId, doFetch, (freshItems) => {
-        // Background update with fresh data
-        const normalized = freshItems
-          .map(normalizeItem)
-          .filter(o => {
-            // Filter out fully burned objects (total_supply == 0)
-            const supply = o.total_supply ?? o.TotalSupply;
-            if (supply !== undefined && supply <= 0) return false;
-            const owners = o.Owners || o.owners;
-            if (owners) {
-              const ownerArr = Array.isArray(owners) ? owners : Object.values(owners);
-              const totalQty = ownerArr.reduce((sum, v) => {
-                if (typeof v === 'number') return sum + v;
-                if (typeof v === 'object') return sum + (v.Item1 ?? v.quantity ?? 0);
-                return sum;
-              }, 0);
-              if (ownerArr.length > 0 && totalQty <= 0) return false;
-            }
-            return true;
-          })
-          .filter(o => {
-            const name = o.Name || o.name;
-            const image = o.Image || o.image;
-            const license = o.License || o.license || '';
-            if (license.toLowerCase().startsWith('cthulhu:tether')) return false;
-            if ((!name || name === 'Unnamed Object' || name === 'Unnamed') && !image) return false;
-            return true;
-          })
-          .filter(o => {
-            const creators = o.Creators || o.creators;
-            const addr = creators
-              ? (typeof creators === 'object' && !Array.isArray(creators))
-                ? Object.keys(creators)[0] || ''
-                : Array.isArray(creators) ? (creators[0]?.address || creators[0] || '') : ''
-              : '';
-            return !burnedSetRef.current.has(addr);
-          });
-        const activeChainFilter = CHAIN_FILTERS.find(f => f.key === activeFilter);
-        const chainMatch = activeChainFilter?.match;
-        const finalObjects = chainMatch
-          ? normalized.filter(o => getDataRepo(o) === chainMatch)
-          : normalized;
+        const finalObjects = processItems(freshItems, chainMatch);
         setObjects(finalObjects);
-        setHasMore(freshItems.length >= qty);
+        setHasMore(!chainMatch && freshItems.length >= fetchQty);
       });
 
-      const normalized = items
-        .map(normalizeItem)
-        .filter(o => {
-          // Filter out fully burned objects (total_supply == 0)
-          const supply = o.total_supply ?? o.TotalSupply;
-          if (supply !== undefined && supply <= 0) return false;
-          // Also check Owners dict — if all owners have qty 0, object is burned
-          const owners = o.Owners || o.owners;
-          if (owners) {
-            const ownerArr = Array.isArray(owners) ? owners : Object.values(owners);
-            const totalQty = ownerArr.reduce((sum, v) => {
-              if (typeof v === 'number') return sum + v;
-              if (typeof v === 'object') return sum + (v.Item1 ?? v.quantity ?? 0);
-              return sum;
-            }, 0);
-            if (ownerArr.length > 0 && totalQty <= 0) return false;
-          }
-          return true;
-        })
-        .filter(o => {
-          const name = o.Name || o.name;
-          const image = o.Image || o.image;
-          const license = o.License || o.license || '';
-          if (license.toLowerCase().startsWith('cthulhu:tether')) return false;
-          if ((!name || name === 'Unnamed Object' || name === 'Unnamed') && !image) return false;
-          return true;
-        })
-        .filter(o => {
-          const creators = o.Creators || o.creators;
-          const addr = creators
-            ? (typeof creators === 'object' && !Array.isArray(creators))
-              ? Object.keys(creators)[0] || ''
-              : Array.isArray(creators) ? (creators[0]?.address || creators[0] || '') : ''
-            : '';
-          return !burnedSetRef.current.has(addr);
-        });
-
-      // Apply strict data-repo filter when a chain filter is active
-      // Checks URN prefix (DOG:, LTC:, MZC:, IPFS:, BTC:) not just _blockchain
-      const activeChainFilter = CHAIN_FILTERS.find(f => f.key === activeFilter);
-      const chainMatch = activeChainFilter?.match;
-      const finalObjects = chainMatch
-        ? normalized.filter(o => getDataRepo(o) === chainMatch)
-        : normalized;
-
+      const finalObjects = processItems(items, chainMatch);
       setObjects(finalObjects);
-      setHasMore(items.length >= qty);
+      setHasMore(!chainMatch && items.length >= fetchQty);
       setCurrentSkip(skip);
       skipRef.current = skip + qty;
     } catch (err) {
@@ -349,7 +271,57 @@ export default function ObjectsPage({ network }) {
     } finally {
       setLoading(false);
     }
-  }, [loading, network, normalizeItem, activeFilter, getDataRepo]);
+  }, [loading, network, activeFilter, getDataRepo]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /** Shared normalization, deduplication, and filtering pipeline */
+  const processItems = useCallback((rawItems, chainMatch) => {
+    const seen = new Set();
+    return rawItems
+      .map(normalizeItem)
+      .filter(o => {
+        // Skip items with no TransactionId (malformed p2fk.io entries)
+        const txid = o.TransactionId || o.transaction_id || o.Id || o.id;
+        if (!txid) return false;
+        // Deduplicate by TransactionId
+        if (seen.has(txid)) return false;
+        seen.add(txid);
+        return true;
+      })
+      .filter(o => {
+        // Filter out fully burned objects (total_supply == 0)
+        const supply = o.total_supply ?? o.TotalSupply;
+        if (supply !== undefined && supply <= 0) return false;
+        const owners = o.Owners || o.owners;
+        if (owners) {
+          const ownerArr = Array.isArray(owners) ? owners : Object.values(owners);
+          const totalQty = ownerArr.reduce((sum, v) => {
+            if (typeof v === 'number') return sum + v;
+            if (typeof v === 'object') return sum + (v.Item1 ?? v.quantity ?? 0);
+            return sum;
+          }, 0);
+          if (ownerArr.length > 0 && totalQty <= 0) return false;
+        }
+        return true;
+      })
+      .filter(o => {
+        const name = o.Name || o.name;
+        const image = o.Image || o.image;
+        const license = o.License || o.license || '';
+        if (license.toLowerCase().startsWith('cthulhu:tether')) return false;
+        if ((!name || name === 'Unnamed Object' || name === 'Unnamed') && !image) return false;
+        return true;
+      })
+      .filter(o => {
+        const creators = o.Creators || o.creators;
+        const addr = creators
+          ? (typeof creators === 'object' && !Array.isArray(creators))
+            ? Object.keys(creators)[0] || ''
+            : Array.isArray(creators) ? (creators[0]?.address || creators[0] || '') : ''
+          : '';
+        return !burnedSetRef.current.has(addr);
+      })
+      .filter(o => !chainMatch || getDataRepo(o) === chainMatch);
+  }, [normalizeItem, getDataRepo]);
 
   // Load on mount and when filter changes
   useEffect(() => {
@@ -540,7 +512,7 @@ export default function ObjectsPage({ network }) {
                     </button>
                   )}
                   <span className="text-sm text-gray-500">
-                    {currentSkip + 1}&ndash;{currentSkip + objects.length}
+                    {objects.length} item{objects.length !== 1 ? 's' : ''}
                   </span>
                   {hasMore && (
                     <button
