@@ -470,10 +470,49 @@ async def _run_vacuum_inner(network: str):
 
     _vlog(f"Starting vacuum for {network} with {len(seeds)} seed addresses")
 
+    # Phase 0: Pull p2fk.io's cached root index (searchString=*&qty=200 hits their server cache)
+    _vacuum_state["phase"] = "pulling_cache"
+    _vlog("Phase 0: Pulling p2fk.io cached root index (*&qty=200)...")
+    discovered_addresses = set()
+    try:
+        cached_roots = await p2fk_get("GetKnownRootsBySearchString", mainnet, {
+            "searchString": "*", "qty": "200"
+        })
+        if isinstance(cached_roots, list) and cached_roots:
+            _vlog(f"  → Got {len(cached_roots)} roots from p2fk.io cache")
+            # Index these into our local search index
+            try:
+                from utils.helpers import _index_roots_for_search
+                await _index_roots_for_search(cached_roots, "vacuum_cache_pull", mainnet)
+            except Exception as e:
+                _vlog(f"  → Search index error: {e}")
+            # Extract addresses from the cached roots
+            for root in cached_roots:
+                if not isinstance(root, dict):
+                    continue
+                signed_by = root.get("SignedBy", "")
+                if signed_by:
+                    discovered_addresses.add(signed_by)
+                outputs = root.get("Output", {})
+                if isinstance(outputs, dict):
+                    for out_addr in outputs.keys():
+                        discovered_addresses.add(out_addr)
+                # Detect burns
+                file_data = root.get("File") or {}
+                if isinstance(file_data, dict) and "BRN" in file_data:
+                    await _register_burned_object(
+                        signed_by, root.get("TransactionId", ""), network
+                    )
+            _vlog(f"  → Discovered {len(discovered_addresses)} addresses from cache")
+        else:
+            _vlog("  → Cache pull returned empty, continuing with seed crawl")
+    except Exception as e:
+        _vlog(f"  → Cache pull failed: {e}, continuing with seed crawl")
+
     # Phase 1: Crawl all seed addresses for roots
     _vacuum_state["phase"] = "crawling_seeds"
     _vacuum_state["total"] = len(seeds)
-    discovered_addresses = set()
+    # discovered_addresses already seeded from Phase 0 cache pull
 
     for i, addr in enumerate(seeds):
         if _vacuum_state["stop_requested"]:
@@ -630,19 +669,31 @@ async def _run_vacuum_inner(network: str):
         _vacuum_state["crawled"] += 1
         await asyncio.sleep(_RATE_INTERVAL)
 
-    # Phase 6: Search for common keywords
+    # Phase 6: Search for common keywords (supplementary discovery)
     _vacuum_state["phase"] = "crawling_keywords"
-    common_keywords = ["SUP", "hello", "test", "music", "art", "nft", "bitcoin", "doge", "gif"]
-    _vacuum_state["total"] = len(common_keywords)
+    # First: re-pull the cached wildcard search (qty=200 hits p2fk.io's cache)
+    common_keywords = ["*"]
+    # Then: specific keywords for targeted discovery
+    extra_keywords = ["SUP", "hello", "test", "music", "art", "nft", "bitcoin", "doge", "gif"]
+    all_keywords = common_keywords + extra_keywords
+    _vacuum_state["total"] = len(all_keywords)
     _vacuum_state["progress"] = 0
 
-    for i, kw in enumerate(common_keywords):
+    for i, kw in enumerate(all_keywords):
         if _vacuum_state["stop_requested"]:
             _vlog("Stop requested during keyword crawl")
             return
         _vacuum_state["progress"] = i + 1
         try:
-            await p2fk_get("GetKnownRootsBySearchString", mainnet, {"search": kw, "qty": 50})
+            qty = "200" if kw == "*" else "200"
+            results = await p2fk_get("GetKnownRootsBySearchString", mainnet, {"searchString": kw, "qty": qty})
+            # Index keyword search results into local search index
+            if isinstance(results, list) and results:
+                try:
+                    from utils.helpers import _index_roots_for_search
+                    await _index_roots_for_search(results, f"vacuum_keyword_{kw}", mainnet)
+                except Exception:
+                    pass
         except Exception:
             pass
         _vacuum_state["crawled"] += 1
