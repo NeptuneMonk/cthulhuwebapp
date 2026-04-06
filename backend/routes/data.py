@@ -817,15 +817,35 @@ async def get_profile(address: str, network: str = 'btc-testnet'):
 
 @router.get("/profile/{address}/bundle")
 async def get_profile_bundle(address: str, network: str = 'btc-testnet'):
-    """Combined endpoint: profile + object counts + initial posts in ONE call."""
+    """Combined endpoint: profile + object counts + initial posts in ONE call.
+    Resolves URN → blockchain address first, then fetches objects/posts with the real address.
+    Object counts have a 10s timeout — if p2fk.io is slow, counts return as 0
+    and the frontend can fetch them separately."""
     is_mainnet = 'mainnet' in network.lower()
-    profile_task = get_profile(address, network)
-    posts_task = get_profile_posts(address, network, skip=0, limit=5)
-    owned_task = fetch_objects_owned(address, is_mainnet)
-    created_task = fetch_objects_created_by_address(address, is_mainnet)
-    profile, posts, owned_raw, created_raw = await asyncio.gather(
-        profile_task, posts_task, owned_task, created_task, return_exceptions=True
-    )
+
+    # Step 1: Resolve profile (and the real blockchain address) first
+    profile = await get_profile(address, network)
+    real_addr = (profile.get('address') if isinstance(profile, dict) else None) or address
+
+    # Step 2: Fetch objects + posts in parallel using the resolved address (with timeout)
+    posts_task = get_profile_posts(real_addr, network, skip=0, limit=5)
+    owned_task = fetch_objects_owned(real_addr, is_mainnet)
+    created_task = fetch_objects_created_by_address(real_addr, is_mainnet)
+
+    # Use timeout for object counts — they can be slow on p2fk.io
+    try:
+        posts, owned_raw, created_raw = await asyncio.wait_for(
+            asyncio.gather(posts_task, owned_task, created_task, return_exceptions=True),
+            timeout=15.0
+        )
+    except asyncio.TimeoutError:
+        logger.warning(f"Profile bundle timeout for {real_addr} — returning profile without counts")
+        return {
+            "profile": profile if not isinstance(profile, Exception) else {"address": address, "urn": address},
+            "counts": {"owned": 0, "created": 0},
+            "posts": {"posts": [], "has_more": False, "total": 0},
+        }
+
     owned_count = len(owned_raw) if isinstance(owned_raw, list) else 0
     created_count = 0
     if isinstance(created_raw, list):

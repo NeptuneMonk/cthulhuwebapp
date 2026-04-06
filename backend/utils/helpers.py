@@ -430,27 +430,19 @@ async def _local_p2fk_fallback(path: str, mainnet: bool = False, extra_params: d
                             continue
             return None
 
-        # GetObjectByAddress/{address} — fetch roots, extract first object
+        # GetObjectByAddress / GetObjectsByAddress — SKIP local decoder for aggregate queries.
+        # Single-object lookups could work locally, but the plural form is aggregate.
+        # Both are skipped to ensure p2fk.io (authoritative full index) is always used.
         if path.startswith('GetObjectByAddress/') or path.startswith('GetObjectsByAddress/'):
-            address = path.split('/', 1)[1]
-            txs = await local_fetch_addr_txs(address, network, max_pages=1)
-            results = []
-            for tx in txs:
-                txid = tx.get('txid', '')
-                if not txid:
-                    continue
-                root = decode_root_from_raw_tx(txid, tx, version_byte)
-                if root and address in root.outputs:
-                    results.append(_root_to_p2fk_format(root.to_dict()))
-            if path.startswith('GetObjectsByAddress/'):
-                return results if results else None
-            return results[0] if results else None
+            return None
 
-        # GetObjectsOwnedByAddress/{address} — objects currently owned by address
-        # GetObjectsCreatedByAddress/{address} — objects created (signed) by address
+        # GetObjectsOwnedByAddress / GetObjectsCreatedByAddress — SKIP local decoder.
+        # These aggregate queries require a full blockchain index. The local decoder
+        # only scans recent transactions (max_pages=3 ≈ 75 txs) and returns partial
+        # results, blocking the p2fk.io fallback which has the complete set.
+        # Return None to let p2fk_get go straight to p2fk.io.
         if path.startswith('GetObjectsOwnedByAddress/') or path.startswith('GetObjectsCreatedByAddress/'):
-            address = path.split('/', 1)[1]
-            return await _local_fetch_objects_for_address(address, network, version_byte)
+            return None
 
         # GetObjectsByKeyword/{keyword} — objects sent to a keyword address
         if path.startswith('GetObjectsByKeyword/'):

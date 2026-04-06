@@ -52,6 +52,7 @@ Build a modern, responsive frontend for a blockchain-based decentralized social 
 - **P0 Fix: Storefront Loading Only Partial Objects** (April 5, 2026) — Storefront showed ~69 objects while p2fk.io has 496. Root causes: (1) Frontend used keyword-by-keyword storefront endpoint (limited to 13 keywords). Switched to always use the cross-chain search proxy backed by `GetKnownObjectsBySearchString` which returns ALL known objects. (2) Burn filter reduced returned count below `qty`, causing frontend `hasMore=false` prematurely. Fixed backend to over-fetch (`qty * 1.5 + 10`) and return exactly `qty` items. Storefront now loads 40+ objects per page with correct infinite scroll.
 - **P0 Fix: URN Verification Logic** (April 5, 2026) — Changed from date-based "first claim wins" to `GetProfileByURN`-based verification. The registered profile's `Creators` address is the official one. Objects can have two creators temporarily during trades.
 - **P0 Fix: Admin Releases 500 Error** (April 5, 2026) — Release config endpoint returned 500 due to `no such column: key`. The `release_config` SQLite table used `_id` as primary key but code queried `key`. Fixed SQL queries. Also fixed ReleasePanel using wrong token storage (`sessionStorage.admin_token` vs `localStorage.cthulhu_admin_token`).
+- **P0 Fix: Profile Objects Showing 0** (April 6, 2026) — embii4u profile showed 0 objects despite p2fk.io listing 46 owned/81 created. Two root causes: (1) Local P2FK decoder (`helpers.py`) was returning partial results for aggregate queries (`GetObjectsOwnedByAddress`, `GetObjectsCreatedByAddress`, `GetObjectsByAddress`) because it only scans recent transactions (max_pages=3). These partial results blocked the p2fk.io fallback. Fix: Skip local decoder entirely for aggregate object queries — they require p2fk.io's full blockchain index. (2) `get_profile_bundle` in `data.py` fired object queries with the raw URN ("embii4u") instead of resolving to the blockchain address first. Fix: Resolve profile→address before querying objects, with a 15s timeout to prevent bundle endpoint from blocking indefinitely.
 - **UX: Node Connection Error Messages** (April 5, 2026) — Improved Bitcoin Core RPC error messages: shows specific errors (connection refused, auth failure, timeout) instead of generic "RPC call returned no data". Added cloud-hosted warning when user enters 127.0.0.1.
 
 ## Audit Findings (P1)
@@ -67,7 +68,6 @@ Build a modern, responsive frontend for a blockchain-based decentralized social 
 - None currently
 
 ### P2 (Medium)
-- Investigate incorrect object counts for profiles (DEDA, embii4u, kattacomi)
 - Evaluate WebRTC mesh as TURN server / bootstrap node architecture
 - "Ink Log" wallet transaction history tab
 
