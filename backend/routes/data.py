@@ -1742,7 +1742,8 @@ async def proxy_search_objects(searchString: str = '', qty: int = 20, skip: int 
     if not isinstance(results, list) or not results:
         return results
 
-    # Filter burned objects from search results
+    # Burn filtering is done best-effort with a short timeout to avoid blocking search
+    # The by-chain endpoints handle burn filtering more thoroughly via caching
     try:
         obj_addrs = []
         for item in results:
@@ -1757,8 +1758,9 @@ async def proxy_search_objects(searchString: str = '', qty: int = 20, skip: int 
             obj_addrs.append(addr)
 
         if obj_addrs:
-            burned = await batch_verify_burns(
-                [a for a in obj_addrs if a], is_mainnet, network
+            burned = await asyncio.wait_for(
+                batch_verify_burns([a for a in obj_addrs if a], is_mainnet, network),
+                timeout=5.0
             )
             if burned:
                 filtered = []
@@ -1766,7 +1768,7 @@ async def proxy_search_objects(searchString: str = '', qty: int = 20, skip: int 
                     if addr not in burned:
                         filtered.append(item)
                 results = filtered
-    except Exception:
+    except (asyncio.TimeoutError, Exception):
         pass
 
     # Return exactly the requested quantity
