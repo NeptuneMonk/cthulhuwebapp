@@ -73,6 +73,9 @@ Build a modern, responsive frontend for a blockchain-based decentralized social 
 ### P0 (Critical)
 - None currently
 
+### Recently Fixed
+- **P0 Fix: Wallet/Network State Mismatch on Login** (April 2026) — Login connected to testnet but profile section defaulted to mainnet wallet, requiring double-login to sync. Root cause: App.js initialized `network` state from `localStorage.cthulhu_network` once at mount; AuthPage updated localStorage and `user.network` but App.js state remained stale. Fix: (1) Added `useEffect` in `AppRoutes` (App.js) that syncs app-level network with `authUser.network`. (2) Recovery mount path in `useAuth.js` now updates `localStorage.cthulhu_network` to match recovery data. Tested: iteration_245, 100% pass rate (4/4 tests).
+
 ### P1 (High)
 - None currently
 
