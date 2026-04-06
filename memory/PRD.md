@@ -47,6 +47,7 @@ Build a modern, responsive frontend for a blockchain-based decentralized social 
 - **Backfill Logic:** Startup task indexes existing cached roots into the search index with proper mainnet/testnet classification.
 - **Snapshot Consume Hook:** Hydrating from IPFS snapshots now also populates the search index.
 - **Search Index Health in Decoder Panel:** Added search index stats (total roots, testnet/mainnet breakdown, coverage %) to the existing Decoder Health panel in the admin dashboard.
+- **Enhanced On-chain Cards in Discover:** File badges are now color-coded by type (images=blue, code=cyan, text=gray, zip=green) with clickable launchers that open files in new tabs. Message previews expanded to 400 chars showing human-readable descriptions, keywords, and metadata. HTML files still use the "Launch On-chain App" button.
 
 ## DB Schema (SQLite)
 - `api_cache`: Generic proxy cache for p2fk.io responses

@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { FiSearch, FiArrowLeft, FiBox, FiUser, FiFilm, FiMusic, FiImage, FiFile, FiGlobe, FiPlay, FiHash, FiClock, FiFileText, FiMessageSquare, FiCode, FiDatabase, FiCopy, FiCheck } from 'react-icons/fi';
+import { FiSearch, FiArrowLeft, FiBox, FiUser, FiFilm, FiMusic, FiImage, FiFile, FiGlobe, FiPlay, FiHash, FiClock, FiFileText, FiMessageSquare, FiCode, FiDatabase, FiCopy, FiCheck, FiExternalLink } from 'react-icons/fi';
 import { ProfileThumb } from '@/components/ProfileThumb';
 import { OnchainAppViewer } from '@/components/OnchainAppViewer';
 import { parseMediaString } from '@/utils/media';
@@ -11,6 +11,23 @@ const IPFS_GW = 'https://ipfs.io/ipfs';
 const VIDEO_EXT = ['.mp4', '.mkv', '.avi', '.mov', '.webm', '.flv', '.wmv'];
 const AUDIO_EXT = ['.mp3', '.wav', '.flac', '.aac', '.ogg', '.m4a'];
 const IMAGE_EXT = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.svg'];
+const HTML_EXT = ['.html', '.htm'];
+const CODE_EXT = ['.js', '.css', '.json', '.xml', '.csv', '.md'];
+const TEXT_EXT = ['.txt', '.log', '.cfg', '.ini'];
+const VIEWABLE_EXT = ['.pdf'];
+
+function getFileTypeInfo(filename) {
+  const lower = (filename || '').toLowerCase();
+  if (VIDEO_EXT.some(e => lower.endsWith(e))) return { type: 'video', icon: FiFilm, color: 'text-red-400', bg: 'bg-red-900/15 border-red-800/20' };
+  if (AUDIO_EXT.some(e => lower.endsWith(e))) return { type: 'audio', icon: FiMusic, color: 'text-purple-400', bg: 'bg-purple-900/15 border-purple-800/20' };
+  if (IMAGE_EXT.some(e => lower.endsWith(e))) return { type: 'image', icon: FiImage, color: 'text-blue-400', bg: 'bg-blue-900/15 border-blue-800/20' };
+  if (HTML_EXT.some(e => lower.endsWith(e))) return { type: 'html', icon: FiCode, color: 'text-amber-400', bg: 'bg-amber-900/15 border-amber-800/20' };
+  if (CODE_EXT.some(e => lower.endsWith(e))) return { type: 'code', icon: FiFileText, color: 'text-cyan-400', bg: 'bg-cyan-900/15 border-cyan-800/20' };
+  if (TEXT_EXT.some(e => lower.endsWith(e))) return { type: 'text', icon: FiFileText, color: 'text-gray-400', bg: 'bg-gray-800/40 border-gray-700/20' };
+  if (VIEWABLE_EXT.some(e => lower.endsWith(e))) return { type: 'document', icon: FiFile, color: 'text-orange-400', bg: 'bg-orange-900/15 border-orange-800/20' };
+  if (lower.endsWith('.zip')) return { type: 'zip', icon: FiDatabase, color: 'text-green-400', bg: 'bg-green-900/15 border-green-800/20' };
+  return { type: 'other', icon: FiFile, color: 'text-gray-500', bg: 'bg-gray-800/30 border-gray-700/20' };
+}
 
 function classifyExt(filename) {
   const lower = (filename || '').toLowerCase();
@@ -241,7 +258,8 @@ export default function DiscoverPage({ network }) {
               totalByteSize: root.TotalByteSize || 0,
               blockDate,
               buildDate: root.BuildDate || '',
-              messagePreview: cleanText.slice(0, 200),
+              messagePreview: cleanText.slice(0, 400),
+              outputs: Object.keys(root.Output || {}).filter(a => a !== signedBy),
             });
           }
 
@@ -526,6 +544,8 @@ export default function DiscoverPage({ network }) {
             {displayOnchain.map((item, i) => {
               const totalKB = item.totalByteSize > 0 ? (item.totalByteSize / 1024).toFixed(1) : null;
               const date = item.blockDate ? new Date(item.blockDate).toLocaleDateString() : '';
+              const mainnet = network?.includes('mainnet') ? 'true' : 'false';
+              const hasIndexHtml = item.files.some(f => f.toLowerCase() === 'index.html');
               return (
                 <div
                   key={`onchain-${i}`}
@@ -536,32 +556,56 @@ export default function DiscoverPage({ network }) {
                     <FiCode size={14} className="text-amber-500/70" />
                   </div>
                   <div className="flex-1 min-w-0">
-                    {/* File list */}
-                    <div className="flex flex-wrap gap-1 mb-1">
-                      {item.files.slice(0, 4).map((f, fi) => (
-                        <span key={fi} className="text-xs text-gray-300 bg-gray-800/60 px-1.5 py-0.5 rounded inline-flex items-center gap-1">
-                          <FiFileText size={10} className="text-gray-500" />
-                          {f.length > 28 ? f.slice(0, 25) + '...' : f}
-                        </span>
-                      ))}
-                      {item.files.length > 4 && (
-                        <span className="text-[10px] text-gray-600">+{item.files.length - 4} more</span>
+                    {/* File list — clickable launchers by type */}
+                    <div className="flex flex-wrap gap-1.5 mb-1.5">
+                      {item.files.slice(0, 6).map((f, fi) => {
+                        const info = getFileTypeInfo(f);
+                        const FileIcon = info.icon;
+                        const fileUrl = `${API}/api/onchain/file/${item.txid}/${encodeURIComponent(f)}?chain=BTC&mainnet=${mainnet}`;
+                        const isLaunchable = info.type !== 'other' && info.type !== 'html';
+                        const isHtml = info.type === 'html';
+                        return (
+                          <button
+                            key={fi}
+                            onClick={isHtml ? undefined : (e) => { e.stopPropagation(); window.open(fileUrl, '_blank'); }}
+                            disabled={isHtml}
+                            title={isHtml ? 'Use Launch button below' : `Open ${f}`}
+                            className={`text-xs px-2 py-1 rounded border inline-flex items-center gap-1.5 transition-colors ${
+                              isHtml
+                                ? 'bg-gray-800/40 border-gray-700/30 text-gray-500 cursor-default'
+                                : `${info.bg} ${info.color} hover:brightness-125 cursor-pointer`
+                            }`}
+                            data-testid={`onchain-file-${fi}`}
+                          >
+                            <FileIcon size={11} className="flex-shrink-0" />
+                            <span className="truncate max-w-[160px]">{f}</span>
+                            {isLaunchable && <FiExternalLink size={9} className="opacity-60 flex-shrink-0" />}
+                          </button>
+                        );
+                      })}
+                      {item.files.length > 6 && (
+                        <span className="text-[10px] text-gray-600 self-center">+{item.files.length - 6} more</span>
                       )}
                     </div>
-                    {/* Message preview */}
+                    {/* Message preview — show more readable content */}
                     {item.messagePreview && (
-                      <p className="text-xs text-gray-500 line-clamp-2 leading-relaxed">{item.messagePreview}</p>
+                      <p className="text-xs text-gray-400 line-clamp-3 leading-relaxed mb-1">{item.messagePreview}</p>
+                    )}
+                    {/* Keywords */}
+                    {item.keywords.length > 0 && (
+                      <div className="flex flex-wrap gap-1 mb-1.5">
+                        {item.keywords.slice(0, 5).map((kw, ki) => (
+                          <span key={ki} className="text-[10px] text-amber-400/70 bg-amber-900/15 px-1.5 py-0.5 rounded inline-flex items-center gap-0.5">
+                            <FiHash size={8} />{kw}
+                          </span>
+                        ))}
+                      </div>
                     )}
                     {/* Meta row */}
-                    <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                    <div className="flex flex-wrap items-center gap-2 mt-1">
                       {item.signed && item.signedBy && (
                         <Copyable value={item.signedBy} label={item.signedBy.slice(0, 14) + '...'} className="text-teal-400/60 hover:text-teal-300" />
                       )}
-                      {item.keywords.slice(0, 5).map((kw, ki) => (
-                        <span key={ki} className="text-[10px] text-amber-400/60 bg-amber-900/10 px-1.5 py-0.5 rounded inline-flex items-center gap-0.5">
-                          <FiHash size={8} />{kw}
-                        </span>
-                      ))}
                       {date && (
                         <span className="text-[10px] text-gray-600 inline-flex items-center gap-0.5">
                           <FiClock size={8} />{date}
@@ -575,7 +619,7 @@ export default function DiscoverPage({ network }) {
                       )}
                     </div>
                     {/* Launch button for on-chain apps with index.html */}
-                    {item.txid && item.files.some(f => f.toLowerCase() === 'index.html') && (
+                    {item.txid && hasIndexHtml && (
                       <OnchainAppViewer txid={item.txid} files={item.files} network={network} />
                     )}
                   </div>
