@@ -117,20 +117,63 @@ export default function DiscoverPage({ network }) {
     setSearchParams({ q: trimmed });
 
     try {
+      // Check if query looks like a hex txid (≥32 hex chars)
+      const isHexLike = /^[0-9a-fA-F]{32,64}$/.test(trimmed);
+
       // Primary: GetKnownRootsBySearchString — the main discovery source
+      // Search both mainnet and testnet to catch cross-chain content (MZC, DOGE, LTC roots)
       // Secondary: GetKnownProfilesBySearchString — dedicated profile results
       // Tertiary: GetKnownObjectsBySearchString — dedicated object results
-      const [rootsRes, profilesRes, objectsRes] = await Promise.allSettled([
+      // Direct lookup: if query is a txid, fetch the root directly
+      const altNetwork = network.includes('mainnet') ? 'btc-testnet' : 'btc-mainnet';
+      const fetches = [
         fetch(`${API}/api/p2fk/search/roots?searchString=${encodeURIComponent(trimmed)}&qty=200&network=${network}`, { signal: controller.signal })
           .then(r => r.ok ? r.json() : []),
         fetch(`${API}/api/p2fk/search/profiles?searchString=${encodeURIComponent(trimmed)}&qty=60&network=${network}`, { signal: controller.signal })
           .then(r => r.ok ? r.json() : []),
         fetch(`${API}/api/p2fk/search/objects?searchString=${encodeURIComponent(trimmed)}&qty=60&skip=0&network=${network}`, { signal: controller.signal })
           .then(r => r.ok ? r.json() : []),
-      ]);
+        // Also search roots on the OTHER network for cross-chain coverage
+        fetch(`${API}/api/p2fk/search/roots?searchString=${encodeURIComponent(trimmed)}&qty=200&network=${altNetwork}`, { signal: controller.signal })
+          .then(r => r.ok ? r.json() : []),
+      ];
+      // Direct txid/URN lookup — works for any root regardless of whether it's indexed in search
+      if (isHexLike) {
+        fetches.push(
+          fetch(`${API}/api/p2fk/root/${trimmed}?network=${network}`, { signal: controller.signal })
+            .then(r => r.ok ? r.json() : null)
+            .catch(() => null)
+        );
+      }
+      const settled = await Promise.allSettled(fetches);
+      const [rootsRes, profilesRes, objectsRes, altRootsRes] = settled;
+      const directRootIdx = isHexLike ? 4 : -1;
+      const directRoot = directRootIdx >= 0 && settled[directRootIdx]?.status === 'fulfilled' ? settled[directRootIdx].value : null;
 
       if (!controller.signal.aborted) {
         const rawRoots = rootsRes.status === 'fulfilled' ? (Array.isArray(rootsRes.value) ? rootsRes.value : []) : [];
+        // Merge alt-network roots (deduplicate by txid)
+        const altRoots = altRootsRes?.status === 'fulfilled' ? (Array.isArray(altRootsRes.value) ? altRootsRes.value : []) : [];
+        const existingTxids = new Set(rawRoots.map(item => (item.root || item).TransactionId || (item.root || item).transactionId));
+        for (const ar of altRoots) {
+          const artxid = (ar.root || ar).TransactionId || (ar.root || ar).transactionId;
+          if (artxid && !existingTxids.has(artxid)) {
+            rawRoots.push(ar);
+            existingTxids.add(artxid);
+          }
+        }
+
+        // If we got a direct root by txid, prepend it so it shows up in results
+        if (directRoot && directRoot.TransactionId) {
+          const directTxid = directRoot.TransactionId;
+          const alreadyInResults = rawRoots.some(item => {
+            const r = item.root || item;
+            return (r.TransactionId || r.transactionId) === directTxid;
+          });
+          if (!alreadyInResults) {
+            rawRoots.unshift({ root: directRoot, blockchain: directRoot.Blockchain || 'BTC' });
+          }
+        }
 
         // Categorize roots
         const messages = [];

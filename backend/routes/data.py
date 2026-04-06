@@ -1793,6 +1793,40 @@ async def proxy_search_roots(searchString: str = '', qty: int = 60, network: str
     return data if data is not None else []
 
 
+@router.get("/p2fk/root/{txid}")
+async def proxy_get_root(txid: str, network: str = 'btc-testnet'):
+    """Fetch a single root by its transaction ID.
+    Calls p2fk.io directly (skipping slow local decoder) since txids may be
+    from any chain (BTC, MZC, DOGE, LTC). Tries both mainnet and testnet."""
+    from utils.helpers import get_client, P2FK_API_BASE
+    is_mainnet = 'mainnet' in network.lower()
+
+    async def try_fetch(mainnet_flag: bool):
+        try:
+            client = get_client()
+            resp = await client.get(
+                f"{P2FK_API_BASE}/GetRootByTransactionID/{txid}",
+                params={"mainnet": str(mainnet_flag).lower(), "showSystemFiles": "false"},
+                timeout=10.0
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                if data and data.get('TransactionId'):
+                    return data
+        except Exception:
+            pass
+        return None
+
+    # Try current network first, then flip
+    data = await try_fetch(is_mainnet)
+    if data:
+        return data
+    data = await try_fetch(not is_mainnet)
+    return data if data else {}
+
+
+
+
 @router.get("/p2fk/object-by-address/{address}")
 async def proxy_object_by_address(address: str, network: str = 'btc-testnet'):
     is_mainnet = 'mainnet' in network.lower()
