@@ -136,6 +136,9 @@ export default function DiscoverPage({ network }) {
         // Also search roots on the OTHER network for cross-chain coverage
         fetch(`${API}/api/p2fk/search/roots?searchString=${encodeURIComponent(trimmed)}&qty=200&network=${altNetwork}`, { signal: controller.signal })
           .then(r => r.ok ? r.json() : []),
+        // Local root search index — supplements upstream p2fk.io with locally cached cross-chain roots
+        fetch(`${API}/api/local-search/roots?q=${encodeURIComponent(trimmed)}&qty=200&network=${network}`, { signal: controller.signal })
+          .then(r => r.ok ? r.json() : []).catch(() => []),
       ];
       // Direct txid/URN lookup — works for any root regardless of whether it's indexed in search
       if (isHexLike) {
@@ -146,8 +149,8 @@ export default function DiscoverPage({ network }) {
         );
       }
       const settled = await Promise.allSettled(fetches);
-      const [rootsRes, profilesRes, objectsRes, altRootsRes] = settled;
-      const directRootIdx = isHexLike ? 4 : -1;
+      const [rootsRes, profilesRes, objectsRes, altRootsRes, localRootsRes] = settled;
+      const directRootIdx = isHexLike ? 5 : -1;
       const directRoot = directRootIdx >= 0 && settled[directRootIdx]?.status === 'fulfilled' ? settled[directRootIdx].value : null;
 
       if (!controller.signal.aborted) {
@@ -160,6 +163,16 @@ export default function DiscoverPage({ network }) {
           if (artxid && !existingTxids.has(artxid)) {
             rawRoots.push(ar);
             existingTxids.add(artxid);
+          }
+        }
+
+        // Merge local search index results (cross-chain roots cached locally)
+        const localRoots = localRootsRes?.status === 'fulfilled' ? (Array.isArray(localRootsRes.value) ? localRootsRes.value : []) : [];
+        for (const lr of localRoots) {
+          const lrtxid = lr.TransactionId || lr.transactionId;
+          if (lrtxid && !existingTxids.has(lrtxid)) {
+            rawRoots.push(lr);
+            existingTxids.add(lrtxid);
           }
         }
 

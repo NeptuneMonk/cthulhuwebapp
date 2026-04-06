@@ -373,19 +373,13 @@ async def _local_p2fk_fallback(path: str, mainnet: bool = False, extra_params: d
             root = decode_root_from_raw_tx(txid, raw_tx, version_byte)
             return _root_to_p2fk_format(root.to_dict()) if root else None
 
-        # GetRootsByAddress/{address}
+        # GetRootsByAddress/{address} — SKIP local decoder.
+        # The local decoder only scans recent transactions (max_pages=2 ≈ 50 txs)
+        # and returns partial results. These partial results overwrite the full
+        # p2fk.io cache during vacuum, causing the index to shrink over time.
+        # Return None to always use p2fk.io's complete index.
         if path.startswith('GetRootsByAddress/'):
-            address = path.split('/', 1)[1]
-            txs = await local_fetch_addr_txs(address, network, max_pages=2)
-            roots = []
-            for tx in txs:
-                txid = tx.get('txid', '')
-                if not txid:
-                    continue
-                root = decode_root_from_raw_tx(txid, tx, version_byte)
-                if root and address in root.outputs:
-                    roots.append(_root_to_p2fk_format(root.to_dict()))
-            return roots if roots else None
+            return None
 
         # GetPublicAddressByKeyword/{keyword}
         if path.startswith('GetPublicAddressByKeyword/'):
@@ -564,6 +558,9 @@ async def p2fk_get(path: str, mainnet: bool = False, extra_params: dict = None, 
                 is_empty_list = isinstance(data, list) and len(data) == 0
                 if not is_empty_profile and not is_empty_list:
                     asyncio.create_task(_set_api_cache(cache_key, data))
+                    # Index root data for local text search
+                    if 'Root' in path or 'GetRootsByAddress' in path:
+                        asyncio.create_task(_index_roots_for_search(data, path, mainnet))
                     track_decoder_source(path, "p2fk_io", duration_ms)
                 else:
                     # p2fk.io returned garbage — try stale cache instead
@@ -586,6 +583,45 @@ async def p2fk_get(path: str, mainnet: bool = False, extra_params: dict = None, 
         return cached
 
     return None
+
+
+async def _index_roots_for_search(data, path: str, mainnet: bool):
+    """Extract searchable fields from root data and insert into root_search_index.
+    Called as a fire-and-forget task whenever root data flows through p2fk_get."""
+    try:
+        from db_sqlite import get_conn
+        roots = []
+        if isinstance(data, list):
+            roots = data
+        elif isinstance(data, dict) and data.get('TransactionId'):
+            roots = [data]
+        else:
+            return
+
+        if not roots:
+            return
+
+        conn = await get_conn()
+        for root in roots:
+            if not isinstance(root, dict):
+                continue
+            txid = root.get('TransactionId', '')
+            if not txid:
+                continue
+            file_data = root.get('File') or {}
+            files_str = json.dumps(file_data) if isinstance(file_data, dict) else str(file_data)
+            messages = root.get('Message', [])
+            msg_str = ' '.join(messages) if isinstance(messages, list) else str(messages)
+            signed_by = root.get('SignedBy', '')
+            block_date = root.get('BlockDate', '')
+            blockchain = 'mainnet' if mainnet else 'testnet'
+            await conn.execute(
+                "INSERT OR IGNORE INTO root_search_index (txid, files_json, message, signed_by, blockchain, block_date) VALUES (?, ?, ?, ?, ?, ?)",
+                (txid, files_str, msg_str, signed_by, blockchain, block_date),
+            )
+        await conn.commit()
+    except Exception as e:
+        logger.debug(f"Root search index error: {e}")
 
 
 async def batch_verify_burns(object_addresses: list, is_mainnet: bool, network: str) -> set:

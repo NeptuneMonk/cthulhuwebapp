@@ -1793,6 +1793,47 @@ async def proxy_search_roots(searchString: str = '', qty: int = 60, network: str
     return data if data is not None else []
 
 
+@router.get("/local-search/roots")
+async def local_search_roots(q: str = '', qty: int = 60, network: str = 'btc-testnet'):
+    """Search the local root_search_index table for roots matching a query.
+    Supplements p2fk.io search which misses cross-chain roots."""
+    from db_sqlite import get_conn
+    conn = await get_conn()
+    blockchain = 'mainnet' if 'mainnet' in network.lower() else 'testnet'
+    query = f"%{q}%"
+    try:
+        async with conn.execute(
+            """SELECT txid, files_json, message, signed_by, blockchain, block_date
+               FROM root_search_index
+               WHERE (files_json LIKE ? OR message LIKE ? OR signed_by LIKE ?)
+               AND blockchain = ?
+               ORDER BY block_date DESC
+               LIMIT ?""",
+            (query, query, query, blockchain, qty),
+        ) as cursor:
+            rows = await cursor.fetchall()
+        results = []
+        for row in rows:
+            try:
+                import json as _json
+                files = _json.loads(row[1]) if row[1] else {}
+            except Exception:
+                files = {}
+            results.append({
+                "TransactionId": row[0],
+                "File": files,
+                "Message": row[2].split(' ') if row[2] else [],
+                "SignedBy": row[3],
+                "blockchain": row[4],
+                "BlockDate": row[5],
+                "_source": "local_index",
+            })
+        return results
+    except Exception as e:
+        logger.warning(f"Local root search error: {e}")
+        return []
+
+
 @router.get("/p2fk/root/{txid}")
 async def proxy_get_root(txid: str, network: str = 'btc-testnet'):
     """Fetch a single root by its transaction ID.

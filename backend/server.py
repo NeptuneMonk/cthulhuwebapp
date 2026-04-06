@@ -257,7 +257,76 @@ async def startup():
     from db import db as _db
     init_paywall(_db)
     await seed_known_users()
+    # Root search index — local text search for cross-chain roots
+    from db_sqlite import get_conn as _get_sqlite_conn
+    _sconn = await _get_sqlite_conn()
+    await _sconn.execute("""
+        CREATE TABLE IF NOT EXISTS root_search_index (
+            txid TEXT PRIMARY KEY,
+            files_json TEXT,
+            message TEXT,
+            signed_by TEXT,
+            blockchain TEXT,
+            block_date TEXT
+        )
+    """)
+    await _sconn.execute("CREATE INDEX IF NOT EXISTS idx_rsi_files ON root_search_index(files_json)")
+    await _sconn.execute("CREATE INDEX IF NOT EXISTS idx_rsi_msg ON root_search_index(message)")
+    await _sconn.execute("CREATE INDEX IF NOT EXISTS idx_rsi_signer ON root_search_index(signed_by)")
+    await _sconn.commit()
+
     logger.info("Database indexed and known users seeded")
+
+    # Backfill root_search_index from existing api_cache (one-time catch-up)
+    async def _backfill_root_search_index():
+        try:
+            import json as _json
+            sconn = await _get_sqlite_conn()
+            async with sconn.execute("SELECT COUNT(*) FROM root_search_index") as cur:
+                existing = (await cur.fetchone())[0]
+            # Get count of api_cache root entries
+            async with sconn.execute("SELECT COUNT(*) FROM api_cache WHERE _id LIKE 'p2fk:GetRoot%'") as cur:
+                cache_root_count = (await cur.fetchone())[0]
+            # Skip backfill if search index is already within 80% of cache
+            if existing > 100 and existing > cache_root_count * 0.8:
+                logger.info(f"Root search index has {existing} entries (cache: {cache_root_count}), skipping backfill")
+                return
+            async with sconn.execute(
+                "SELECT _id, data FROM api_cache WHERE _id LIKE 'p2fk:GetRoot%'"
+            ) as cur:
+                rows = await cur.fetchall()
+            indexed = 0
+            for (cache_key, data_str) in rows:
+                try:
+                    d = _json.loads(data_str)
+                    cached = d.get("data", d) if isinstance(d, dict) and "data" in d else d
+                    items = cached if isinstance(cached, list) else ([cached] if isinstance(cached, dict) else [])
+                    # Determine blockchain from cache key (e.g., "p2fk:GetRootsByAddress/addr:True:None")
+                    blockchain = 'mainnet' if ':True:' in cache_key else 'testnet'
+                    for root in items:
+                        if not isinstance(root, dict):
+                            continue
+                        txid = root.get('TransactionId', '')
+                        if not txid:
+                            continue
+                        file_data = root.get('File') or {}
+                        files_str = _json.dumps(file_data) if isinstance(file_data, dict) else str(file_data)
+                        messages = root.get('Message', [])
+                        msg_str = ' '.join(messages) if isinstance(messages, list) else str(messages)
+                        signed_by = root.get('SignedBy', '')
+                        block_date = root.get('BlockDate', '')
+                        await sconn.execute(
+                            "INSERT OR REPLACE INTO root_search_index (txid, files_json, message, signed_by, blockchain, block_date) VALUES (?, ?, ?, ?, ?, ?)",
+                            (txid, files_str, msg_str, signed_by, blockchain, block_date),
+                        )
+                        indexed += 1
+                except Exception:
+                    continue
+            await sconn.commit()
+            logger.info(f"Root search index backfill: {indexed} roots indexed from cache")
+        except Exception as e:
+            logger.warning(f"Root search index backfill error: {e}")
+    asyncio.create_task(_backfill_root_search_index())
 
     # Load persisted IPFS uploaded CIDs
     from routes.ipfs import _load_uploaded_cids

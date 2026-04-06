@@ -913,6 +913,13 @@ async def _consume_snapshot(cid: str, network: str = "btc-testnet") -> dict:
         for _ in range(imported):
             track_decoder_source("snapshot_hydrate", "ipfs_snapshot", 0, success=True)
 
+        # Index imported roots into the search index
+        try:
+            from utils.helpers import _index_roots_for_search
+            await _index_roots_for_search(roots_list, "snapshot_consume", mainnet)
+        except Exception as e:
+            logger.warning(f"Search index population during consume: {e}")
+
         # Auto-register discovered signers as known users (populates feed)
         registered = 0
         seen_signers = set()
@@ -981,6 +988,13 @@ async def vacuum_status():
     async with conn.execute("SELECT COUNT(*) FROM snapshot_txids") as cursor:
         tracked_txids = (await cursor.fetchone())[0]
 
+    # Root search index stats
+    try:
+        async with conn.execute("SELECT COUNT(*) FROM root_search_index") as cursor:
+            search_index_count = (await cursor.fetchone())[0]
+    except Exception:
+        search_index_count = 0
+
     return {
         "vacuum": {
             "running": _vacuum_state["running"],
@@ -997,6 +1011,7 @@ async def vacuum_status():
         "cache": {
             "p2fk_entries": cache_count,
             "tracked_txids": tracked_txids,
+            "search_index_roots": search_index_count,
         },
         "snapshots": snapshots,
     }

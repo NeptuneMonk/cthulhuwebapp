@@ -1,110 +1,83 @@
-# Cthulhu - Decentralized Social Media Platform
+# Cthulhu — Decentralized Social Media Platform
 
 ## Original Problem Statement
-Build a modern, responsive frontend for a blockchain-based decentralized social media platform (Cthulhu). 100% client-side signing, SQLite backend cache, local P2FK decoder, IPFS pinning, multi-chain support. "The blockchain is the database. IPFS is the file system. Our server is just a read cache."
+Build a modern, responsive frontend for a blockchain-based decentralized social media platform (Cthulhu). The platform uses a fully client-side signing architecture (WIF encrypted in browser) and interacts with the P2FK protocol. Complete decentralization is required: SQLite (NO MongoDB), Local Kubo IPFS daemon, P2FK Decoder fetching from reliable blockchain explorers, and an Auto-delta daisy-chain IPFS Snapshot system.
 
-## Core Architecture
-- **Frontend**: React (CRA with config-overrides for crypto polyfills)
-- **Backend**: FastAPI + SQLite (aiosqlite) — NO MongoDB
-- **Crypto**: bitcoinjs-lib + @noble/secp256k1 (pure JS, browser-compatible)
-- **IPFS**: Local Kubo daemon for uploads, public gateways for reads
-- **Auth**: 100% client-side WIF encryption via Web Crypto API
+## Architecture
+- **Frontend:** React (CRA with config-overrides for crypto polyfills)
+- **Backend:** FastAPI + SQLite (aiosqlite) — STRICTLY NO MongoDB
+- **Blockchain:** Client-side signing via bitcoinjs-lib + @noble/secp256k1
+- **IPFS:** Local Kubo daemon for uploads, public gateways for reads
+- **Auth:** 100% client-side WIF encryption via Web Crypto API
 
-## What's Implemented (Complete)
-- Secure Auth Frontend (WIF import, password-encrypted wallet in localStorage)
-- Post-Signup Wizard (profile setup, wallet funding, profile minting)
-- Client-Side Signing Overhaul (all P2FK ops: PRO, OBJ, GIV, BRN, BUY, MSG, INQ, Vote)
-- SUP Protocol Compatibility Verification (byte-for-byte test suite)
-- IPFS Architecture Rework (local Kubo daemon on backend)
-- Tauri Download Page & Beta Disclaimers
-- Poll Voting Cache Invalidation
-- Burn Modal Quantity Handling
-- Ownership Cascade Transfers (GiveModal sub-topic support)
-- Multi-chain auto-delta vacuuming
-- WebRTC mesh relay gossip
+## Core Requirements (All DONE)
+1. 100% Client-Side Authentication via WIF
+2. Backend strictly uses SQLite (NO MongoDB)
+3. Local P2FK Decoder for blockchain data
+4. Decentralized IPFS Snapshot system (vacuum → snapshot → IPFS pin → daisy-chain)
+5. Auto-discover and register signers
+6. Feed toggle between "Global" and "Following"
+7. Display Polls using on-chain data
+8. Real Delete transactions (SQLite purge & IPFS unpin)
+9. Impersonation protection ("First claim wins" for URNs)
+10. Cross-chain content (MZC, DOGE, LTC roots)
+11. On-chain HTML/ZIP web app rendering (sandboxed iframes)
+12. SUP Protocol compatibility (verified)
 
-## Recently Completed (April 2026)
-- **P0 Fix: Admin Wallet Reset Lockout** — Fixed broken `POST /api/admin/wallet/reset` endpoint (previous agent inserted reset function inside init_wallet body, breaking both). Restored init_wallet code structure, added reset endpoint properly, and cleared stale wallet_config from SQLite so user can re-initialize with a fresh password from the UI.
-- **P0 Fix: Mint Profile URN Defaulting to Address** — URN field in profile setup was read-only and defaulted to the bitcoin address. Now editable for new profiles with placeholder "Choose a unique name". Updates user auth state with chosen URN after successful mint. Read-only for profile updates.
-- **Local P2FK Decoder for Objects (DONE)**
-- **Ephemeral Feed Announcements (DONE)** — Profile mint (teal) and Object mint (purple) announcements in global feed, 48hr TTL, not on-chain.
-- **URN Impersonation Protection (First Claim Wins)** — Three-layer protection.
-- **P0: Admin Vacuum Controls** — Graceful vacuum stop, network selector, snapshot history export/import.
-- **P0: CID Health & Etch-to-Chain** — CID health verification, re-pin, manual etch-to-chain.
-- **P0: Admin Audit — MongoDB to SQLite Cleanup** — Rewrote system stats and health to use SQLite.
-- **P0: Vacuum Speed + Consume Feedback** — Increased vacuum rate, rich consume response UI.
-- **P0: Unified Treasury Wallet** — Single wallet hub for all on-chain operations.
-- **P0: Feed Filter & Auto-Checkpoint Guard** — SEC backups, system messages filtered from feed.
-- **P0: Phantom DM Requests Fix** — Uses SignedBy instead of keyword-derived addresses.
-- **P0: Call Duplicate Answer Crash Fix** — Guard for multiple ANSW signals.
-- **P1: p2fk.io showSystemFiles=false** — Server-side filtering for ~4x speed improvement.
-- **P1: P2P Instant Message Caching & Notifications** — Offline message retrieval and unread counts.
-- **P0 Fix: IPFS Deployment Failure** — Bundled Kubo binaries.
-- **P0 Fix: Releases Route MongoDB to SQLite** — Rewrote releases.py for SQLite.
-- **P0 Fix: "Unnamed" Object View** — Self-healing re-fetch.
-- **P0 Fix: Burned Objects Still Showing** — Added burned set filtering.
-- **P0 Fix: Media Timeouts (.wav/.mp4)** — mempool.space first, in-memory TX cache.
-- **P0 Fix: Profile URN Overwrite Bug** — Fixed in MyProfilePage, SettingsModal, ActivateMessaging.
-- **P1: Full P2FK Payload Audit** — All 8 transaction types verified SUP-compatible.
-- **P0 Fix: Storefront/Search UI Empty** (April 5, 2026) — Fixed critical data format mismatch: local P2FK decoder returned flat objects but frontend expected `{object: {...}, blockchain: "..."}` wrapper format. Three fixes: (1) Backend `_local_search_objects` now wraps results in p2fk.io format and returns `None` for empty search instead of `[]`. (2) Frontend now uses dedicated storefront endpoint for initial browse and search proxy for user searches. (3) Frontend normalization handles both uppercase and lowercase key formats. Also fixed stale closure bug in chain filter switching. Tested: iteration_242, 100% pass rate (8/8 tests).
-- **P0 Fix: Burned Objects in Storefront** (April 5, 2026) — Burned objects were leaking into storefront and search results. Root causes: (1) Search proxy had zero burn filtering. (2) Storefront "keywords exhausted" code path had no burn filter. (3) Burn filter only applied to new objects, not cached+merged. (4) Burned registry was incomplete. Fix: Added `batch_verify_burns()` that checks `GetRootsByAddress` for BRN roots and verifies via p2fk.io `GetObjectByAddress` (skip_cache). Applied to all 3 storefront paths + search proxy. Added total_supply == 0 frontend safety net. 86 burned objects detected and registered.
-- **P0 Fix: Sidechain Objects Missing from Storefront** (April 5, 2026) — Chain filters (DOG, LTC, MZC) showed "No objects found" after storefront refactor. Three root causes: (1) Frontend `isSearchMode` excluded chain filter names, routing them to BTC-only storefront instead of cross-chain search proxy. (2) Local decoder returned `[]` for unmatched searches (treated as valid by `p2fk_get`, blocking p2fk.io fallthrough). Fixed to return `None` for empty results. (3) Chain filter used `_blockchain` field (always "BTC-testnet") instead of URN prefix to detect data repos. Added `getDataRepo()` function that checks URN prefix (DOG:, LTC:, MZC:, IPFS:, BTC:).
-- **P0 Fix: Storefront Loading Only Partial Objects** (April 5, 2026) — Storefront showed ~69 objects while p2fk.io has 496. Root causes: (1) Frontend used keyword-by-keyword storefront endpoint (limited to 13 keywords). Switched to always use the cross-chain search proxy backed by `GetKnownObjectsBySearchString` which returns ALL known objects. (2) Burn filter reduced returned count below `qty`, causing frontend `hasMore=false` prematurely. Fixed backend to over-fetch (`qty * 1.5 + 10`) and return exactly `qty` items. Storefront now loads 40+ objects per page with correct infinite scroll.
-- **P0 Fix: URN Verification Logic** (April 5, 2026) — Changed from date-based "first claim wins" to `GetProfileByURN`-based verification. The registered profile's `Creators` address is the official one. Objects can have two creators temporarily during trades.
-- **P0 Fix: Admin Releases 500 Error** (April 5, 2026) — Release config endpoint returned 500 due to `no such column: key`. The `release_config` SQLite table used `_id` as primary key but code queried `key`. Fixed SQL queries. Also fixed ReleasePanel using wrong token storage (`sessionStorage.admin_token` vs `localStorage.cthulhu_admin_token`).
-- **P0 Fix: Profile Objects Showing 0** (April 6, 2026) — embii4u profile showed 0 objects despite p2fk.io listing 46 owned/81 created. Two root causes: (1) Local P2FK decoder (`helpers.py`) was returning partial results for aggregate queries (`GetObjectsOwnedByAddress`, `GetObjectsCreatedByAddress`, `GetObjectsByAddress`) because it only scans recent transactions (max_pages=3). These partial results blocked the p2fk.io fallback. Fix: Skip local decoder entirely for aggregate object queries — they require p2fk.io's full blockchain index. (2) `get_profile_bundle` in `data.py` fired object queries with the raw URN ("embii4u") instead of resolving to the blockchain address first. Fix: Resolve profile→address before querying objects, with a 15s timeout to prevent bundle endpoint from blocking indefinitely.
-- **Enhancement: Skeleton Loading States** (April 6, 2026) — Replaced all spinner-only loading states with shimmer skeleton placeholders across 4 pages: ProfileDetailPage, FeedPage, ObjectsPage (Storefront), and UserObjectsPage. Created reusable `SkeletonLoaders.js` component with `ProfileSkeleton`, `FeedSkeleton`, `StorefrontSkeleton`, `UserObjectsSkeleton`, `ObjectGridSkeleton`, and `PostCardSkeleton`. Uses Shadcn's `Skeleton` component with `animate-pulse`.
-- **P0 Fix: Storefront Search & MZC Objects Missing** (April 6, 2026) — Same root cause as the profile objects bug: the local P2FK decoder in `helpers.py` intercepted `GetKnownObjectsBySearchString` queries and returned partial results from a tiny local cache (1 item), blocking p2fk.io's full index (20+ items). Fix: Skip local decoder for all search queries. Also fixed `GetRootsByAddress` returning `[]` instead of `None` for empty results, which blocked p2fk.io fallback for feed/roots queries.
-- **P0 Fix: Storefront Infinite Loading & Missing Objects** (April 6, 2026) — Two critical issues: (1) Chain filters (MZC/DOG/LTC/IPFS) caused infinite loading — frontend `ObjectsPage.js` had a `while` loop exhaustively paginating through p2fk.io with `searchString=*`, causing timeouts/JSON decode errors. (2) "All" filter only showed ~37 objects instead of 425+ — was using `searchString=*` through the rate-limited `p2fk_get` proxy which timed out. Fix: Created unified `GET /api/objects/by-chain/{chain}` endpoint supporting ALL/MZC/DOG/LTC/IPFS/BTC. Uses `_fetch_all_known_objects()` to make a single direct HTTP GET to p2fk.io (bypassing rate limiter), deduplicates, filters by chain prefix in URN/URI/Image fields server-side, applies burn filtering, caches for 10 min, and returns paginated results. Frontend now uses this endpoint for all filter modes. Added pagination UI showing "Page X of Y (N total)". Tested: iteration_243, 100% pass rate (12/12 tests).
-- **Discover Page Redesign** (April 6, 2026) — Rewrote DiscoverPage.js to use `GetKnownRootsBySearchString` as primary data source. Results categorized into 5 tabs: Messages (signed posts), Objects (via `GetKnownObjectsBySearchString`), Profiles (via `GetKnownProfilesBySearchString`), On-chain Injections (files embedded on blockchain), Media (IPFS refs). Removed all bitfossil.org/.com links — replaced with local on-chain proxy. Tested: iteration_244, 100% pass rate.
-- **Chain Badge Fix for BTC-Native Objects** (April 6, 2026) — Fixed BTC filter returning 0 objects on mainnet. BTC-native objects have plain hex URNs without any chain prefix (e.g., `632a6ba8...`). Updated `_object_matches_chain()` to treat "no known prefix = BTC-native". Updated ObjectCard to show BTC badge for objects with no chain prefix. Mainnet verified: 147 BTC, 8 LTC, 14 DOG, 8 MZC, 35 IPFS objects all displaying correctly with proper badges.
-- **ZipAppViewer IPFS Fallback Fix** (April 6, 2026) — Fixed "Failed to fetch: 404" when launching index.zip web apps. Root cause: `parseMediaString` constructed URL as `https://ipfs.io/ipfs/CID/index.zip` but the CID itself IS the zip file (not a directory). Added multi-URL fallback: tries primary URL, then `fallbackUrl` (CID root), then alternate IPFS gateways (dweb.link, cloudflare-ipfs, pinata). OurBigBook.com now launches successfully.
-- **On-chain App Viewer** (April 6, 2026) — New `OnchainAppViewer` component that detects and launches on-chain web apps (roots with `index.html`) directly from the Discover page. Handles multi-transaction apps by fetching and inlining cross-transaction JS/CSS references. Tested with the Turing machine app (txid: `133f45cce88a...`) which spans 2 BTC transactions.
-- **Copyable Fields** (April 6, 2026) — Made txids, URNs, and addresses copyable across all Discover sections with click-to-copy + checkmark confirmation.
-- **Storefront Search Fix** (April 6, 2026) — Fixed search bar returning all objects instead of matching keyword. User searches now correctly use `GetKnownObjectsBySearchString` with the keyword. Also added 5s timeout to burn verification to prevent search endpoint hangs.
-- **UX: Node Connection Error Messages** (April 5, 2026) — Improved Bitcoin Core RPC error messages: shows specific errors (connection refused, auth failure, timeout) instead of generic "RPC call returned no data". Added cloud-hosted warning when user enters 127.0.0.1.
+## Completed Features
+- Secure auth (signup/login with encrypted WIF in localStorage)
+- Post-signup wizard (profile setup, wallet funding, minting)
+- Client-side P2FK signing for all operations
+- Storefront (browse, buy, give, burn objects)
+- Object creation with IPFS uploads and royalties
+- Profile pages with owned/created/collection filters
+- Conversation threading (keyword-based, decentralized)
+- On-chain file rendering (HTML, ZIP, cross-chain)
+- IPFS Kubo daemon on backend
+- Vacuum → Snapshot → IPFS pin → daisy-chain system
+- Auto-delta scheduler with on-chain CID announcements
+- WebRTC mesh gossip for peer snapshot discovery
+- Burn detection and filtering
+- Discover page with cross-network search
 
-## Audit Findings (P1)
-- `dnm` (display name) in PRO: Written by Cthulhu, read by p2fk.io indexer, ignored by SUP client UI. Not a protocol violation.
-- `cre/own/roy` in OBJ: Our code uses integer indices; C# uses raw addresses. Both valid per indexer.
-- All encoding, signing, and address list construction verified identical.
-
-## Prioritized Backlog
-### P0 (Critical)
-- None currently
-
-### Recently Fixed
-- **P0 Fix: Wallet/Network State Mismatch on Login** (April 2026) — Login connected to testnet but profile section defaulted to mainnet wallet, requiring double-login to sync. Root cause: App.js initialized `network` state from `localStorage.cthulhu_network` once at mount; AuthPage updated localStorage and `user.network` but App.js state remained stale. Fix: (1) Added `useEffect` in `AppRoutes` (App.js) that syncs app-level network with `authUser.network`. (2) Recovery mount path in `useAuth.js` now updates `localStorage.cthulhu_network` to match recovery data. Tested: iteration_245, 100% pass rate (4/4 tests).
-
-### P1 (High)
-- None currently
-
-### P2 (Medium)
-- Evaluate WebRTC mesh as TURN server / bootstrap node architecture
-- "Ink Log" wallet transaction history tab
-
-### P3 (Low)
-- "SupFlix" Media Gallery (video/audio objects)
-- Evaluate paid blockchain explorer APIs
-- IPFS client-side IndexedDB caching (started, not completed)
-
-## Key API Endpoints
-- `GET /api/wallet/utxos/{address}` — Fetch UTXOs
-- `GET /api/wallet/raw-tx/{txid}` — Fetch raw transaction hex
-- `POST /api/wallet/broadcast` — Broadcast signed transaction
-- `POST /api/upload` — Upload to local IPFS daemon
-- `POST /api/wallet/register-profile` — Register profile URN
-- `GET /api/profile/{address}` — Fetch profile data
-- `GET /api/object/addr/{address}?fresh=true` — Fetch object with cache bypass
-- `GET /api/objects/by-chain/{chain}` — **NEW** Unified object fetching with server-side chain filtering (ALL/MZC/DOG/LTC/IPFS/BTC). Direct p2fk.io fetch, 10-min cache, paginated.
-- `GET /api/objects/storefront/{network}` — Storefront browse with progressive keyword fetching (legacy)
-- `GET /api/p2fk/search/objects` — Search objects (wraps GetKnownObjectsBySearchString)
-- `GET /api/polls/{network}?fresh=true` — Fetch polls with cache bypass
+## Recently Completed (Apr 6, 2026)
+- **Vacuum Cache Reset Fix:** Disabled local P2FK decoder for `GetRootsByAddress` to prevent partial results (max_pages=2) from overwriting full p2fk.io cache during vacuum cycles. Same pattern as existing `GetObjectsOwnedByAddress` fix.
+- **Local Root Search Index:** Created `root_search_index` SQLite table populated from cached root data. New `GET /api/local-search/roots?q=...` endpoint supplements unreliable p2fk.io search with locally indexed cross-chain roots.
+- **Frontend Search Integration:** DiscoverPage.js now queries local search index in parallel with p2fk.io, deduplicating results by txid.
+- **Backfill Logic:** Startup task indexes existing cached roots into the search index with proper mainnet/testnet classification.
+- **Snapshot Consume Hook:** Hydrating from IPFS snapshots now also populates the search index.
 
 ## DB Schema (SQLite)
-- `api_cache`, `known_users`, `object_cache`, `p2fk_snapshot_history`, `burned_objects`
+- `api_cache`: Generic proxy cache for p2fk.io responses
+- `known_users`: Registered blockchain addresses
+- `conversation_cache`: Feed cache
+- `object_cache`: Object data cache
+- `snapshots`: Snapshot history (CID, chain, type, root_count)
+- `snapshot_txids`: Tracked txids for delta computation
+- `burned_objects`: Known burned object addresses
+- `root_search_index`: **(NEW)** Local text search index (txid, files_json, message, signed_by, blockchain, block_date)
 
-## Credentials
-- Test WIF: `cPYRpd9zq5mTdoo93NM5V9gTkpPnL26kjS5f6qYExPHLtCFp2gN8`
-- Test PW: `pXk7uHCH8kuu85B`
+## Upcoming Tasks
+- (P2) WebRTC mesh as TURN server / bootstrap node architecture
+- (P2) "Ink Log" wallet transaction history tab
+
+## Future/Backlog
+- (P3) "SupFlix" Media Gallery for video/audio objects
+- (P3) IPFS client-side IndexedDB caching & settings page
+- (P3) Evaluate paid blockchain explorer APIs
+- (P3) Object-based chat rooms research
+
+## Key API Endpoints
+- `GET /api/local-search/roots?q=...&qty=60&network=btc-testnet` — Local root search
+- `GET /api/p2fk/search/roots` — Upstream p2fk.io root search
+- `GET /api/p2fk/root/{txid}` — Direct root lookup
+- `GET /api/snapshot/status` — Vacuum/cache/search index stats
+- `POST /api/snapshot/vacuum` — Start vacuum crawl
+- `POST /api/snapshot/produce` — Produce IPFS snapshot
+- `POST /api/snapshot/consume` — Hydrate from IPFS snapshot
+
+## Critical Rules
+- Client-side signing is law: WIF never leaves the browser
+- STRICTLY NO MongoDB
+- Iframe backgrounds stay `bg-white` (intentional for on-chain HTML)
 - On-chain announce keyword: `CTHULHU-SNAPSHOT`
