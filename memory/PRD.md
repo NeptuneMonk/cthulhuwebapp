@@ -46,6 +46,7 @@ Build a modern, responsive frontend for a blockchain-based decentralized social 
 - **Frontend Search Integration:** DiscoverPage.js now queries local search index in parallel with p2fk.io, deduplicating results by txid.
 - **Backfill Logic:** Startup task indexes existing cached roots into the search index with proper mainnet/testnet classification.
 - **Snapshot Consume Hook:** Hydrating from IPFS snapshots now also populates the search index.
+- **Search Index Health in Decoder Panel:** Added search index stats (total roots, testnet/mainnet breakdown, coverage %) to the existing Decoder Health panel in the admin dashboard.
 
 ## DB Schema (SQLite)
 - `api_cache`: Generic proxy cache for p2fk.io responses

@@ -2013,6 +2013,35 @@ function DecoderHealthPanel() {
         )}
       </div>
 
+      {/* Search Index Health */}
+      {stats?.search_index && (
+        <div className="bg-gray-900/60 border border-gray-800 rounded-xl p-4">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-sm font-bold text-gray-200">Search Index</h3>
+            <span className={`text-xs font-mono px-2 py-0.5 rounded-full ${stats.search_index.total_roots > 0 ? 'bg-emerald-900/30 text-emerald-400' : 'bg-gray-800 text-gray-500'}`}>
+              {stats.search_index.total_roots.toLocaleString()} roots
+            </span>
+          </div>
+          <div className="grid grid-cols-3 gap-3 mt-3">
+            <div className="text-center">
+              <p className="text-lg font-bold text-cyan-400">{stats.search_index.testnet_roots.toLocaleString()}</p>
+              <p className="text-[9px] text-gray-600">Testnet</p>
+            </div>
+            <div className="text-center">
+              <p className="text-lg font-bold text-amber-400">{stats.search_index.mainnet_roots.toLocaleString()}</p>
+              <p className="text-[9px] text-gray-600">Mainnet</p>
+            </div>
+            <div className="text-center">
+              <p className={`text-lg font-bold ${stats.search_index.cache_coverage_pct >= 50 ? 'text-emerald-400' : 'text-amber-400'}`}>
+                {stats.search_index.cache_coverage_pct}%
+              </p>
+              <p className="text-[9px] text-gray-600">Coverage</p>
+            </div>
+          </div>
+          <p className="text-[9px] text-gray-600 mt-2">Local roots indexed for cross-chain text search. Coverage = indexed / tracked snapshot txids.</p>
+        </div>
+      )}
+
       {/* Source Breakdown */}
       <div>
         <h3 className="text-sm font-bold text-gray-200 mb-3">Source Breakdown</h3>

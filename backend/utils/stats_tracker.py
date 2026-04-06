@@ -30,6 +30,37 @@ _decoder_recent = []  # Last 50 decoder events: [{ path, source, ms, ts }, ...]
 # Server start time
 _start_time = time.time()
 
+# Search index stats (updated periodically from SQLite)
+_search_index_stats = {
+    "total_roots": 0,
+    "testnet_roots": 0,
+    "mainnet_roots": 0,
+    "cache_coverage_pct": 0,
+}
+
+
+async def refresh_search_index_stats():
+    """Update search index stats from SQLite. Called periodically."""
+    try:
+        from db_sqlite import get_conn
+        conn = await get_conn()
+        async with conn.execute("SELECT COUNT(*) FROM root_search_index") as cur:
+            total = (await cur.fetchone())[0]
+        async with conn.execute("SELECT COUNT(*) FROM root_search_index WHERE blockchain = 'testnet'") as cur:
+            testnet = (await cur.fetchone())[0]
+        async with conn.execute("SELECT COUNT(*) FROM root_search_index WHERE blockchain = 'mainnet'") as cur:
+            mainnet = (await cur.fetchone())[0]
+        async with conn.execute("SELECT COUNT(*) FROM snapshot_txids") as cur:
+            tracked = (await cur.fetchone())[0]
+        _search_index_stats.update({
+            "total_roots": total,
+            "testnet_roots": testnet,
+            "mainnet_roots": mainnet,
+            "cache_coverage_pct": round(total / max(1, tracked) * 100, 1),
+        })
+    except Exception:
+        pass
+
 
 def track_api_call(domain: str, endpoint: str, duration_ms: float = 0):
     """Record an external API call."""
@@ -80,6 +111,15 @@ def track_decoder_source(path: str, source: str, duration_ms: float = 0, success
 
 def get_stats():
     """Return all collected statistics."""
+    # Trigger async search index refresh (fire-and-forget for next call)
+    import asyncio
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            asyncio.ensure_future(refresh_search_index_stats())
+    except Exception:
+        pass
+
     uptime = time.time() - _start_time
 
     api_summary = {}
@@ -150,10 +190,14 @@ def get_decoder_stats():
             "avg_ms": round(data["total_ms"] / max(1, total), 1),
         }
 
+    # Search index stats (from SQLite)
+    search_index = _search_index_stats.copy()
+
     return {
         "total_requests": total_decoder,
         "independence_score": independence,
         "sources": sources,
+        "search_index": search_index,
         "by_path": {
             path: dict(srcs) for path, srcs in sorted(
                 _decoder_path_sources.items(), key=lambda x: sum(x[1].values()), reverse=True

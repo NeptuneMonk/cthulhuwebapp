@@ -328,6 +328,10 @@ async def startup():
             logger.warning(f"Root search index backfill error: {e}")
     asyncio.create_task(_backfill_root_search_index())
 
+    # Eagerly populate search index stats so first admin panel load has data
+    from utils.stats_tracker import refresh_search_index_stats
+    asyncio.create_task(refresh_search_index_stats())
+
     # Load persisted IPFS uploaded CIDs
     from routes.ipfs import _load_uploaded_cids
     await _load_uploaded_cids()
