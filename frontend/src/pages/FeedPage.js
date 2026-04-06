@@ -14,6 +14,7 @@ import { useTheme } from '@/hooks/useTheme';
 import { getPendingPosts, checkConfirmations, cleanupOldPosts } from '@/utils/pendingPosts';
 import { cachedFetch } from '@/utils/apiCache';
 import { meshFirstFetch } from '@/utils/meshFirstFetch';
+import { FeedSkeleton } from '@/components/SkeletonLoaders';
 import { FiAtSign, FiArrowDown, FiUsers, FiGlobe } from 'react-icons/fi';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
@@ -240,10 +241,7 @@ export default function FeedPage({ network, follows = [] }) {
       {/* Scrollable Feed — chat-style: newest at bottom */}
       <div ref={scrollContainerRef} className="flex-1 overflow-y-auto px-4 min-h-0" style={wallpaperStyle}>
         {initialLoad && loading ? (
-          <div className="text-center py-12 text-gray-500">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 mx-auto mb-4" style={{ borderColor: 'var(--c-accent)' }} />
-            Loading feed...
-          </div>
+          <FeedSkeleton />
         ) : feed.length === 0 && visiblePending.length === 0 && !loading ? (
           <div className="text-center py-12">
             {feedMode === 'following' && follows.length === 0 ? (

@@ -13,6 +13,7 @@ import { parseMediaString, isMainnetNetwork } from '@/utils/media';
 import { cachedFetch } from '@/utils/apiCache';
 import { meshFirstFetch } from '@/utils/meshFirstFetch';
 import { getBurnedAddresses } from '@/utils/burnBlocklist';
+import { ProfileSkeleton } from '@/components/SkeletonLoaders';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -276,11 +277,7 @@ export default function ProfileDetailPage({ network, isFollowing, toggleFollow, 
   };
 
   if (loading) {
-    return (
-      <div className="h-full flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
-      </div>
-    );
+    return <ProfileSkeleton />;
   }
 
   if (!profile) {

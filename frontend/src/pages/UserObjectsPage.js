@@ -13,6 +13,7 @@ import { parseMediaString, isMainnetNetwork } from '@/utils/media';
 import { cachedFetch, cacheInvalidatePrefix } from '@/utils/apiCache';
 import { getBurnedAddresses } from '@/utils/burnBlocklist';
 import { getOptimisticByAddress, removeOptimisticItem } from '@/utils/optimisticCache';
+import { UserObjectsSkeleton } from '@/components/SkeletonLoaders';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const PAGE_SIZE = 12;
@@ -64,7 +65,7 @@ export default function UserObjectsPage({ network, myAddress }) {
   };
 
   if (loading) {
-    return <div className="h-full flex items-center justify-center"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-500" /></div>;
+    return <UserObjectsSkeleton />;
   }
 
   return (

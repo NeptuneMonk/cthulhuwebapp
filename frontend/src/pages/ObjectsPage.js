@@ -7,6 +7,7 @@ import { useWallet } from '@/hooks/useWallet';
 import { useAuth } from '@/hooks/useAuth';
 import { ObjectCreateModal } from '@/components/ObjectCreateModal';
 import { cachedFetch } from '@/utils/apiCache';
+import { StorefrontSkeleton } from '@/components/SkeletonLoaders';
 
 const API = process.env.REACT_APP_BACKEND_URL;
 
@@ -504,10 +505,7 @@ export default function ObjectsPage({ network }) {
 
           {/* Results */}
           {loading && objects.length === 0 ? (
-            <div className="text-center py-12 text-gray-500">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-500 mx-auto mb-4" />
-              {isUserSearch ? 'Searching objects...' : 'Loading storefront...'}
-            </div>
+            <StorefrontSkeleton />
           ) : objects.length === 0 ? (
             <div className="text-center py-16">
               <FiTrendingUp size={48} className="mx-auto text-gray-700 mb-4" />
