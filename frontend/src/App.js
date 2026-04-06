@@ -1016,6 +1016,15 @@ function AppRoutes({ network, setNetwork }) {
   const { pendingMint, addPendingMint } = usePendingMint();
   const ipfsStatus = useIpfsStatus();
 
+  // Sync app-level network with auth user's network.
+  // Fixes: login on AuthPage sets user.network but App.js state was initialized
+  // from stale localStorage at mount, causing network/wallet mismatch.
+  useEffect(() => {
+    if (authUser?.network && authUser.network !== network) {
+      setNetwork(authUser.network);
+    }
+  }, [authUser?.network]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Animated favicon: pulse green dot when IPFS is online
   useEffect(() => {
     const link = document.querySelector('link[rel="icon"][sizes="32x32"]') || document.querySelector('link[rel="icon"]');

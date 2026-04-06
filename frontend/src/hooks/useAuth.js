@@ -78,6 +78,8 @@ export function AuthProvider({ children }) {
         };
         setUser(recoveredUser);
         localStorage.setItem(AUTH_USER_KEY, JSON.stringify(recoveredUser));
+        // Sync the app-level network selector to match recovery
+        localStorage.setItem('cthulhu_network', recovery.network);
         // Check if WIF is already in session
         const sessionWif = sessionStorage.getItem(SESSION_WIF_KEY);
         if (!sessionWif) {

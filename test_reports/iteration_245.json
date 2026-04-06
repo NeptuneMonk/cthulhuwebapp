@@ -1,0 +1,56 @@
+{
+  "summary": "Iteration 245: Tested Wallet/Network State Mismatch bug fix. All 4 test scenarios passed. The sync useEffect in AppRoutes correctly syncs app-level network state with authUser.network, fixing the bug where logging in on testnet while localStorage had mainnet would cause a mismatch.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/test_reports/iteration_245.json"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "The fix is correctly implemented in App.js lines 1019-1026 with a useEffect that syncs network state",
+    "useAuth.js lines 81-82 correctly syncs localStorage during recovery mount"
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "N/A (frontend-only testing)",
+    "frontend": "100% (all 4 test scenarios passed)"
+  },
+  "test_credentials": {
+    "base_url": "https://dark-telegram-ui.preview.emergentagent.com"
+  },
+  "seed_data_creation": "None",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Network state mismatch bug fix verified. Key findings: (1) Setting localStorage to 'btc-mainnet' then creating wallet on testnet correctly updates localStorage to 'btc-testnet', (2) auth_user.network is correctly set to 'btc-testnet', (3) Network toggle on auth page works correctly (switches between BTC Testnet and BTC Mainnet and updates localStorage), (4) Guest browsing still works after the sync changes. The fix uses a useEffect in AppRoutes that watches authUser.network and calls setNetwork when there's a mismatch.",
+  "features_tested": {
+    "network_state_mismatch_fix": {
+      "status": "PASS",
+      "details": "Set localStorage to 'btc-mainnet', selected testnet on auth page, created wallet - localStorage correctly updated to 'btc-testnet' and auth_user.network is 'btc-testnet'"
+    },
+    "localStorage_sync_on_wallet_creation": {
+      "status": "PASS",
+      "details": "Creating a new wallet on testnet correctly sets localStorage 'cthulhu_network' to 'btc-testnet'"
+    },
+    "network_toggle_on_auth_page": {
+      "status": "PASS",
+      "details": "Network toggle switches between 'BTC Testnet' and 'BTC Mainnet' and updates localStorage accordingly"
+    },
+    "guest_browsing": {
+      "status": "PASS",
+      "details": "Clicking 'Browse as guest' redirects to /feed page without setting auth_user"
+    }
+  },
+  "bug_fix_verification": {
+    "original_bug": "Logging in connects to Bitcoin testnet but the profile section defaults to the mainnet wallet. Users had to double-login (switch to mainnet then back to testnet) to sync states.",
+    "root_cause": "App.js initializes network state from localStorage.getItem('cthulhu_network') once at mount. When a user logs in via AuthPage and selects a different network, the localStorage value is updated but App.js state remains stale.",
+    "fix_applied": "Added useEffect in AppRoutes (App.js lines 1019-1026) that syncs network with authUser.network. Also, recovery mount path in useAuth (lines 81-82) now updates localStorage to match recovery.network.",
+    "fix_verified": "Yes - all test scenarios confirm the fix works correctly"
+  }
+}
