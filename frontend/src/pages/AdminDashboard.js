@@ -2194,7 +2194,7 @@ function EtchManagerPanel({ adminNetwork = 'btc-testnet' }) {
   };
   const cost = estimateCost();
 
-  // ── Broadcast (OBJ format for bitfossil compatibility) ──
+  // ── Broadcast (OBJ format for P2FK compatibility) ──
   const handleBroadcast = async () => {
     if (!files.length || !projectName.trim() || !urn.trim()) return;
     setBroadcasting(true); setCreateError(null); setBroadcastResult(null);
@@ -2271,7 +2271,7 @@ function EtchManagerPanel({ adminNetwork = 'btc-testnet' }) {
               <input value={keywords} onChange={e => setKeywords(e.target.value)} placeholder="game, breakout, html5" data-testid="etch-keywords"
                 className="w-full px-3 py-2 bg-gray-950 border border-gray-700 rounded-lg text-sm text-white placeholder-gray-600 focus:border-amber-500 focus:outline-none" />
             </div>
-            <p className="text-[10px] text-gray-600">Files are uploaded to IPFS, then a P2FK OBJ transaction is created on-chain pointing to the IPFS CID. This hybrid format is indexed by bitfossil.com.</p>
+            <p className="text-[10px] text-gray-600">Files are uploaded to IPFS, then a P2FK OBJ transaction is created on-chain pointing to the IPFS CID. This hybrid format is indexed by p2fk.io.</p>
           </div>
 
           {/* Drop zone */}
@@ -2324,7 +2324,7 @@ function EtchManagerPanel({ adminNetwork = 'btc-testnet' }) {
             className="w-full py-3 rounded-xl font-semibold text-sm transition-all disabled:opacity-40 disabled:cursor-not-allowed bg-gradient-to-r from-amber-600 to-orange-600 text-white hover:from-amber-500 hover:to-orange-500 flex items-center justify-center gap-2">
             {broadcasting ? (<><FiRefreshCw size={14} className="animate-spin" /> {broadcastProgress?.currentFile || 'Broadcasting...'}</>) : (<><FiZap size={14} /> Etch OBJ to {network}</>)}
           </button>
-          <p className="text-[10px] text-gray-600 text-center">Files uploaded to IPFS, OBJ metadata broadcast on-chain. Single transaction = bitfossil indexed.</p>
+          <p className="text-[10px] text-gray-600 text-center">Files uploaded to IPFS, OBJ metadata broadcast on-chain. Single transaction = P2FK indexed.</p>
         </div>
       )}
 
@@ -2364,10 +2364,10 @@ function EtchManagerPanel({ adminNetwork = 'btc-testnet' }) {
 
             {/* Links */}
             <div className="grid grid-cols-2 gap-2 mb-3">
-              {broadcastResult.bitfossil_url && (
-                <a href={broadcastResult.bitfossil_url} target="_blank" rel="noopener noreferrer"
-                  className="flex items-center gap-2 p-2.5 rounded-lg bg-purple-900/20 border border-purple-800/30 text-purple-400 text-xs hover:bg-purple-900/30" data-testid="etch-bitfossil-link">
-                  <FiExternalLink size={12} /> View on BitFossil
+              {broadcastResult.p2fk_url && (
+                <a href={broadcastResult.p2fk_url} target="_blank" rel="noopener noreferrer"
+                  className="flex items-center gap-2 p-2.5 rounded-lg bg-purple-900/20 border border-purple-800/30 text-purple-400 text-xs hover:bg-purple-900/30" data-testid="etch-p2fk-link">
+                  <FiExternalLink size={12} /> View on P2FK
                 </a>
               )}
               {broadcastResult.mempool_url && (

@@ -2871,7 +2871,7 @@ export default function SettingsModal({ fullPage, onClose, profileImage, network
 
               <div className="text-xs text-gray-500 space-y-1">
                 <p>Original SUP: <a href="https://github.com/embiimob/Sup" target="_blank" rel="noopener noreferrer" className="text-accent hover:underline">github.com/embiimob/Sup</a></p>
-                <p>BitFossil Archive: <a href="https://bitfossil.com" target="_blank" rel="noopener noreferrer" className="text-accent hover:underline">bitfossil.com</a></p>
+                <p>P2FK Protocol: <a href="https://p2fk.io" target="_blank" rel="noopener noreferrer" className="text-accent hover:underline">p2fk.io</a></p>
                 <p>p2fk API: <a href="https://p2fk.io" target="_blank" rel="noopener noreferrer" className="text-accent hover:underline">p2fk.io</a></p>
               </div>
             </div>

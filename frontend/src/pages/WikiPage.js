@@ -204,7 +204,7 @@ export default function WikiPage() {
               <li><strong>Blockchain Video Conferencing:</strong> Peer-to-peer audio and video calls with WebRTC, signaled through the Bitcoin mempool</li>
               <li><strong>INQ Polls:</strong> Create on-chain polls with optional token gating and time limits</li>
               <li><strong>Royalties:</strong> Object creators earn royalties on secondary sales automatically</li>
-              <li><strong>On-Chain File Embedding:</strong> Attach files directly to the blockchain using BitFossil/Apertus</li>
+              <li><strong>On-Chain File Embedding:</strong> Attach files directly to the blockchain using P2FK protocol</li>
               <li><strong>Walkie-Talkie:</strong> Encrypted voice broadcasts over the blockchain</li>
             </ul>
             <P>
@@ -843,7 +843,7 @@ export default function WikiPage() {
                 { title: 'SUP Video Tutorials', desc: 'Complete walkthrough playlist by embii4u', url: 'https://youtube.com/playlist?list=PLDNMoJ2rHmfoxt1AX417-lWt2zvWUnKUH' },
                 { title: 'P2FK Explorer', desc: 'Browse on-chain P2FK data', url: 'https://p2fk.io' },
                 { title: 'Apertus.io', desc: 'Embed files directly on the blockchain', url: 'https://apertus.io' },
-                { title: 'BitFossil', desc: 'On-chain file explorer', url: 'https://bitfossil.com' },
+                { title: 'P2FK Protocol', desc: 'On-chain data indexer', url: 'https://p2fk.io' },
                 { title: 'Buy Testnet BTC', desc: 'Purchase tBTC instantly at buytestnet.com', url: 'https://buytestnet.com' },
                 { title: 'Mempool Explorer (Testnet)', desc: 'Track Bitcoin testnet transactions', url: 'https://mempool.space/testnet' },
               ].map((link) => (

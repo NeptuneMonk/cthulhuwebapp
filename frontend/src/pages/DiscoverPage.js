@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { FiSearch, FiArrowLeft, FiBox, FiUser, FiFilm, FiMusic, FiImage, FiFile, FiGlobe, FiPlay, FiLayers, FiHash, FiExternalLink, FiClock, FiFileText } from 'react-icons/fi';
+import { FiSearch, FiArrowLeft, FiBox, FiUser, FiFilm, FiMusic, FiImage, FiFile, FiGlobe, FiPlay, FiHash, FiClock, FiFileText, FiMessageSquare, FiCode, FiDatabase } from 'react-icons/fi';
 import { ProfileThumb } from '@/components/ProfileThumb';
 import { parseMediaString } from '@/utils/media';
 
@@ -24,7 +24,6 @@ function parseIpfsRefs(messageArr) {
   const content = (messageArr || []).map(m => String(m)).join(' ');
   const seen = new Set();
 
-  // Pattern 1: Delimited <<IPFS:CID\filename with spaces.ext>> (handles spaces)
   const delimited = /<<IPFS:([^>]+)>>/g;
   let match;
   while ((match = delimited.exec(content)) !== null) {
@@ -35,7 +34,6 @@ function parseIpfsRefs(messageArr) {
     const key = `${cid}/${filename}`;
     if (seen.has(key)) continue;
     seen.add(key);
-    // Primary: CID/filename (directory CIDs), Fallback: CID-only (file CIDs)
     const url = parts.length > 1
       ? `${IPFS_GW}/${cid}/${encodeURIComponent(parts.slice(1).join('/'))}`
       : `${IPFS_GW}/${cid}`;
@@ -44,7 +42,6 @@ function parseIpfsRefs(messageArr) {
     refs.push({ cid, filename, url, fallbackUrl, type });
   }
 
-  // Pattern 2: Inline IPFS:CID\filename (no delimiters, stops at whitespace)
   const inline = /IPFS:([^\s<>]+)/g;
   while ((match = inline.exec(content)) !== null) {
     const raw = match[1].replace(/\\/g, '/');
@@ -65,12 +62,24 @@ function parseIpfsRefs(messageArr) {
   return { refs, content };
 }
 
+/** Strip IPFS markup and satoshi markers from message text for clean display */
+function cleanMessage(messageArr) {
+  return (messageArr || [])
+    .map(m => String(m))
+    .join(' ')
+    .replace(/<<IPFS:[^>]+>>/g, '')
+    .replace(/<<-?\d+>>/g, '')
+    .replace(/IPFS:\S+/g, '')
+    .trim();
+}
+
 const TABS = [
   { id: 'all', label: 'All' },
+  { id: 'messages', label: 'Messages' },
   { id: 'objects', label: 'Objects' },
   { id: 'profiles', label: 'Profiles' },
+  { id: 'onchain', label: 'On-chain' },
   { id: 'media', label: 'Media' },
-  { id: 'fossils', label: 'Deep Search' },
 ];
 
 export default function DiscoverPage({ network }) {
@@ -78,10 +87,10 @@ export default function DiscoverPage({ network }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const [query, setQuery] = useState(searchParams.get('q') || '');
   const [activeTab, setActiveTab] = useState('all');
-  const [results, setResults] = useState({ objects: [], profiles: [], media: [], fossils: [] });
+  const [results, setResults] = useState({ messages: [], objects: [], profiles: [], onchain: [], media: [] });
   const [loading, setLoading] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
-  const [displayLimits, setDisplayLimits] = useState({ objects: 20, profiles: 20, media: 20, fossils: 20 });
+  const [displayLimits, setDisplayLimits] = useState({ messages: 20, objects: 20, profiles: 20, onchain: 20, media: 20 });
   const inputRef = useRef(null);
   const abortRef = useRef(null);
 
@@ -103,87 +112,114 @@ export default function DiscoverPage({ network }) {
 
     setLoading(true);
     setHasSearched(true);
-    setDisplayLimits({ objects: 20, profiles: 20, media: 20, fossils: 20 });
+    setDisplayLimits({ messages: 20, objects: 20, profiles: 20, onchain: 20, media: 20 });
     setSearchParams({ q: trimmed });
 
     try {
-      const [objectsRes, profilesRes, rootsRes] = await Promise.allSettled([
-        fetch(`${API}/api/p2fk/search/objects?searchString=${encodeURIComponent(trimmed)}&qty=60&skip=0&network=${network}`, { signal: controller.signal })
+      // Primary: GetKnownRootsBySearchString — the main discovery source
+      // Secondary: GetKnownProfilesBySearchString — dedicated profile results
+      // Tertiary: GetKnownObjectsBySearchString — dedicated object results
+      const [rootsRes, profilesRes, objectsRes] = await Promise.allSettled([
+        fetch(`${API}/api/p2fk/search/roots?searchString=${encodeURIComponent(trimmed)}&qty=200&network=${network}`, { signal: controller.signal })
           .then(r => r.ok ? r.json() : []),
         fetch(`${API}/api/p2fk/search/profiles?searchString=${encodeURIComponent(trimmed)}&qty=60&network=${network}`, { signal: controller.signal })
           .then(r => r.ok ? r.json() : []),
-        fetch(`${API}/api/p2fk/search/roots?searchString=${encodeURIComponent(trimmed)}&qty=60&network=${network}`, { signal: controller.signal })
+        fetch(`${API}/api/p2fk/search/objects?searchString=${encodeURIComponent(trimmed)}&qty=60&skip=0&network=${network}`, { signal: controller.signal })
           .then(r => r.ok ? r.json() : []),
       ]);
 
       if (!controller.signal.aborted) {
         const rawRoots = rootsRes.status === 'fulfilled' ? (Array.isArray(rootsRes.value) ? rootsRes.value : []) : [];
 
-        // Parse IPFS media from roots
+        // Categorize roots
+        const messages = [];
+        const onchainItems = [];
         const mediaItems = [];
+        const seenTxids = new Set();
+
         for (const item of rawRoots) {
           const root = item.root || item;
-          const { refs, content } = parseIpfsRefs(root.Message || root.message);
+          const txid = root.TransactionId || root.transactionId || '';
+          if (txid && seenTxids.has(txid)) continue;
+          if (txid) seenTxids.add(txid);
+
+          const fileKeys = Object.keys(root.File || {}).filter(f => f !== 'SIG' && f !== 'LNK');
+          const hasFiles = fileKeys.length > 0;
+          const rawMsg = root.Message || [];
+          const cleanText = cleanMessage(rawMsg);
+          const { refs } = parseIpfsRefs(rawMsg);
+          const signedBy = root.SignedBy || '';
+          const blockDate = root.BlockDate || '';
+          const blockchain = item.blockchain || '';
+
+          // Extract media from IPFS refs
           for (const ref of refs) {
             mediaItems.push({
               ...ref,
-              txid: root.TransactionId || root.transactionId || '',
-              content: content.slice(0, 200),
-              blockchain: item.blockchain || '',
-              blockDate: root.BlockDate || '',
+              txid,
+              signedBy,
+              blockchain,
+              blockDate,
+            });
+          }
+
+          // On-chain injections: roots with actual files embedded on-chain
+          if (hasFiles) {
+            const fileSizes = root.File || {};
+            const keywords = [];
+            for (const val of Object.values(root.Keyword || {})) {
+              if (typeof val === 'string' && val.startsWith('2')) {
+                const tag = val.slice(1).replace(/#+$/g, '').trim();
+                if (tag && !tag.includes('\uFFFD') && tag.length > 1) keywords.push(tag);
+              }
+            }
+            onchainItems.push({
+              txid,
+              blockchain,
+              signedBy,
+              signed: root.Signed || false,
+              files: fileKeys,
+              fileSizes,
+              keywords,
+              totalByteSize: root.TotalByteSize || 0,
+              blockDate,
+              buildDate: root.BuildDate || '',
+              messagePreview: cleanText.slice(0, 200),
+            });
+          }
+
+          // Messages: signed roots with actual text content
+          if (root.Signed && cleanText.length > 0) {
+            messages.push({
+              txid,
+              blockchain,
+              signedBy,
+              text: cleanText,
+              hasMedia: refs.length > 0,
+              mediaCount: refs.length,
+              blockDate,
+              blockHeight: root.BlockHeight || 0,
             });
           }
         }
 
-        // Parse unclaimed fossils from roots (Signed: false only, deduplicated by Hash)
-        const fossilItems = [];
-        const seenHashes = new Set();
-        for (const item of rawRoots) {
-          const root = item.root || item;
-          if (root.Signed === true) continue;
-          const hash = root.Hash || root.TransactionId || '';
-          if (hash && seenHashes.has(hash)) continue;
-          if (hash) seenHashes.add(hash);
-          const files = root.File || {};
-          const fileNames = Object.keys(files).filter(f => f !== 'SIG' && f !== 'LNK');
-          const keywords = [];
-          for (const val of Object.values(root.Keyword || {})) {
-            if (typeof val === 'string' && val.startsWith('2')) {
-              const tag = val.slice(1).replace(/#+$/g, '').trim();
-              if (tag && !tag.includes('\uFFFD') && tag.length > 1) keywords.push(tag);
-            }
-          }
-          const messages = (root.Message || []).filter(m => m && typeof m === 'string' && m.trim());
-          fossilItems.push({
-            txid: root.TransactionId || '',
-            blockchain: item.blockchain || '',
-            messages,
-            files: fileNames,
-            fileSizes: files,
-            keywords,
-            totalByteSize: root.TotalByteSize || 0,
-            blockDate: root.BlockDate || '',
-            buildDate: root.BuildDate || '',
-            hash,
-          });
-        }
-
         setResults({
+          messages,
           objects: Array.isArray(objectsRes.status === 'fulfilled' ? objectsRes.value : [])
             ? (objectsRes.status === 'fulfilled' ? objectsRes.value : []) : [],
           profiles: Array.isArray(profilesRes.status === 'fulfilled' ? profilesRes.value : [])
             ? (profilesRes.status === 'fulfilled' ? profilesRes.value : []) : [],
+          onchain: onchainItems,
           media: mediaItems,
-          fossils: fossilItems,
         });
       }
     } catch (err) {
       if (err.name !== 'AbortError') {
-        setResults({ objects: [], profiles: [], media: [], fossils: [] });
+        setResults({ messages: [], objects: [], profiles: [], onchain: [], media: [] });
       }
     }
     setLoading(false);
-  }, [setSearchParams]);
+  }, [setSearchParams, network]);
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -191,25 +227,25 @@ export default function DiscoverPage({ network }) {
   };
 
   const show = {
+    messages: (activeTab === 'all' || activeTab === 'messages') ? results.messages : [],
     objects: (activeTab === 'all' || activeTab === 'objects') ? results.objects : [],
     profiles: (activeTab === 'all' || activeTab === 'profiles') ? results.profiles : [],
+    onchain: (activeTab === 'all' || activeTab === 'onchain') ? results.onchain : [],
     media: (activeTab === 'all' || activeTab === 'media') ? results.media : [],
-    fossils: (activeTab === 'all' || activeTab === 'fossils') ? results.fossils : [],
   };
 
-  // Sort media: videos first, then images, audio, documents
   const sortedMedia = [...show.media].sort((a, b) => {
     const order = { video: 0, image: 1, audio: 2, document: 3 };
     return (order[a.type] || 4) - (order[b.type] || 4);
   });
 
-  // Apply display limits
+  const displayMessages = show.messages.slice(0, displayLimits.messages);
   const displayObjects = show.objects.slice(0, displayLimits.objects);
   const displayProfiles = show.profiles.slice(0, displayLimits.profiles);
+  const displayOnchain = show.onchain.slice(0, displayLimits.onchain);
   const displayMedia = sortedMedia.slice(0, displayLimits.media);
-  const displayFossils = show.fossils.slice(0, displayLimits.fossils);
 
-  const totalCount = results.objects.length + results.profiles.length + results.media.length + results.fossils.length;
+  const totalCount = results.messages.length + results.objects.length + results.profiles.length + results.onchain.length + results.media.length;
 
   const ShowMoreBtn = ({ category, totalCount }) => {
     const currentLimit = displayLimits[category];
@@ -240,7 +276,7 @@ export default function DiscoverPage({ network }) {
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search objects, profiles, media..."
+              placeholder="Search the P2FK blockchain..."
               className="w-full pl-10 pr-4 py-2.5 bg-gray-800/50 text-gray-100 rounded-xl border border-gray-700/40 focus:border-purple-500/50 focus:outline-none text-sm placeholder-gray-600"
               autoFocus
               data-testid="discover-search-input"
@@ -249,17 +285,19 @@ export default function DiscoverPage({ network }) {
         </div>
 
         {hasSearched && (
-          <div className="flex gap-1 px-4 pb-2.5">
+          <div className="flex gap-1 px-4 pb-2.5 overflow-x-auto no-scrollbar">
             {TABS.map(tab => {
-              const count = tab.id === 'objects' ? results.objects.length
+              const count = tab.id === 'messages' ? results.messages.length
+                : tab.id === 'objects' ? results.objects.length
                 : tab.id === 'profiles' ? results.profiles.length
+                : tab.id === 'onchain' ? results.onchain.length
                 : tab.id === 'media' ? results.media.length
-                : tab.id === 'fossils' ? results.fossils.length : totalCount;
+                : totalCount;
               return (
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
-                  className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
+                  className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors whitespace-nowrap ${
                     activeTab === tab.id
                       ? 'border'
                       : 'text-gray-500 bg-gray-800/40 hover:text-gray-300'
@@ -299,9 +337,48 @@ export default function DiscoverPage({ network }) {
             </div>
             <div>
               <p className="text-sm text-gray-300 font-medium">Search the P2FK blockchain</p>
-              <p className="text-xs text-gray-600 mt-1">Find objects, profiles, and on-chain media across all chains</p>
+              <p className="text-xs text-gray-600 mt-1">Find messages, objects, profiles, and on-chain data across all chains</p>
             </div>
           </div>
+        )}
+
+        {/* Messages */}
+        {!loading && displayMessages.length > 0 && (
+          <Section title="Messages" count={show.messages.length} icon={FiMessageSquare}>
+            {displayMessages.map((msg, i) => {
+              const date = msg.blockDate ? new Date(msg.blockDate).toLocaleDateString() : '';
+              return (
+                <button
+                  key={`msg-${i}`}
+                  onClick={() => msg.signedBy && navigate(`/profile/${msg.signedBy}`)}
+                  className="w-full flex items-start gap-3 px-3 py-3 hover:bg-white/[0.03] transition-colors text-left"
+                  data-testid={`discover-message-${i}`}
+                >
+                  <div className="w-9 h-9 rounded-lg border border-teal-800/20 bg-teal-900/10 flex items-center justify-center flex-shrink-0 mt-0.5">
+                    <FiMessageSquare size={14} className="text-teal-400/70" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm text-gray-200 line-clamp-3 leading-relaxed">{msg.text}</p>
+                    <div className="flex items-center gap-2 mt-1.5">
+                      <span className="text-[10px] text-gray-600 truncate max-w-[140px]">{msg.signedBy}</span>
+                      {date && (
+                        <span className="text-[10px] text-gray-600 inline-flex items-center gap-0.5">
+                          <FiClock size={8} />{date}
+                        </span>
+                      )}
+                      {msg.hasMedia && (
+                        <span className="text-[10px] text-blue-400/60 inline-flex items-center gap-0.5">
+                          <FiImage size={8} />{msg.mediaCount}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <ChainBadge chain={msg.blockchain} />
+                </button>
+              );
+            })}
+            <ShowMoreBtn category="messages" totalCount={show.messages.length} />
+          </Section>
         )}
 
         {/* Objects */}
@@ -313,13 +390,11 @@ export default function DiscoverPage({ network }) {
               const image = obj.Image || obj.image;
               const desc = obj.Description || obj.description || '';
               const chain = item.blockchain || '';
-              // Creators can be: array of objects [{Address:...}], array of strings, or dict {addr: date}
               const creators = obj.Creators || obj.creators || [];
               let addr = '';
               if (Array.isArray(creators) && creators.length > 0) {
                 addr = creators[0]?.Address || creators[0]?.address || (typeof creators[0] === 'string' ? creators[0] : '');
               } else if (typeof creators === 'object' && creators !== null) {
-                // P2FK returns Creators as dict: {address: date}
                 addr = Object.keys(creators)[0] || '';
               }
               return (
@@ -350,7 +425,6 @@ export default function DiscoverPage({ network }) {
               const urn = profile.URN || profile.urn || '';
               const name = profile.Name || profile.name || urn;
               const image = profile.Image || profile.image;
-              // Address can be: profile.Address, profile.address, or first creator
               let addr = profile.Address || profile.address || '';
               if (!addr) {
                 const creators = profile.Creators || profile.creators || [];
@@ -379,7 +453,75 @@ export default function DiscoverPage({ network }) {
           </Section>
         )}
 
-        {/* Media (parsed from roots) */}
+        {/* On-chain Injections */}
+        {!loading && displayOnchain.length > 0 && (
+          <Section title="On-chain Injections" count={show.onchain.length} icon={FiDatabase}>
+            {displayOnchain.map((item, i) => {
+              const totalKB = item.totalByteSize > 0 ? (item.totalByteSize / 1024).toFixed(1) : null;
+              const date = item.blockDate ? new Date(item.blockDate).toLocaleDateString() : '';
+              return (
+                <div
+                  key={`onchain-${i}`}
+                  className="w-full flex items-start gap-3 px-3 py-3 hover:bg-white/[0.03] transition-colors text-left"
+                  data-testid={`discover-onchain-${i}`}
+                >
+                  <div className="w-9 h-9 rounded-lg border border-amber-800/20 bg-amber-900/10 flex items-center justify-center flex-shrink-0 mt-0.5">
+                    <FiCode size={14} className="text-amber-500/70" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    {/* File list */}
+                    <div className="flex flex-wrap gap-1 mb-1">
+                      {item.files.slice(0, 4).map((f, fi) => (
+                        <span key={fi} className="text-xs text-gray-300 bg-gray-800/60 px-1.5 py-0.5 rounded inline-flex items-center gap-1">
+                          <FiFileText size={10} className="text-gray-500" />
+                          {f.length > 28 ? f.slice(0, 25) + '...' : f}
+                        </span>
+                      ))}
+                      {item.files.length > 4 && (
+                        <span className="text-[10px] text-gray-600">+{item.files.length - 4} more</span>
+                      )}
+                    </div>
+                    {/* Message preview */}
+                    {item.messagePreview && (
+                      <p className="text-xs text-gray-500 line-clamp-2 leading-relaxed">{item.messagePreview}</p>
+                    )}
+                    {/* Meta row */}
+                    <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                      {item.signed && item.signedBy && (
+                        <button
+                          onClick={() => navigate(`/profile/${item.signedBy}`)}
+                          className="text-[10px] text-teal-400/60 hover:text-teal-300 truncate max-w-[120px]"
+                        >
+                          {item.signedBy.slice(0, 12)}...
+                        </button>
+                      )}
+                      {item.keywords.slice(0, 5).map((kw, ki) => (
+                        <span key={ki} className="text-[10px] text-amber-400/60 bg-amber-900/10 px-1.5 py-0.5 rounded inline-flex items-center gap-0.5">
+                          <FiHash size={8} />{kw}
+                        </span>
+                      ))}
+                      {date && (
+                        <span className="text-[10px] text-gray-600 inline-flex items-center gap-0.5">
+                          <FiClock size={8} />{date}
+                        </span>
+                      )}
+                      {totalKB && (
+                        <span className="text-[10px] text-gray-600">{totalKB} KB</span>
+                      )}
+                      {item.txid && (
+                        <span className="text-[10px] text-gray-700 truncate max-w-[100px]">{item.txid.slice(0, 12)}...</span>
+                      )}
+                    </div>
+                  </div>
+                  <ChainBadge chain={item.blockchain} />
+                </div>
+              );
+            })}
+            <ShowMoreBtn category="onchain" totalCount={show.onchain.length} />
+          </Section>
+        )}
+
+        {/* Media (IPFS references from roots) */}
         {!loading && displayMedia.length > 0 && (
           <Section title="Media" count={sortedMedia.length} icon={FiFilm}>
             {displayMedia.map((item, i) => {
@@ -434,79 +576,6 @@ export default function DiscoverPage({ network }) {
             <ShowMoreBtn category="media" totalCount={sortedMedia.length} />
           </Section>
         )}
-
-        {/* Deep Search: Unclaimed Fossils */}
-        {!loading && displayFossils.length > 0 && (
-          <Section title="Deep Search" count={show.fossils.length} icon={FiLayers}>
-            {displayFossils.map((fossil, i) => {
-              const msgPreview = fossil.messages.join(' ').slice(0, 140);
-              const hasFiles = fossil.files.length > 0;
-              const totalKB = fossil.totalByteSize > 0 ? (fossil.totalByteSize / 1024).toFixed(1) : null;
-              const fossilUrl = `https://bitfossil.com/${fossil.txid}/index.htm`;
-              const blockDate = fossil.blockDate ? new Date(fossil.blockDate).toLocaleDateString() : '';
-
-              return (
-                <a
-                  key={`fossil-${i}`}
-                  href={fossilUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="w-full flex items-start gap-3 px-3 py-3 hover:bg-white/[0.03] transition-colors text-left group"
-                  data-testid={`discover-fossil-${i}`}
-                >
-                  <div className="w-9 h-9 rounded-lg border border-amber-800/20 bg-amber-900/10 flex items-center justify-center flex-shrink-0 mt-0.5">
-                    <FiLayers size={14} className="text-amber-500/70" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    {/* Primary info: files or message preview */}
-                    {hasFiles ? (
-                      <div className="flex flex-wrap gap-1 mb-1">
-                        {fossil.files.slice(0, 4).map((f, fi) => (
-                          <span key={fi} className="text-xs text-gray-300 bg-gray-800/60 px-1.5 py-0.5 rounded inline-flex items-center gap-1">
-                            <FiFileText size={10} className="text-gray-500" />
-                            {f.length > 28 ? f.slice(0, 25) + '...' : f}
-                          </span>
-                        ))}
-                        {fossil.files.length > 4 && (
-                          <span className="text-[10px] text-gray-600">+{fossil.files.length - 4} more</span>
-                        )}
-                      </div>
-                    ) : (
-                      <p className="text-sm text-gray-300 truncate">{fossil.txid.slice(0, 16)}...</p>
-                    )}
-                    {/* Message preview */}
-                    {msgPreview && (
-                      <p className="text-xs text-gray-500 line-clamp-2 leading-relaxed">{msgPreview}{fossil.messages.join(' ').length > 140 ? '...' : ''}</p>
-                    )}
-                    {/* Tags row */}
-                    <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
-                      {fossil.keywords.slice(0, 5).map((kw, ki) => (
-                        <span key={ki} className="text-[10px] text-amber-400/60 bg-amber-900/10 px-1.5 py-0.5 rounded inline-flex items-center gap-0.5">
-                          <FiHash size={8} />
-                          {kw}
-                        </span>
-                      ))}
-                      {blockDate && (
-                        <span className="text-[10px] text-gray-600 inline-flex items-center gap-0.5">
-                          <FiClock size={8} />
-                          {blockDate}
-                        </span>
-                      )}
-                      {totalKB && (
-                        <span className="text-[10px] text-gray-600">{totalKB} KB</span>
-                      )}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2 flex-shrink-0 mt-1">
-                    <ChainBadge chain={fossil.blockchain} />
-                    <FiExternalLink size={12} className="text-gray-700 group-hover:text-amber-500/50 transition-colors" />
-                  </div>
-                </a>
-              );
-            })}
-            <ShowMoreBtn category="fossils" totalCount={show.fossils.length} />
-          </Section>
-        )}
       </div>
     </div>
   );
@@ -514,7 +583,7 @@ export default function DiscoverPage({ network }) {
 
 function Section({ title, count, icon: Icon, children }) {
   return (
-    <div data-testid={`discover-section-${title.toLowerCase()}`}>
+    <div data-testid={`discover-section-${title.toLowerCase().replace(/[^a-z]/g, '-')}`}>
       <div className="flex items-center gap-2 mb-2 px-1">
         <Icon size={13} className="text-gray-500" />
         <h3 className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">{title}</h3>

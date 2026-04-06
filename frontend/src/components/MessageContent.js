@@ -258,7 +258,7 @@ const OnChainMedia = ({ fileRef, filename }) => {
 };
 
 
-const BITFOSSIL_BASE = 'https://bitfossil.com';
+const API_BASE = process.env.REACT_APP_BACKEND_URL;
 
 const FileAttachment = ({ filename, fileSize, txid }) => {
   const [expanded, setExpanded] = useState(false);
@@ -268,7 +268,7 @@ const FileAttachment = ({ filename, fileSize, txid }) => {
   const isVideo = ['mp4', 'webm', 'mov'].includes(ext);
   const isAudio = ['mp3', 'wav', 'ogg', 'aac', 'flac'].includes(ext);
 
-  const bitfossilFileUrl = `${BITFOSSIL_BASE}/${txid}/${encodeURIComponent(filename)}`;
+  const fileUrl = `${API_BASE}/api/onchain/file/${txid}/${encodeURIComponent(filename)}`;
 
   const formatSize = (bytes) => {
     if (!bytes) return '';
@@ -297,7 +297,7 @@ const FileAttachment = ({ filename, fileSize, txid }) => {
                 {expanded ? <FiX size={13} /> : <FiMaximize2 size={13} />}
               </button>
               <a
-                href={bitfossilFileUrl}
+                href={fileUrl}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="p-1 text-gray-500 hover:text-blue-400 rounded transition-colors"
@@ -310,7 +310,7 @@ const FileAttachment = ({ filename, fileSize, txid }) => {
           </div>
           {expanded ? (
             <iframe
-              src={bitfossilFileUrl}
+              src={fileUrl}
               title={filename}
               className="w-full border-0"
               style={{ height: '600px' }}
@@ -334,12 +334,12 @@ const FileAttachment = ({ filename, fileSize, txid }) => {
     return (
       <div className="my-2" data-testid="file-attachment-image">
         <img
-          src={bitfossilFileUrl}
+          src={fileUrl}
           alt={filename}
           className="max-w-full max-h-64 rounded-lg object-contain"
           onError={(e) => { e.target.style.display = 'none'; }}
         />
-        <a href={bitfossilFileUrl} target="_blank" rel="noopener noreferrer"
+        <a href={fileUrl} target="_blank" rel="noopener noreferrer"
           className="text-[10px] text-gray-600 hover:text-gray-400 mt-0.5 inline-block"
         >{filename} {fileSize ? `(${formatSize(fileSize)})` : ''}</a>
       </div>
@@ -349,8 +349,8 @@ const FileAttachment = ({ filename, fileSize, txid }) => {
   if (isVideo) {
     return (
       <div className="my-2" data-testid="file-attachment-video">
-        <video src={bitfossilFileUrl} controls className="max-w-full max-h-64 rounded-lg" />
-        <a href={bitfossilFileUrl} target="_blank" rel="noopener noreferrer"
+        <video src={fileUrl} controls className="max-w-full max-h-64 rounded-lg" />
+        <a href={fileUrl} target="_blank" rel="noopener noreferrer"
           className="text-[10px] text-gray-600 hover:text-gray-400 mt-0.5 inline-block"
         >{filename}</a>
       </div>
@@ -360,8 +360,8 @@ const FileAttachment = ({ filename, fileSize, txid }) => {
   if (isAudio) {
     return (
       <div className="my-2" data-testid="file-attachment-audio">
-        <audio src={bitfossilFileUrl} controls className="w-full" />
-        <a href={bitfossilFileUrl} target="_blank" rel="noopener noreferrer"
+        <audio src={fileUrl} controls className="w-full" />
+        <a href={fileUrl} target="_blank" rel="noopener noreferrer"
           className="text-[10px] text-gray-600 hover:text-gray-400 mt-0.5 inline-block"
         >{filename}</a>
       </div>
@@ -373,12 +373,12 @@ const FileAttachment = ({ filename, fileSize, txid }) => {
     <div className="my-2 flex items-center gap-2 px-3 py-2 bg-gray-800/50 rounded-lg border border-gray-700/50" data-testid="file-attachment-generic">
       <FiFile size={14} className="text-amber-500 flex-shrink-0" />
       <div className="flex-1 min-w-0">
-        <a href={bitfossilFileUrl} target="_blank" rel="noopener noreferrer"
+        <a href={fileUrl} target="_blank" rel="noopener noreferrer"
           className="text-xs text-gray-200 hover:text-amber-400 font-medium truncate block transition-colors"
         >{filename}</a>
         {fileSize && <span className="text-[10px] text-gray-600">{formatSize(fileSize)}</span>}
       </div>
-      <a href={bitfossilFileUrl} target="_blank" rel="noopener noreferrer"
+      <a href={fileUrl} target="_blank" rel="noopener noreferrer"
         className="text-gray-500 hover:text-blue-400 flex-shrink-0 transition-colors p-1"
         title="Download"
       ><FiDownload size={13} /></a>

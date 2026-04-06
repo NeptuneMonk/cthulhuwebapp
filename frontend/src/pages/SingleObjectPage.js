@@ -133,7 +133,7 @@ const isHexTxId = (s) => /^[0-9a-fA-F]{64}([\\/]|$)/.test(s);
 /**
  * Resolve on-chain content with proper priority order:
  * 1. Mesh network (peer-to-peer) — fastest if a peer already has it
- * 2. Backend endpoint (which fetches from blockchain/bitfossil, caches in DB)
+ * 2. Backend endpoint (which fetches from blockchain, caches in DB)
  *
  * Returns { blob, blobUrl, source } or keeps polling until resolved.
  * Calls onResolved(blobUrl) when content is ready.

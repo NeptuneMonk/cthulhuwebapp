@@ -418,13 +418,14 @@ export default function DMPage({ network }) {
       let encBytes = null;
       const mainnetParam = network.includes('mainnet') ? 'true' : 'false';
       if (msg.txid) {
+        // Try local on-chain proxy first
         try {
-          const bfResp = await fetch(`https://bitfossil.com/${msg.txid}/SEC`, { signal: AbortSignal.timeout(6000) });
-          if (bfResp.ok) {
-            const buf = new Uint8Array(await bfResp.arrayBuffer());
+          const proxyResp = await fetch(`${API}/api/onchain/file/${msg.txid}/SEC?chain=BTC&mainnet=${mainnetParam}`, { signal: AbortSignal.timeout(8000) });
+          if (proxyResp.ok) {
+            const buf = new Uint8Array(await proxyResp.arrayBuffer());
             if (buf.length > 10 && (buf[0] === 0x04 || buf[0] === 0x53)) encBytes = buf;
           }
-        } catch { /* bitfossil unavailable */ }
+        } catch { /* on-chain proxy unavailable */ }
       }
       if (!encBytes && msg.txid) {
         for (let attempt = 0; attempt < 2; attempt++) {
