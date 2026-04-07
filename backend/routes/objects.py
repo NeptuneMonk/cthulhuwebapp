@@ -108,7 +108,7 @@ async def text_search_objects(query: str, network: str, limit: int = 20):
 
 
 
-@router.get("/urn/check/{urn}")
+@router.get("/urn/check/{urn:path}")
 async def check_urn_availability(urn: str, network: str = 'btc-testnet'):
     """Check if a URN is already claimed on-chain (profile or object).
     Returns { available: bool, claimed_by: str|null, type: 'profile'|'object'|null }
@@ -134,29 +134,26 @@ async def check_urn_availability(urn: str, network: str = 'btc-testnet'):
                 "name": profile.get('DisplayName') or profile.get('URN'),
             }
 
-        # Check objects by keyword (URN is stored as a keyword)
+        # Check objects via GetObjectByURN — the authoritative ownership check.
+        # Only considers a URN "claimed" if p2fk.io has fully indexed it as an owned object.
         # Normalize slashes for comparison — SUP uses \ but some entries may use /
         norm_urn = urn.replace('\\', '/').lower()
-        # Search with both slash directions since p2fk.io may index either way
-        search_variants = {urn}
+        search_variants = [urn]
         if '\\' in urn:
-            search_variants.add(urn.replace('\\', '/'))
+            search_variants.append(urn.replace('\\', '/'))
         if '/' in urn:
-            search_variants.add(urn.replace('/', '\\'))
+            search_variants.append(urn.replace('/', '\\'))
 
         for search_urn in search_variants:
-            objects = await p2fk_get(f"GetObjectsByKeyword/{search_urn}", is_mainnet, {"verbose": "false"})
-            if isinstance(objects, list) and len(objects) > 0:
-                # Check if any object has this exact URN (slash-normalized)
-                for obj in objects:
-                    obj_urn = obj.get('URN', '') or ''
-                    if obj_urn.replace('\\', '/').lower() == norm_urn:
+            try:
+                obj = await p2fk_get(f"GetObjectByURN/{search_urn}", is_mainnet)
+                if isinstance(obj, dict) and obj.get('Name'):
+                    obj_urn = (obj.get('URN', '') or '').replace('\\', '/').lower()
+                    if obj_urn == norm_urn:
                         claimed_by = None
                         creators = obj.get('Creators')
                         if isinstance(creators, dict):
                             claimed_by = next(iter(creators.keys()), None)
-                        elif isinstance(creators, list) and len(creators) > 0:
-                            claimed_by = creators[0].get('address') if isinstance(creators[0], dict) else creators[0]
                         return {
                             "available": False,
                             "urn": urn,
@@ -164,6 +161,8 @@ async def check_urn_availability(urn: str, network: str = 'btc-testnet'):
                             "type": "object",
                             "name": obj.get('Name') or obj.get('URN'),
                         }
+            except Exception:
+                pass
 
         return {"available": True, "urn": urn, "claimed_by": None, "type": None}
     except Exception as e:
