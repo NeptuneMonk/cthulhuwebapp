@@ -613,7 +613,7 @@ const sniffBlobType = async (blobUrl) => {
 };
 
 /** Inline HTML viewer (iframe) with cross-tx reference resolution for on-chain apps */
-const HtmlViewer = ({ src, fallbackSrc, filename, source, chain, txid: propTxid, network }) => {
+const HtmlViewer = ({ src, fallbackSrc, filename, source, chain, txid: propTxid, network, viewerUrn, genid }) => {
   const [error, setError] = useState(false);
   const [activeSrc, setActiveSrc] = useState(null);
   const [resolvedHtml, setResolvedHtml] = useState(null);
@@ -717,7 +717,22 @@ const HtmlViewer = ({ src, fallbackSrc, filename, source, chain, txid: propTxid,
         });
 
         if (!cancelled) {
-          setResolvedHtml(resolved);
+          // Inject viewer/genid params for generative art apps
+          let finalHtml = resolved;
+          if (viewerUrn || genid) {
+            const params = {};
+            if (viewerUrn) params.viewer = viewerUrn;
+            if (genid) params.genid = genid;
+            const qs = Object.entries(params).map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join('&');
+            const injection = `<script>(function(){var qs="?${qs.replace(/"/g, '\\"')}";var O=URLSearchParams;window.URLSearchParams=function(i){return new O(!i||i===""||i==="?"||i===location.search?qs:i)};window.URLSearchParams.prototype=O.prototype;${Object.entries(params).map(([k, v]) => `window.${k}="${v.replace(/"/g, '\\"')}"`).join(';')}})();<\/script>`;
+            // Insert right after <head> or at the very beginning
+            if (finalHtml.match(/<head[^>]*>/i)) {
+              finalHtml = finalHtml.replace(/<head[^>]*>/i, '$&' + injection);
+            } else {
+              finalHtml = injection + finalHtml;
+            }
+          }
+          setResolvedHtml(finalHtml);
           setDetectedType('html');
           setResolving(false);
           setResolvedFrom('blockchain');
@@ -729,7 +744,7 @@ const HtmlViewer = ({ src, fallbackSrc, filename, source, chain, txid: propTxid,
 
     loadAndResolve();
     return () => { cancelled = true; };
-  }, [src, fallbackSrc, isOnchain, txid, network]);
+  }, [src, fallbackSrc, isOnchain, txid, network, viewerUrn, genid]);
 
   return (
     <div className={`${fullscreen ? 'fixed inset-0 z-50 bg-black' : 'rounded-lg overflow-hidden border border-gray-700'}`} data-testid="html-viewer">
@@ -783,7 +798,15 @@ const HtmlViewer = ({ src, fallbackSrc, filename, source, chain, txid: propTxid,
         />
       ) : activeSrc ? (
         <iframe
-          src={activeSrc}
+          src={(() => {
+            if (!viewerUrn && !genid) return activeSrc;
+            try {
+              const u = new URL(activeSrc);
+              if (viewerUrn) u.searchParams.set('viewer', viewerUrn);
+              if (genid) u.searchParams.set('genid', genid);
+              return u.toString();
+            } catch { return activeSrc; }
+          })()}
           title="Object Content"
           className="w-full bg-white"
           style={{ height: '60vh' }}
@@ -1584,7 +1607,11 @@ export default function SingleObjectPage({ network, lookupByAddress }) {
         case 'audio':
           return <AudioPlayer src={primaryParsed.url} coverUrl={imageParsed?.url} coverFallbackUrl={imageParsed?.fallbackUrl} filename={primaryParsed.filename} fallbackSrc={primaryParsed.fallbackUrl} source={primaryParsed.source} chain={primaryParsed.chain} />;
         case 'html':
-          return <HtmlViewer src={primaryParsed.url} fallbackSrc={primaryParsed.fallbackUrl} filename={primaryParsed.filename} source={primaryParsed.source || primaryParsed.type} chain={primaryParsed.chain} txid={primaryParsed.txid} network={network} />;
+          return <HtmlViewer src={primaryParsed.url} fallbackSrc={primaryParsed.fallbackUrl} filename={primaryParsed.filename} source={primaryParsed.source || primaryParsed.type} chain={primaryParsed.chain} txid={primaryParsed.txid} network={network} viewerUrn={user?.urn} genid={(() => {
+            if (!user?.address || !object?.owners) return undefined;
+            const ownerEntry = object.owners.find(o => o.address === user.address);
+            return ownerEntry?.transfer_txid || object?.transaction_id || undefined;
+          })()} />;
         case 'image':
           return <ImageViewer src={primaryParsed.url} fallbackSrc={primaryParsed.fallbackUrl} alt={object.name} source={primaryParsed.source} chain={primaryParsed.chain} />;
         case 'text':
