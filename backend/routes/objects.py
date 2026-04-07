@@ -1377,8 +1377,8 @@ async def get_object_by_address(address: str, network: str = 'btc-testnet'):
             try:
                 roots = await p2fk_get(f"GetRootsByAddress/{address}", is_mainnet)
                 if isinstance(roots, list) and roots:
-                    # Find the OBJ creation root (has OBJ in File keys)
-                    for root in roots:
+                    # Iterate newest-first so the latest/active OBJ root wins
+                    for root in reversed(roots):
                         file_keys = list((root.get('File') or {}).keys())
                         signed_by = root.get('SignedBy') or ''
                         if signed_by and isinstance(signed_by, str) and 'OBJ' in file_keys:
@@ -1392,9 +1392,9 @@ async def get_object_by_address(address: str, network: str = 'btc-testnet'):
                                     break
                             if formatted:
                                 break
-                    # Fallback: try first root's signer
+                    # Fallback: try latest root's signer (newest root, not oldest)
                     if not formatted and roots:
-                        signed_by = roots[0].get('SignedBy') or ''
+                        signed_by = roots[-1].get('SignedBy') or ''
                         if signed_by and isinstance(signed_by, str):
                             owned = await fetch_objects_owned(signed_by, is_mainnet)
                             for obj in (owned or []):
@@ -1402,7 +1402,7 @@ async def get_object_by_address(address: str, network: str = 'btc-testnet'):
                                 obj_addr = next(iter(creators.keys()), None) if isinstance(creators, dict) else None
                                 if obj_addr == address:
                                     formatted = format_object_for_api(obj)
-                                    formatted['transaction_id'] = roots[0].get('TransactionId', '')
+                                    formatted['transaction_id'] = roots[-1].get('TransactionId', '')
                                     break
             except Exception as e:
                 logger.warning(f"Roots-based object lookup failed for {address}: {e}")
@@ -1542,12 +1542,12 @@ async def get_object_by_address(address: str, network: str = 'btc-testnet'):
             except Exception as e:
                 logger.debug(f"Burn check error for {address}: {e}")
 
-        # Resolve missing TransactionId via GetRootsByAddress
+        # Resolve missing TransactionId via GetRootsByAddress (use latest root)
         if not formatted.get('transaction_id'):
             try:
                 roots = await p2fk_get(f"GetRootsByAddress/{address}", is_mainnet)
                 if isinstance(roots, list) and roots:
-                    formatted['transaction_id'] = roots[0].get('TransactionId', '')
+                    formatted['transaction_id'] = roots[-1].get('TransactionId', '')
             except Exception:
                 pass
 

@@ -24,6 +24,7 @@ Build a modern, responsive frontend for a blockchain-based decentralized social 
 - Dynamic fee selector (FeePicker) integrated into all transaction modals
 - **TXID Import in Object Create Modal** (NEW) — paste a TXID to auto-populate URN, name, image, etc. from on-chain P2FK data. Cross-chain support (BTC, LTC, DOG, MZC).
 - **Cross-Chain Discover Search** (NEW) — DiscoverPage search fans out to all chains (BTC, LTC, DOG, MZC) in parallel via p2fk.io `GetKnownRootsBySearchString?blockchain={chain}` and `GetKnownObjectsBySearchString`. Finds both claimed objects and unclaimed raw injections.
+- **Chat Header Fix** (FIXED Apr 2026) — `/api/object/addr/{address}` now resolves names from the latest/active root instead of the oldest, preventing burned object names from appearing in chat room headers.
 
 ## Key API Endpoints
 - `GET /api/objects/by-chain/{chain}` — Paginated objects by chain (5min cache)
@@ -36,7 +37,7 @@ Build a modern, responsive frontend for a blockchain-based decentralized social 
 - `POST /api/objects/discover` — (UPDATED) Discovery search uses per-chain root search + objects search
 
 ## Pending Issues
-- Chat room header displaying number instead of name (P0, deferred by user)
+- None active
 
 ## Upcoming Tasks
 - (P2) WebRTC mesh / TURN server architecture evaluation
