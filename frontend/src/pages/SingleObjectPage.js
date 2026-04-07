@@ -4,7 +4,7 @@ import axios from 'axios';
 import {
   FiArrowLeft, FiShoppingCart, FiTrash2, FiGift,
   FiExternalLink, FiUsers, FiClock, FiLock, FiCopy, FiCreditCard, FiPercent,
-  FiPlay, FiMusic, FiGlobe, FiFile, FiDownload, FiMaximize2, FiTag,
+  FiPlay, FiMusic, FiGlobe, FiFile, FiDownload, FiMaximize2, FiMinimize2, FiTag,
   FiMessageSquare, FiLink, FiLink2, FiShield, FiAlertTriangle
 } from 'react-icons/fi';
 import { AddressLabel } from '@/components/AddressLabel';
@@ -15,6 +15,7 @@ import { copyToClipboard } from '@/utils/clipboard';
 import { GiveModal, BurnModal, BuyModal, ListModal } from '@/components/ObjectActionModals';
 import { ZipAppViewer } from '@/components/ZipAppViewer';
 import { classifyFile, needsWarning, THREAT_LEVELS } from '@/utils/fileSafety';
+import { resolveOnchainHtml } from '@/utils/onchainResolver';
 import { FileWarningModal } from '@/components/FileWarningModal';
 import { FiWifi } from 'react-icons/fi';
 import OnChainAgeBadge from '@/components/OnChainAgeBadge';
@@ -611,62 +612,149 @@ const sniffBlobType = async (blobUrl) => {
   }
 };
 
-/** Inline HTML viewer (iframe) with content-sniffing for on-chain blobs */
-const HtmlViewer = ({ src, fallbackSrc, filename, source, chain }) => {
+/** Inline HTML viewer (iframe) with cross-tx reference resolution for on-chain apps */
+const HtmlViewer = ({ src, fallbackSrc, filename, source, chain, txid: propTxid, network }) => {
   const [error, setError] = useState(false);
   const [activeSrc, setActiveSrc] = useState(null);
+  const [resolvedHtml, setResolvedHtml] = useState(null);
   const [resolving, setResolving] = useState(false);
   const [resolvedFrom, setResolvedFrom] = useState(null);
-  const [detectedType, setDetectedType] = useState(null); // 'html' | 'image' | 'pdf'
+  const [detectedType, setDetectedType] = useState(null);
+  const [progress, setProgress] = useState('');
+  const [fullscreen, setFullscreen] = useState(false);
 
   const isOnchain = source === 'onchain' || src?.includes('/onchain/file/') || src?.includes('p2fk.io/root/');
   const txidMatch = src?.match(/(?:onchain\/file|root)\/([a-fA-F0-9]{64})\//);
-  const txid = txidMatch?.[1];
+  const txid = propTxid || txidMatch?.[1];
 
-  // For non-onchain content, use src directly (no sniffing needed)
+  // For non-onchain content, use src directly
   useEffect(() => {
     if (!isOnchain) { setActiveSrc(src); setDetectedType('html'); }
   }, [src, isOnchain]);
 
-  // Mesh-first resolver for on-chain content — sniff blob type after resolution
-  useOnchainResolver(src, txid, filename, {
-    fallbackUrl: fallbackSrc,
-    enabled: isOnchain,
-    onResolved: useCallback(async (blobUrl, from) => {
-      const type = await sniffBlobType(blobUrl);
-      setDetectedType(type);
-      setActiveSrc(blobUrl);
-      setResolving(false);
-      setResolvedFrom(from);
-    }, []),
-    onResolving: useCallback(() => setResolving(true), []),
-    onError: useCallback(() => setError(true), []),
-  });
+  // For on-chain HTML: fetch as text, resolve cross-tx refs, render via srcDoc
+  useEffect(() => {
+    if (!isOnchain || !src) return;
+    let cancelled = false;
 
-  const handleLoad = (e) => {
-    try {
-      const doc = e.target.contentDocument;
-      if (doc && doc.title && doc.title.includes('504')) setError(true);
-    } catch (_) {}
-  };
+    const loadAndResolve = async () => {
+      setResolving(true);
+      setProgress('Fetching on-chain content...');
+
+      try {
+        // Fetch raw content with retry + 202 polling
+        let html = null;
+        for (let attempt = 0; attempt < 5; attempt++) {
+          if (cancelled) return;
+          try {
+            const resp = await fetch(src, { signal: AbortSignal.timeout(20000) });
+            if (resp.ok) {
+              const ct = resp.headers.get('content-type') || '';
+              // JSON response = status message, not file data
+              if (ct.includes('application/json')) {
+                const data = await resp.json();
+                if (data.status === 'resolving') {
+                  setProgress('Waiting for blockchain reconstruction...');
+                  await new Promise(r => setTimeout(r, 3000));
+                  continue;
+                }
+              } else {
+                const text = await resp.text();
+                if (text.startsWith('{') && text.includes('"status":"resolving"')) {
+                  setProgress('Waiting for blockchain reconstruction...');
+                  await new Promise(r => setTimeout(r, 3000));
+                  continue;
+                }
+                html = text;
+                break;
+              }
+            } else if (resp.status === 202) {
+              setProgress('Waiting for blockchain reconstruction...');
+              await new Promise(r => setTimeout(r, 4000));
+              continue;
+            }
+          } catch {}
+          if (attempt < 4) await new Promise(r => setTimeout(r, 2000));
+        }
+
+        // Try fallback URL if primary failed
+        if (!html && fallbackSrc) {
+          try {
+            const resp = await fetch(fallbackSrc, { signal: AbortSignal.timeout(15000) });
+            if (resp.ok) {
+              const text = await resp.text();
+              if (!text.startsWith('{') || !text.includes('"status"')) {
+                html = text;
+              }
+            }
+          } catch {}
+        }
+
+        if (cancelled) return;
+        if (!html) { setError(true); setResolving(false); return; }
+
+        // Sniff: is the content actually HTML or a mis-labeled binary (image/pdf)?
+        const trimmed = html.trimStart();
+        const isActualHtml = trimmed.startsWith('<') || trimmed.startsWith('<!');
+        if (!isActualHtml) {
+          // Binary content served as text — create blob and sniff type
+          const blob = new Blob([html], { type: 'application/octet-stream' });
+          const blobUrl = URL.createObjectURL(blob);
+          const type = await sniffBlobType(blobUrl);
+          if (!cancelled) {
+            setDetectedType(type);
+            setActiveSrc(blobUrl);
+            setResolving(false);
+            setResolvedFrom('blockchain');
+          }
+          return;
+        }
+
+        // Resolve all cross-transaction and same-root references
+        setProgress('Resolving file references...');
+        const resolved = await resolveOnchainHtml(html, txid, [], network, (msg) => {
+          if (!cancelled) setProgress(msg);
+        });
+
+        if (!cancelled) {
+          setResolvedHtml(resolved);
+          setDetectedType('html');
+          setResolving(false);
+          setResolvedFrom('blockchain');
+        }
+      } catch {
+        if (!cancelled) { setError(true); setResolving(false); }
+      }
+    };
+
+    loadAndResolve();
+    return () => { cancelled = true; };
+  }, [src, fallbackSrc, isOnchain, txid, network]);
 
   return (
-    <div className="rounded-lg overflow-hidden border border-gray-700" data-testid="html-viewer">
+    <div className={`${fullscreen ? 'fixed inset-0 z-50 bg-black' : 'rounded-lg overflow-hidden border border-gray-700'}`} data-testid="html-viewer">
       <div className="flex items-center justify-between px-3 py-2 bg-gray-800 border-b border-gray-700">
         <p className="text-xs text-gray-400 flex items-center gap-1.5">
           <FiGlobe size={12} /> {filename || 'HTML Content'}
           {resolvedFrom && <span className="text-[10px] px-1.5 py-0.5 rounded bg-green-500/10 text-green-400 ml-1">via {resolvedFrom}</span>}
           {detectedType === 'image' && <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 ml-1">image detected</span>}
         </p>
-        <a href={src} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1">
-          Open in new tab <FiExternalLink size={10} />
-        </a>
+        <div className="flex items-center gap-2">
+          {isOnchain && (
+            <button onClick={() => setFullscreen(!fullscreen)} className="text-gray-500 hover:text-gray-300" data-testid="html-fullscreen-toggle">
+              {fullscreen ? <FiMinimize2 size={12} /> : <FiMaximize2 size={12} />}
+            </button>
+          )}
+          <a href={src} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1">
+            Open in new tab <FiExternalLink size={10} />
+          </a>
+        </div>
       </div>
       {resolving ? (
         <div className="flex flex-col items-center justify-center py-16 bg-gray-900" data-testid="html-resolving">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-500 mb-3" />
           <p className="text-sm text-gray-400">Reconstructing from {chain || 'blockchain'}...</p>
-          <p className="text-xs text-gray-500 mt-1">This may take a moment for on-chain files</p>
+          {progress && <p className="text-[10px] text-gray-600 mt-1">{progress}</p>}
         </div>
       ) : error ? (
         <div className="flex flex-col items-center justify-center py-12 px-4 text-center bg-gray-900" data-testid="html-error">
@@ -677,12 +765,21 @@ const HtmlViewer = ({ src, fallbackSrc, filename, source, chain }) => {
             Try opening directly
           </a>
         </div>
-      ) : activeSrc && detectedType === 'image' ? (
+      ) : detectedType === 'image' && activeSrc ? (
         <img
           src={activeSrc}
           alt={filename || 'On-chain image'}
           className="w-full max-h-[70vh] object-contain rounded-b-lg bg-gray-900"
           data-testid="html-sniffed-image"
+        />
+      ) : resolvedHtml ? (
+        <iframe
+          srcDoc={resolvedHtml}
+          title="On-chain Application"
+          className={`w-full bg-white border-0 ${fullscreen ? 'h-[calc(100vh-36px)]' : ''}`}
+          style={fullscreen ? {} : { height: '60vh' }}
+          sandbox="allow-scripts"
+          data-testid="html-iframe"
         />
       ) : activeSrc ? (
         <iframe
@@ -691,7 +788,6 @@ const HtmlViewer = ({ src, fallbackSrc, filename, source, chain }) => {
           className="w-full bg-white"
           style={{ height: '60vh' }}
           sandbox="allow-scripts"
-          onLoad={handleLoad}
           onError={() => setError(true)}
           data-testid="html-iframe"
         />
@@ -1462,7 +1558,7 @@ export default function SingleObjectPage({ network, lookupByAddress }) {
         case 'audio':
           return <AudioPlayer src={primaryParsed.url} coverUrl={imageParsed?.url} coverFallbackUrl={imageParsed?.fallbackUrl} filename={primaryParsed.filename} fallbackSrc={primaryParsed.fallbackUrl} source={primaryParsed.source} chain={primaryParsed.chain} />;
         case 'html':
-          return <HtmlViewer src={primaryParsed.url} fallbackSrc={primaryParsed.fallbackUrl} filename={primaryParsed.filename} source={primaryParsed.source || primaryParsed.type} chain={primaryParsed.chain} />;
+          return <HtmlViewer src={primaryParsed.url} fallbackSrc={primaryParsed.fallbackUrl} filename={primaryParsed.filename} source={primaryParsed.source || primaryParsed.type} chain={primaryParsed.chain} txid={primaryParsed.txid} network={network} />;
         case 'image':
           return <ImageViewer src={primaryParsed.url} fallbackSrc={primaryParsed.fallbackUrl} alt={object.name} source={primaryParsed.source} chain={primaryParsed.chain} />;
         case 'text':
