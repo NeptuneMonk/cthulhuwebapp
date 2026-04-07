@@ -376,6 +376,7 @@ export default function ProfileSetupPage() {
             mintError={mintError}
             onBack={() => setStep(1)}
             isUpdate={isMinted}
+            network={network}
           />
         )}
       </div>

@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 import { useAuth } from '@/hooks/useAuth';
 import { useWallet } from '@/hooks/useWallet';
 import { useTheme } from '@/hooks/useTheme';
+import FeePicker from '@/components/FeePicker';
 import { ECPairFactory } from 'ecpair';
 import { ecc } from '@/utils/ecc';
 import * as bitcoin from 'bitcoinjs-lib';
@@ -551,6 +552,9 @@ export default function VaultPage({ network }) {
             </div>
           </div>
 
+          <div className="flex gap-2 pt-1">
+            <FeePicker network={network} />
+          </div>
           <div className="flex gap-2 pt-1">
             <button onClick={cancelCostEstimate}
               className="flex-1 px-4 py-2 text-sm text-gray-400 hover:text-gray-200 border border-gray-700 rounded-lg transition-colors"

@@ -9,6 +9,7 @@ import {
 } from 'react-icons/fi';
 import { useAuth } from '@/hooks/useAuth';
 import { useWallet } from '@/hooks/useWallet';
+import FeePicker from '@/components/FeePicker';
 import { addPendingPost } from '@/utils/pendingPosts';
 import { toast } from 'sonner';
 
@@ -312,21 +313,24 @@ export default function PollCreateModal({ onClose, network, onCreated }) {
         </div>
 
         {/* Footer */}
-        <div className="px-5 py-4 border-t border-gray-800/50 flex items-center justify-between">
-          <div className="text-[10px] text-gray-600">
-            {answers.filter(a => a.trim()).length} options
-            {endBlocks > 0 && ` | ${TIME_OPTIONS.find(o => o.value === endBlocks)?.label || endBlocks + ' blocks'}`}
-            {(ownGates.length + creGates.length > 0) && ' | Token-gated'}
+        <div className="px-5 py-4 border-t border-gray-800/50 space-y-3">
+          <FeePicker network={network} />
+          <div className="flex items-center justify-between">
+            <div className="text-[10px] text-gray-600">
+              {answers.filter(a => a.trim()).length} options
+              {endBlocks > 0 && ` | ${TIME_OPTIONS.find(o => o.value === endBlocks)?.label || endBlocks + ' blocks'}`}
+              {(ownGates.length + creGates.length > 0) && ' | Token-gated'}
+            </div>
+            <button
+              onClick={handleCreate}
+              disabled={!isValid || !activeWif || sending}
+              className="flex items-center gap-2 px-4 py-2 bg-teal-600 hover:bg-teal-500 text-white rounded-xl text-sm font-medium transition-colors disabled:opacity-30"
+              data-testid="poll-create-btn"
+            >
+              <FiSend size={13} className={sending ? 'animate-pulse' : ''} />
+              {sending ? 'Broadcasting...' : 'Create Poll'}
+            </button>
           </div>
-          <button
-            onClick={handleCreate}
-            disabled={!isValid || !activeWif || sending}
-            className="flex items-center gap-2 px-4 py-2 bg-teal-600 hover:bg-teal-500 text-white rounded-xl text-sm font-medium transition-colors disabled:opacity-30"
-            data-testid="poll-create-btn"
-          >
-            <FiSend size={13} className={sending ? 'animate-pulse' : ''} />
-            {sending ? 'Broadcasting...' : 'Create Poll'}
-          </button>
         </div>
       </div>
     </div>

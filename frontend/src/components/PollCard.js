@@ -6,6 +6,7 @@ import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import { FiBarChart2, FiLock, FiCheck, FiClock, FiUsers, FiZap } from 'react-icons/fi';
 import { useAuth } from '@/hooks/useAuth';
 import { useWallet } from '@/hooks/useWallet';
+import FeePicker from '@/components/FeePicker';
 import { toast } from 'sonner';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
@@ -158,6 +159,11 @@ export default function PollCard({ poll, network, onVoted }) {
 
       {/* Question */}
       <h3 className="text-sm font-medium text-gray-100" data-testid="poll-question">{poll.question}</h3>
+
+      {/* Fee picker for voting */}
+      {isConnected && activeWif && !votedFor && !isClosed && !isPending && (
+        <FeePicker network={network} />
+      )}
 
       {/* Answers */}
       <div className="space-y-2" data-testid="poll-answers">

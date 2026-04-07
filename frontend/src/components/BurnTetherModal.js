@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { FiTrash2, FiAlertTriangle, FiShield, FiX } from 'react-icons/fi';
 import { useWallet } from '@/hooks/useWallet';
 import { useAuth } from '@/hooks/useAuth';
+import FeePicker from '@/components/FeePicker';
 
 function useActiveWallet() {
   const { wallet, isConnected: walletConnected, refreshBalance } = useWallet();
@@ -89,6 +90,8 @@ export function BurnTetherModal({ tether, network, onClose, onBurned }) {
             </div>
 
             {error && <p className="text-xs text-red-400 bg-red-400/10 border border-red-400/20 rounded px-3 py-2" data-testid="burn-tether-error">{error}</p>}
+
+            <FeePicker network={network} />
 
             <div className="flex items-center gap-3">
               <span className="text-xs text-emerald-600 flex items-center gap-1"><FiShield size={11} /> Signed locally</span>

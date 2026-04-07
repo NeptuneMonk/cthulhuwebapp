@@ -3,8 +3,9 @@ import {
   FiUser, FiArrowLeft, FiCheck, FiLoader, FiShield, FiMapPin, FiLink
 } from 'react-icons/fi';
 import { useAuth } from '@/hooks/useAuth';
+import FeePicker from '@/components/FeePicker';
 
-export default function MintStep({ user, form, onMint, minting, mintError, onBack, isUpdate }) {
+export default function MintStep({ user, form, onMint, minting, mintError, onBack, isUpdate, network }) {
   const { wif, unlockWallet, importWallet } = useAuth();
   const [unlockPassword, setUnlockPassword] = useState('');
   const [unlockError, setUnlockError] = useState('');
@@ -217,6 +218,8 @@ export default function MintStep({ user, form, onMint, minting, mintError, onBac
           <p className="text-sm text-red-400" data-testid="mint-error">{mintError}</p>
         </div>
       )}
+
+      <FeePicker network={network} />
 
       <div className="flex gap-3">
         <button

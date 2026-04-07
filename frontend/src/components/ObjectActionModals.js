@@ -5,6 +5,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { addTransaction } from '@/utils/txHistory';
 import { addPendingTx } from '@/utils/txBuilder';
 import { addOptimisticItem } from '@/utils/optimisticCache';
+import FeePicker from '@/components/FeePicker';
 
 const ModalShell = ({ title, icon: Icon, onClose, children }) => (
   <div className="fixed inset-0 bg-black/80 lg:flex lg:items-center lg:justify-center z-50 lg:p-4" onClick={onClose} data-testid="action-modal-overlay">
@@ -296,6 +297,8 @@ export const GiveModal = ({ object, network, onClose }) => {
             <p className="text-xs text-amber-400">This will create an on-chain transaction. Make sure the recipient address is correct.</p>
           </div>
 
+          <FeePicker network={network} />
+
           <div className="flex items-center gap-3">
             <span className="text-xs text-emerald-600 flex items-center gap-1"><FiShield size={11} /> Signed locally</span>
             <button
@@ -544,6 +547,8 @@ export const BurnModal = ({ object, network, onClose }) => {
             </div>
           )}
 
+          <FeePicker network={network} />
+
           <div className="flex items-center gap-3">
             <span className="text-xs text-emerald-600 flex items-center gap-1"><FiShield size={11} /> Signed locally</span>
             <button
@@ -738,6 +743,8 @@ export const BuyModal = ({ object, network, onClose }) => {
           )}
 
           {error && <p className="text-xs text-red-400 bg-red-400/10 border border-red-400/20 rounded px-3 py-2" data-testid="buy-error">{error}</p>}
+
+          <FeePicker network={network} />
 
           <div className="flex items-center gap-3">
             <span className="text-xs text-emerald-600 flex items-center gap-1"><FiShield size={11} /> Signed locally</span>
@@ -985,6 +992,8 @@ export const ListModal = ({ object, network, onClose }) => {
               )}
             </div>
           )}
+
+          <FeePicker network={network} />
 
           <div className="flex items-center gap-3">
             <span className="text-xs text-emerald-600 flex items-center gap-1"><FiShield size={11} /> Signed locally</span>

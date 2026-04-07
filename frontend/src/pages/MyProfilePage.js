@@ -8,6 +8,7 @@ import { addTransaction } from '@/utils/txHistory';
 import { compressImage, formatFileSize } from '@/utils/imageCompress';
 import { copyToClipboard } from '@/utils/clipboard';
 import { cachedFetch } from '@/utils/apiCache';
+import FeePicker from '@/components/FeePicker';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -397,7 +398,8 @@ export default function MyProfilePage({ network }) {
 
         {/* Save button (edit mode) */}
         {editing && (
-          <div className="px-4 pt-4 pb-6">
+          <div className="px-4 pt-4 pb-6 space-y-3">
+            <FeePicker network={network} />
             <button
               onClick={handleSave}
               disabled={saving || !activeWif}

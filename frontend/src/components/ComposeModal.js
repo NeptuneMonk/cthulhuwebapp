@@ -9,6 +9,7 @@ import { addTransaction } from '@/utils/txHistory';
 import { addPendingPost } from '@/utils/pendingPosts';
 import { addPendingTx } from '@/utils/txBuilder';
 import { useUploadQueue } from '@/contexts/UploadQueueContext';
+import FeePicker from '@/components/FeePicker';
 import { toast } from 'sonner';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
@@ -547,6 +548,8 @@ export const ComposeModal = ({ onClose, network, replyTo }) => {
                   <FiShield size={11} /> Local
                 </span>
               </div>
+
+              <FeePicker network={network} />
 
               <button
                 onClick={handlePost}

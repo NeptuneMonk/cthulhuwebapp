@@ -13,6 +13,7 @@ import { useFollows } from '@/hooks/useFollows';
 import { THEMES, WALLPAPERS, useTheme } from '@/hooks/useTheme';
 import { parseMediaString, isMainnetNetwork } from '@/utils/media';
 import { buildProfileTransaction } from '@/utils/p2fk';
+import FeePicker from '@/components/FeePicker';
 import { buildAndBroadcast } from '@/utils/txBuilder';
 import { CTHULHU_SVG } from '@/components/CthulhuLogo';
 import CallSettings from '@/components/CallSettings';
@@ -2586,6 +2587,9 @@ export default function SettingsModal({ fullPage, onClose, profileImage, network
                       {backupCostEstimate.itemCount > 0 && (
                         <p className="text-[10px] text-gray-600">{backupCostEstimate.itemCount} items in bundle</p>
                       )}
+                    </div>
+                    <div className="flex gap-2">
+                      <FeePicker network={network} />
                     </div>
                     <div className="flex gap-2">
                       <button

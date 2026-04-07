@@ -6,6 +6,7 @@ import { IpfsStatus } from '@/components/IpfsStatus';
 import { addTransaction } from '@/utils/txHistory';
 import { addOptimisticItem } from '@/utils/optimisticCache';
 import { compressImage, formatFileSize, getSizeWarning } from '@/utils/imageCompress';
+import FeePicker from '@/components/FeePicker';
 import {
   getRoyaltyAddresses,
   generateAndStoreRoyalty,
@@ -924,7 +925,7 @@ export const ObjectCreateModal = ({ onClose, network, prefillImage, fullPage, te
               })() : ''}
             </p>
             <div className="flex items-center justify-between">
-              <p className="text-[10px] text-gray-600">25% platform fee helps offset hosting costs</p>
+              <FeePicker network={network} />
               <button onClick={handleCreate} disabled={!urn.trim() || sending || totalRoyalty > 100 || urnStatus === 'taken' || urnStatus === 'checking' || (balance && balance.balance_sats < 2000)}
                 className="flex items-center gap-2 px-5 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-800 disabled:text-gray-600 text-white rounded-lg transition-colors font-medium text-sm" data-testid="object-create-submit">
                 <FiSend size={14} />

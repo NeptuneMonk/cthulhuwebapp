@@ -3,6 +3,7 @@ import { FiMessageCircle, FiLock, FiCheck, FiAlertCircle } from 'react-icons/fi'
 import { useAuth } from '@/hooks/useAuth';
 import { buildProfileTransaction } from '@/utils/p2fk';
 import { buildAndBroadcast } from '@/utils/txBuilder';
+import FeePicker from '@/components/FeePicker';
 
 /**
  * ActivateMessaging — Friendly one-click prompt to publish encryption keys.
@@ -151,6 +152,7 @@ export function ActivateMessaging({ network, onActivated, compact = false }) {
           This lets other users send you encrypted messages. It's a one-time on-chain transaction.
         </p>
       </div>
+      <FeePicker network={network} />
       {needsPassword ? (
         <div className="flex items-center gap-2 w-full max-w-xs">
           <input

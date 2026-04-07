@@ -8,6 +8,7 @@ import { ProfileThumb } from '@/components/ProfileThumb';
 import { addTransaction } from '@/utils/txHistory';
 import { addPendingPost } from '@/utils/pendingPosts';
 import PollCreateModal from '@/components/PollCreateModal';
+import FeePicker from '@/components/FeePicker';
 import { toast } from 'sonner';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
@@ -536,6 +537,7 @@ export const ComposeBar = ({ network, onPostSuccess, targetAddress, placeholder:
                 <span className="text-[10px] flex items-center gap-0.5" style={{ color: 'var(--c-accent)', opacity: 0.5 }} title="Signed locally">
                   <FiShield size={9} /> Local
                 </span>
+                <FeePicker network={network} />
                 <button
                   onClick={handlePost}
                   disabled={!canPost || sending || !isConnected}

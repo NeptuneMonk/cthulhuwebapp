@@ -7,6 +7,7 @@ import { addPendingTx } from '@/utils/txBuilder';
 import { addOptimisticItem } from '@/utils/optimisticCache';
 import { CachedImage } from '@/components/CachedImage';
 import { parseMediaString, isMainnetNetwork } from '@/utils/media';
+import FeePicker from '@/components/FeePicker';
 
 function useActiveWallet() {
   const { wallet, isConnected: walletConnected, refreshBalance } = useWallet();
@@ -161,6 +162,7 @@ export function BatchBurnModal({ ownedObjects, network, onClose, onBurned }) {
           {walletSats !== null && selectedCount > 0 && <div className={`text-xs px-3 py-2 rounded-lg border ${insufficientFunds ? 'text-amber-400 bg-amber-400/10 border-amber-400/20' : 'text-gray-500 bg-gray-800/50 border-gray-700/50'}`} data-testid="batch-burn-balance">
             {insufficientFunds ? <><FiAlertTriangle size={12} className="inline mr-1" /><span className="font-medium">Insufficient:</span> {walletSats.toLocaleString()} sats</> : <span>Est. cost: ~{estimatedMinSats.toLocaleString()} sats ({walletSats.toLocaleString()} available)</span>}
           </div>}
+          <FeePicker network={network} />
           <div className="flex items-center gap-3">
             <span className="text-xs text-emerald-600 flex items-center gap-1"><FiShield size={11} /> Signed locally</span>
             <button onClick={handleBatchBurn} disabled={!confirmed || sending || !isConnected || selectedCount === 0 || insufficientFunds}

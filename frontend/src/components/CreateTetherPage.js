@@ -7,6 +7,7 @@ import { IpfsStatus } from '@/components/IpfsStatus';
 import { addTransaction } from '@/utils/txHistory';
 import { compressImage } from '@/utils/imageCompress';
 import axios from 'axios';
+import FeePicker from '@/components/FeePicker';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -418,7 +419,8 @@ export default function CreateTetherPage({ network, tetherRoom }) {
       </div>
 
       {/* Bottom action bar */}
-      <div className="px-4 py-3 border-t border-gray-800/60 flex-shrink-0">
+      <div className="px-4 py-3 border-t border-gray-800/60 flex-shrink-0 space-y-2">
+        <FeePicker network={network} />
         <button
           onClick={handleCreate}
           disabled={!name.trim() || !isConnected || sending || (isSubTopic && !parentAddress.trim())}
