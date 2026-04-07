@@ -244,61 +244,171 @@ async def _check_ownership(txid: str, chain: str, images: list, files: list) -> 
 
 
 async def _p2fk_discover(query: str, count: int = 50) -> list:
-    """Try p2fk.io GetKnownRootsBySearchString API (via p2fk_get with local fallback)."""
+    """Search p2fk.io for cross-chain on-chain artifacts.
+    Queries GetKnownRootsBySearchString per-chain (BTC, LTC, DOG, MZC)
+    and GetKnownObjectsBySearchString for claimed objects."""
+    results = []
+    seen_txids = set()
+    client = get_client()
+    qty = min(count, 50)
+
     try:
-        data = await p2fk_get("GetKnownRootsBySearchString", False, {
-            "search": query, "qty": min(count, 50)
-        })
-        if not isinstance(data, list) or len(data) == 0:
+        # --- Fan out: search roots on each chain + objects search, all in parallel ---
+        chains_to_search = ['BTC', 'LTC', 'DOG', 'MZC']
+
+        async def _search_roots(chain: str):
+            try:
+                resp = await client.get(
+                    "https://p2fk.io/GetKnownRootsBySearchString",
+                    params={"searchString": query, "qty": str(qty), "skip": "0",
+                            "blockchain": chain, "showSystemFiles": "true"},
+                    timeout=15.0,
+                )
+                if resp.status_code == 200:
+                    return resp.json()
+            except Exception:
+                pass
             return []
 
-        results = []
-        for item in data:
-            root = item.get('root', {})
-            files_dict = root.get('File', {})
-            if 'SIG' in files_dict:
-                continue
-            txid = root.get('TransactionId', '')
-            if not txid:
-                continue
-            images = [f for f in files_dict if IMAGE_EXTS.search(f)]
-            real_files = [f for f in files_dict if FILE_EXTS.search(f) and not IMAGE_EXTS.search(f)]
-            if not images and not real_files:
-                continue
-            bc = item.get('blockchain', 'Unknown')
-            chain = CHAIN_SHORT.get(bc, 'BTC')
-            messages = [{'key': f'MSG{i+1}', 'content': m} for i, m in enumerate(root.get('Message', [])) if m]
-            results.append({
-                'txid': txid,
-                'chain': chain,
-                'images': images,
-                'files': real_files,
-                'messages': messages,
-                'has_address': bool(files_dict.get('ADD')),
-                'metadata': {k: v for k, v in {
-                    'block_date': root.get('BlockDate'),
-                    'blockchain': bc,
-                    'version': str(root.get('Id', '')),
-                }.items() if v and v != '0001-01-01T00:00:00'},
-                'detail_url': f"https://bitfossil.com/{txid}/index.htm",
-                'ownership': None,
-            })
+        async def _search_objects():
+            try:
+                resp = await client.get(
+                    "https://p2fk.io/GetKnownObjectsBySearchString",
+                    params={"searchString": query, "qty": str(qty), "skip": "0",
+                            "showSystemFiles": "true"},
+                    timeout=15.0,
+                )
+                if resp.status_code == 200:
+                    return resp.json()
+            except Exception:
+                pass
+            return []
 
-        if results:
+        all_results = await asyncio.gather(
+            *[_search_roots(c) for c in chains_to_search],
+            _search_objects(),
+            return_exceptions=True,
+        )
+
+        # --- Process roots from each chain ---
+        for i, chain in enumerate(chains_to_search):
+            chain_data = all_results[i]
+            if not isinstance(chain_data, list):
+                continue
+            for item in chain_data:
+                root = item.get('root', {})
+                files_dict = root.get('File', {})
+                txid = root.get('TransactionId', '')
+                if not txid or txid in seen_txids:
+                    continue
+                content_files = {f: s for f, s in files_dict.items()
+                                 if f not in ('SIG', 'LNK', 'OBJ', 'PRO', 'GIV', 'BRN',
+                                              'BUY', 'LST', 'SEC', 'INQ', 'ADD', 'MSG')}
+                images = [f for f in content_files if IMAGE_EXTS.search(f)]
+                real_files = [f for f in content_files if FILE_EXTS.search(f) and not IMAGE_EXTS.search(f)]
+                if not images and not real_files:
+                    continue
+                seen_txids.add(txid)
+                bc = item.get('blockchain', chain)
+                resolved_chain = CHAIN_SHORT.get(bc, chain)
+                messages = [{'key': f'MSG{i+1}', 'content': m}
+                            for i, m in enumerate(root.get('Message', [])) if m]
+                results.append({
+                    'txid': txid,
+                    'chain': resolved_chain,
+                    'images': images,
+                    'files': real_files,
+                    'messages': messages,
+                    'has_address': bool(files_dict.get('ADD')),
+                    'has_obj': 'OBJ' in files_dict,
+                    'metadata': {k: v for k, v in {
+                        'block_date': root.get('BlockDate'),
+                        'blockchain': bc,
+                    }.items() if v and v != '0001-01-01T00:00:00'},
+                    'detail_url': f"https://bitfossil.com/{txid}/index.htm",
+                    'ownership': None,
+                })
+
+        # --- Process claimed objects ---
+        obj_data = all_results[-1]
+        if isinstance(obj_data, list):
+            for item in obj_data:
+                obj = item.get('object', {})
+                bc = item.get('blockchain', 'BTC')
+                urn = obj.get('URN', '')
+                obj_txid = obj.get('TransactionId', '')
+                if not urn:
+                    continue
+                # Extract source chain TXID from URN
+                source_txid = None
+                source_chain = CHAIN_SHORT.get(bc, 'BTC')
+                for prefix, chain in PREFIX_CHAIN.items():
+                    if urn.startswith(prefix):
+                        source_chain = chain
+                        remainder = urn[len(prefix):]
+                        m = re.match(r'([0-9a-f]{64})', remainder)
+                        if m:
+                            source_txid = m.group(1)
+                        break
+                display_txid = source_txid or obj_txid
+                if not display_txid or display_txid in seen_txids:
+                    continue
+                seen_txids.add(display_txid)
+                # Extract files from URN
+                images = []
+                real_files = []
+                for sep in ['/', '\\']:
+                    if sep in urn:
+                        urn_file = urn.split(sep)[-1]
+                        if IMAGE_EXTS.search(urn_file) and urn_file not in images:
+                            images.append(urn_file)
+                        elif FILE_EXTS.search(urn_file) and urn_file not in real_files:
+                            real_files.append(urn_file)
+                creators = obj.get('Creators', {})
+                first_creator = next(iter(creators.keys()), None) if isinstance(creators, dict) else None
+                results.append({
+                    'txid': display_txid,
+                    'chain': source_chain,
+                    'images': images,
+                    'files': real_files,
+                    'messages': [{'key': 'DESC', 'content': obj.get('Description', '')}] if obj.get('Description') else [],
+                    'has_address': False,
+                    'has_obj': True,
+                    'metadata': {k: v for k, v in {
+                        'block_date': next(iter(creators.values()), None) if isinstance(creators, dict) else None,
+                        'blockchain': bc,
+                    }.items() if v and v != '0001-01-01T00:00:00'},
+                    'detail_url': f"https://bitfossil.com/{display_txid}/index.htm",
+                    'ownership': {
+                        'claimed': True,
+                        'owner': first_creator,
+                        'urn': urn,
+                        'name': obj.get('Name', ''),
+                    },
+                })
+
+        # --- Check ownership for unclaimed root results ---
+        unclaimed = [r for r in results if r.get('ownership') is None]
+        if unclaimed:
             sem = asyncio.Semaphore(3)
             async def _check(r):
                 async with sem:
                     result = await _check_ownership(r['txid'], r['chain'], r['images'], r['files'])
                     await asyncio.sleep(0.3)
                     return result
-            ownership_results = await asyncio.gather(*[_check(r) for r in results[:8]], return_exceptions=True)
-            for i, own in enumerate(ownership_results):
-                if isinstance(own, dict):
-                    results[i]['ownership'] = own
+            ownership_results = await asyncio.gather(
+                *[_check(r) for r in unclaimed[:8]], return_exceptions=True)
+            idx = 0
+            for r in results:
+                if r.get('ownership') is None and idx < len(ownership_results):
+                    own = ownership_results[idx]
+                    if isinstance(own, dict):
+                        r['ownership'] = own
+                    idx += 1
 
         return results
     except Exception as e:
-        logger.debug(f"p2fk.io GetKnownRoots failed: {e}")
+        logger.debug(f"p2fk.io discover failed: {e}")
         return []
 
 
@@ -328,7 +438,7 @@ async def discover_objects(body: dict):
     try:
         # Try p2fk.io API first (faster, more reliable when available)
         p2fk_results = await _p2fk_discover(query, count)
-        if len(p2fk_results) >= 3:
+        if p2fk_results:
             # Cache the results
             await _cache_discover_results(cache_key, p2fk_results, "p2fk")
             return {"results": p2fk_results, "query": query, "total": len(p2fk_results), "source": "p2fk"}

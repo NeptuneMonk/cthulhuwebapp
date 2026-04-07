@@ -1786,11 +1786,41 @@ async def proxy_search_profiles(searchString: str = '', qty: int = 60, network: 
 
 @router.get("/p2fk/search/roots")
 async def proxy_search_roots(searchString: str = '', qty: int = 60, network: str = 'btc-testnet'):
-    is_mainnet = 'mainnet' in network.lower()
-    data = await p2fk_get("GetKnownRootsBySearchString", is_mainnet, {
-        "searchString": searchString, "qty": str(qty)
-    })
-    return data if data is not None else []
+    """Search roots across ALL chains (BTC, LTC, DOG, MZC) in parallel using the blockchain param."""
+    from utils.http_pool import get_client
+    client = get_client()
+    chains = ['BTC', 'LTC', 'DOG', 'MZC']
+
+    async def _fetch_chain(chain: str):
+        try:
+            resp = await client.get(
+                "https://p2fk.io/GetKnownRootsBySearchString",
+                params={"searchString": searchString, "qty": str(qty), "skip": "0",
+                        "blockchain": chain, "showSystemFiles": "true"},
+                timeout=15.0,
+            )
+            if resp.status_code == 200:
+                return resp.json()
+        except Exception:
+            pass
+        return []
+
+    results_per_chain = await asyncio.gather(*[_fetch_chain(c) for c in chains], return_exceptions=True)
+
+    # Merge and deduplicate by TransactionId
+    merged = []
+    seen = set()
+    for chain_results in results_per_chain:
+        if not isinstance(chain_results, list):
+            continue
+        for item in chain_results:
+            root = item.get('root', item)
+            txid = root.get('TransactionId', '')
+            if txid and txid not in seen:
+                seen.add(txid)
+                merged.append(item)
+
+    return merged
 
 
 @router.get("/local-search/roots")

@@ -13,7 +13,7 @@ Build a modern, responsive frontend for a blockchain-based decentralized social 
 ## What's Implemented
 - Full client-side signing (profile minting, posting, object creation, give/buy/burn)
 - Secure auth (WIF encrypted with Web Crypto API, stored in localStorage)
-- Post-signup wizard (profile setup → wallet funding → profile minting)
+- Post-signup wizard (profile setup -> wallet funding -> profile minting)
 - SUP protocol compatibility (verified with test suite)
 - On-chain file resolution (cross-tx references, HTML apps via srcDoc)
 - Generative art support (viewer/genid params injected into HTML iframes)
@@ -21,6 +21,9 @@ Build a modern, responsive frontend for a blockchain-based decentralized social 
 - Conversation threading (decentralized keyword-based model)
 - Network isolation (mainnet/testnet)
 - Feed with cached background updates
+- Dynamic fee selector (FeePicker) integrated into all transaction modals
+- **TXID Import in Object Create Modal** (NEW) — paste a TXID to auto-populate URN, name, image, etc. from on-chain P2FK data. Cross-chain support (BTC, LTC, DOG, MZC).
+- **Cross-Chain Discover Search** (NEW) — DiscoverPage search fans out to all chains (BTC, LTC, DOG, MZC) in parallel via p2fk.io `GetKnownRootsBySearchString?blockchain={chain}` and `GetKnownObjectsBySearchString`. Finds both claimed objects and unclaimed raw injections.
 
 ## Key API Endpoints
 - `GET /api/objects/by-chain/{chain}` — Paginated objects by chain (5min cache)
@@ -28,22 +31,26 @@ Build a modern, responsive frontend for a blockchain-based decentralized social 
 - `GET /api/wallet/utxos/{address}` — UTXOs for PSBT construction
 - `POST /api/wallet/broadcast` — Broadcast signed transaction hex
 - `POST /api/upload` — IPFS file upload via local Kubo daemon
+- `GET /api/txid/inspect/{txid}` — (NEW) Inspect P2FK root data from a TXID, cross-chain with existing claim check
+- `GET /api/p2fk/search/roots` — (UPDATED) Roots search now fans out to BTC/LTC/DOG/MZC in parallel
+- `POST /api/objects/discover` — (UPDATED) Discovery search uses per-chain root search + objects search
 
-## Key Files
-- `/app/backend/routes/onchain.py` — P2FK file parser & resolver
-- `/app/backend/routes/objects.py` — Object/storefront APIs
-- `/app/frontend/src/pages/SingleObjectPage.js` — Object viewer + HtmlViewer
-- `/app/frontend/src/pages/ObjectsPage.js` — Storefront UI
-- `/app/frontend/src/utils/txBuilder.js` — Client-side PSBT construction
-- `/app/frontend/src/utils/p2fk.js` — P2FK payload construction
+## Pending Issues
+- Chat room header displaying number instead of name (P0, deferred by user)
 
-## Known Issues
-- Storefront "Listed" filter uses client-side filtering (scalability risk at 1000+ objects)
-- p2fk.io plural endpoints serve stale listing data; use GetObjectByAddress for fresh data
+## Upcoming Tasks
+- (P2) WebRTC mesh / TURN server architecture evaluation
+- (P2) "Ink Log" wallet transaction history tab
 
-## Backlog (Prioritized)
-- P2: "Ink Log" wallet transaction history tab
-- P2: WebRTC mesh / TURN server architecture
-- P3: "SupFlix" Media Gallery
-- P3: IPFS client-side IndexedDB caching
-- P3: Evaluate paid blockchain explorer APIs
+## Future/Backlog
+- (P3) "SupFlix" Media Gallery for video/audio objects
+- (P3) IPFS client-side IndexedDB caching & settings page
+- (P3) Evaluate paid blockchain explorer APIs
+- (P3) Fix incorrect object counts for profiles
+
+## Key Technical Decisions
+- **No MongoDB** — strictly SQLite via aiosqlite
+- **Client-side signing** — user WIF never leaves the browser
+- **Cross-chain discovery** — p2fk.io `blockchain` param (BTC/LTC/DOG/MZC) instead of `mainnet` param
+- **Fee rates** — dynamic via mempool.space, stored in sessionStorage, enforced minimums (3/7/15 sat/vB)
+- **Protocol files** — SIG, LNK, OBJ, PRO, GIV, BRN, BUY, LST, SEC, INQ, ADD, MSG are protocol files, filtered from content display
