@@ -444,6 +444,11 @@ async def register_profile_known(req: RegisterProfileRequest):
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
         await db.system_announcements.insert_one(announcement)
+        # Prune: keep only 2 most recent per network
+        all_for_net = await db.system_announcements.find({"network": req.network}).sort("timestamp", -1).to_list(100)
+        if len(all_for_net) > 2:
+            old_ids = [a["_id"] for a in all_for_net[2:]]
+            await db.system_announcements.delete_many({"_id": {"$in": old_ids}})
         logger.info(f"System announcement: @{req.urn} minted profile on {req.network}")
 
         return {"success": True, "address": req.address, "urn": req.urn}
@@ -492,6 +497,11 @@ async def announce_object_minted(req: AnnounceObjectRequest):
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
         await db.system_announcements.insert_one(announcement)
+        # Prune: keep only 2 most recent per network
+        all_for_net = await db.system_announcements.find({"network": req.network}).sort("timestamp", -1).to_list(100)
+        if len(all_for_net) > 2:
+            old_ids = [a["_id"] for a in all_for_net[2:]]
+            await db.system_announcements.delete_many({"_id": {"$in": old_ids}})
         logger.info(f"Object announcement: @{creator_urn} minted '{req.object_name}' on {req.network}")
         return {"success": True}
     except Exception as e:

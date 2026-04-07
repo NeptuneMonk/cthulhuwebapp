@@ -28,24 +28,45 @@ import re as _re
 _pinning_in_progress = set()  # Avoid duplicate pin requests
 
 # ─── System Announcements ───
-_ANNOUNCEMENT_TTL_HOURS = 48
+_ANNOUNCEMENT_TTL_MINUTES = 10
+_ANNOUNCEMENT_MAX_DISPLAY = 2
 
 async def _get_system_announcements(network: str) -> list:
-    """Fetch unexpired system announcements for the global feed."""
+    """Fetch unexpired system announcements for the global feed.
+    - Announcements expire after 10 minutes (ephemeral).
+    - Only the 2 most recent are returned; older ones are pruned."""
     try:
-        cutoff = datetime.now(timezone.utc).timestamp() - (_ANNOUNCEMENT_TTL_HOURS * 3600)
+        now_ts = datetime.now(timezone.utc).timestamp()
+        cutoff = now_ts - (_ANNOUNCEMENT_TTL_MINUTES * 60)
         cursor = db.system_announcements.find({"network": network})
         announcements = await cursor.to_list(100)
-        results = []
+
+        # Delete expired announcements and collect valid ones
+        expired_ids = []
+        valid = []
         for a in announcements:
             ts = a.get("timestamp", "")
             try:
                 dt = datetime.fromisoformat(ts)
                 if dt.timestamp() < cutoff:
-                    continue  # expired
+                    expired_ids.append(a["_id"])
+                    continue
             except Exception:
+                expired_ids.append(a["_id"])
                 continue
+            valid.append(a)
 
+        # Prune expired from DB
+        if expired_ids:
+            await db.system_announcements.delete_many({"_id": {"$in": expired_ids}})
+
+        # Sort newest-first, keep only the 2 most recent
+        valid.sort(key=lambda a: a.get("timestamp", ""), reverse=True)
+        valid = valid[:_ANNOUNCEMENT_MAX_DISPLAY]
+
+        results = []
+        for a in valid:
+            ts = a.get("timestamp", "")
             subtype = a.get("type", "profile_minted")
             if subtype == "object_minted":
                 obj_name = a.get("object_name", "an object")
