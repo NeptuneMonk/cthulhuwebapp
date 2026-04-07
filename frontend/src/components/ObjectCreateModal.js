@@ -479,7 +479,7 @@ export const ObjectCreateModal = ({ onClose, network, prefillImage, fullPage, te
     setError(null);
 
     try {
-      const [{ buildObjectTransaction, deriveObjectAddress, getNextObjectIndex, bumpObjectIndex }, { buildAndBroadcast }] = await Promise.all([
+      const [{ buildObjectTransaction, deriveObjectAddress, getNextObjectIndex }, { buildAndBroadcast }] = await Promise.all([
         import('@/utils/p2fk'),
         import('@/utils/txBuilder'),
       ]);
@@ -491,7 +491,8 @@ export const ObjectCreateModal = ({ onClose, network, prefillImage, fullPage, te
         const idx = getNextObjectIndex(activeAddress);
         const derived = deriveObjectAddress(activeWif, idx, netName);
         objAddr = { address: derived.address, wif: derived.wif };
-        bumpObjectIndex(activeAddress);
+        // Bump to usedIndex+1 (deriveObjectAddress may skip indices with delimiter conflicts)
+        try { localStorage.setItem(`p2fk_obj_idx_${activeAddress}`, String((derived.usedIndex ?? idx) + 1)); } catch {}
         setPregenAddress(objAddr);
       }
 

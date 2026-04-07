@@ -39,6 +39,11 @@ Build a modern, responsive frontend for a blockchain-based decentralized social 
 ## Pending Issues
 - None active
 
+## Recently Fixed (Apr 2026)
+- **Object Address Collision Bug (P0):** `deriveObjectAddress()` skips delimiter-unsafe indices, but `bumpObjectIndex()` only incremented by 1 from the start index. When indices were skipped, the next mint reused the same address. Fixed by bumping to `usedIndex + 1` instead of `startIndex + 1`.
+- **Fee Rate Not Persisting (P1):** `sessionStorage.removeItem('cthulhu_fee_rate')` was called after every successful broadcast, causing subsequent transactions to fall back to 3 sat/vB. Removed the clearing logic — user's selected fee rate now persists across transactions.
+- **Chat Header Showing Burned Names (P0):** `/api/object/addr/{address}` was iterating roots oldest-first and picking burned object names. Fixed to iterate newest-first via `reversed(roots)`.
+
 ## Upcoming Tasks
 - (P2) WebRTC mesh / TURN server architecture evaluation
 - (P2) "Ink Log" wallet transaction history tab

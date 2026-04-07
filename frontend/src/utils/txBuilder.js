@@ -715,8 +715,7 @@ export async function buildAndBroadcast(wif, targetAddresses, networkName = 'btc
   // Broadcast with auto-retry: if mempool rejects due to low fee, rebuild with higher rate
   try {
     const result = await broadcastTx(txHex, networkName);
-    // SUCCESS: Reset fee rate back to default so future transactions aren't inflated
-    try { sessionStorage.removeItem('cthulhu_fee_rate'); } catch {}
+    // Don't clear fee rate — user's selected rate should persist across transactions
     // Track which UTXOs were consumed for sequential batch operations
     const spentUtxoIds = new Set(selectedUtxos.map(u => `${u.txid}:${u.vout}`));
     // Build change output info for chaining sequential transactions
