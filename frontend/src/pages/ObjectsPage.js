@@ -215,23 +215,22 @@ export default function ObjectsPage({ network }) {
    *  An object can belong to multiple chains (e.g., MZC + IPFS). */
   const getDataChains = useCallback((obj) => {
     const chains = new Set();
+    // Always include the actual blockchain the object lives on
+    const bc = (obj._blockchain || '').toUpperCase();
+    if (bc.includes('LTC')) chains.add('LTC');
+    else if (bc.includes('DOG')) chains.add('DOG');
+    else if (bc.includes('MZC')) chains.add('MZC');
+    else if (bc.includes('BTC')) chains.add('BTC');
+    // Also tag by data source prefix (URN/URI/Image may reference other chains or IPFS)
     for (const field of [obj.URN, obj.urn, obj.URI, obj.uri, obj.Image, obj.image]) {
       if (field && typeof field === 'string' && field.includes(':')) {
         const prefix = field.split(':')[0].toUpperCase();
-        if (prefix === 'LTC') chains.add('LTC');
-        else if (prefix === 'DOG' || prefix === 'DOGE') chains.add('DOG');
-        else if (prefix === 'MZC') chains.add('MZC');
-        else if (prefix === 'IPFS') chains.add('IPFS');
-        else if (prefix === 'BTC') chains.add('BTC');
+        if (['BTC', 'LTC', 'DOG', 'DOGE', 'MZC', 'IPFS'].includes(prefix)) {
+          chains.add(prefix === 'DOGE' ? 'DOG' : prefix);
+        }
       }
     }
-    if (chains.size === 0) {
-      const bc = (obj._blockchain || '').toUpperCase();
-      if (bc.includes('LTC')) chains.add('LTC');
-      else if (bc.includes('DOG')) chains.add('DOG');
-      else if (bc.includes('MZC')) chains.add('MZC');
-      else chains.add('BTC');
-    }
+    if (chains.size === 0) chains.add('BTC');
     return chains;
   }, []);
 
