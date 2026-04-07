@@ -8,9 +8,9 @@ const FEE_APIS = {
 };
 
 const TIERS = [
-  { key: 'economy', label: 'Economy', desc: '~1 hr', field: 'economyFee' },
-  { key: 'normal', label: 'Normal', desc: '~30 min', field: 'halfHourFee' },
-  { key: 'priority', label: 'Priority', desc: '~10 min', field: 'fastestFee' },
+  { key: 'economy', label: 'Economy', desc: '~1 hr', field: 'economyFee', floor: 3 },
+  { key: 'normal', label: 'Normal', desc: '~30 min', field: 'halfHourFee', floor: 7 },
+  { key: 'priority', label: 'Priority', desc: '~10 min', field: 'fastestFee', floor: 15 },
 ];
 
 const FIXED_RATE_CHAINS = ['dog', 'doge', 'mzc'];
@@ -46,14 +46,15 @@ export default function FeePicker({ network, onChange }) {
         const data = await res.json();
         if (!cancelled) {
           setRates(data);
-          const defaultRate = Math.max(data.halfHourFee || 3, data.minimumFee || 1);
+          const normalFloor = TIERS.find(t => t.key === 'normal').floor;
+          const defaultRate = Math.max(data.halfHourFee || 3, normalFloor, data.minimumFee || 1);
           persist(defaultRate);
           setLoading(false);
         }
       } catch {
         if (!cancelled) {
-          setRates({ economyFee: 2, halfHourFee: 3, fastestFee: 6, minimumFee: 1 });
-          persist(3);
+          setRates({ economyFee: 3, halfHourFee: 7, fastestFee: 15, minimumFee: 1 });
+          persist(7);
           setLoading(false);
         }
       }
@@ -64,7 +65,7 @@ export default function FeePicker({ network, onChange }) {
 
   const handleSelect = (tier) => {
     setSelected(tier.key);
-    const rate = rates?.[tier.field] || 3;
+    const rate = Math.max(rates?.[tier.field] || 3, tier.floor);
     persist(rate);
   };
 
@@ -109,7 +110,7 @@ export default function FeePicker({ network, onChange }) {
             >
               <div>{tier.label}</div>
               <div className={`text-[10px] mt-0.5 ${isActive ? 'text-purple-400' : 'text-gray-500'}`}>
-                {rate} sat/vB
+                {Math.max(rate, tier.floor)} sat/vB
               </div>
             </button>
           );
