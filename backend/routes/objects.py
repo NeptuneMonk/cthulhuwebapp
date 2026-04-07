@@ -1422,11 +1422,35 @@ async def get_object_by_address(address: str, network: str = 'btc-testnet'):
                             obj_root = root
 
                 if burn_roots:
-                    # Object existed but was burned — return synthetic burned response
+                    # Object existed but was burned — extract name from OBJ message data
+                    burn_name = 'Burned Object'
+                    burn_image = ''
+                    if obj_root:
+                        # Try parsing OBJ JSON from root messages
+                        for msg in (obj_root.get('Message') or []):
+                            try:
+                                parsed = json.loads(msg)
+                                if isinstance(parsed, dict) and (parsed.get('nme') or parsed.get('Name')):
+                                    burn_name = parsed.get('nme') or parsed.get('Name')
+                                    burn_image = parsed.get('img') or parsed.get('Image') or ''
+                                    break
+                            except (json.JSONDecodeError, TypeError):
+                                continue
+                        # Fallback: try fetching object by its creation TXID
+                        if burn_name == 'Burned Object':
+                            obj_txid = obj_root.get('TransactionId', '')
+                            if obj_txid:
+                                try:
+                                    obj_full = await fetch_object_by_txid(obj_txid, is_mainnet)
+                                    if isinstance(obj_full, dict) and obj_full.get('Name'):
+                                        burn_name = obj_full['Name']
+                                        burn_image = obj_full.get('Image', '')
+                                except Exception:
+                                    pass
                     formatted = {
-                        'name': obj_root.get('File', {}).get('OBJ', 'Unknown Object') if obj_root else 'Burned Object',
+                        'name': burn_name,
                         'description': 'This object has been burned and removed from the chain index.',
-                        'image': '',
+                        'image': burn_image,
                         'owners': [],
                         'creators': [],
                         'transaction_id': obj_root.get('TransactionId', '') if obj_root else '',
