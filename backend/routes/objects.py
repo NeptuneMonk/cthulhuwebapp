@@ -733,27 +733,60 @@ async def get_object_history(address: str, network: str = 'btc-testnet', skip: i
         return {"history": [], "address": address, "count": 0, "total": 0, "has_more": False}
 
 
-def _object_matches_chain(obj: dict, chain: str) -> bool:
-    """Check if an object belongs to a specific chain by inspecting URN, URI, and Image fields.
-    BTC is the default chain — objects with no known prefix in their URN are BTC-native."""
+def _object_matches_chain(obj: dict, chain: str, wrapper_blockchain: str = '') -> bool:
+    """Check if an object belongs to a specific chain filter.
+    Uses the p2fk.io `blockchain` wrapper for non-BTC chains (objects living on LTC/DOG/MZC),
+    and URN/URI/Image prefix inspection for data source detection.
+    
+    On testnet, all objects live on BTC-testnet, so the blockchain wrapper is
+    only useful for mainnet where objects exist on different actual blockchains.
+    The chain filter primarily means "data source" — where the object's content lives."""
     chain_upper = chain.upper()
-    KNOWN_PREFIXES = ('LTC:', 'DOG:', 'DOGE:', 'MZC:', 'IPFS:', 'BTC:')
+    KNOWN_NON_BTC = ('LTC:', 'DOG:', 'DOGE:', 'MZC:', 'IPFS:')
+
+    # Map p2fk.io blockchain labels to our chain keys
+    BC_MAP = {
+        'LTC': 'LTC', 'LTC-TESTNET': 'LTC',
+        'DOG': 'DOG', 'DOG-TESTNET': 'DOG', 'DOGE': 'DOG', 'DOGE-TESTNET': 'DOG',
+        'MZC': 'MZC', 'MZC-TESTNET': 'MZC',
+    }
+
+    wb = wrapper_blockchain.upper().strip() if wrapper_blockchain else ''
+    native_chain = BC_MAP.get(wb, '')  # Only non-BTC chains are mapped
+
+    if chain_upper == 'IPFS':
+        # IPFS filter: match if any URN/URI/Image starts with IPFS:
+        for field_name in ('URN', 'urn', 'URI', 'uri', 'Image', 'image'):
+            val = obj.get(field_name, '')
+            if val and isinstance(val, str) and val.upper().startswith('IPFS:'):
+                return True
+        return False
 
     if chain_upper == 'BTC':
-        # BTC-native objects may have explicit BTC: prefix OR no prefix at all.
-        # Check if URN has a known non-BTC prefix — if not, it's BTC.
+        # BTC filter: objects whose data is purely BTC-native
+        # Exclude if ANY field (URN, URI, Image) references a non-BTC data source
         urn = obj.get('URN', obj.get('urn', '')) or ''
+        for field_name in ('URN', 'urn', 'URI', 'uri', 'Image', 'image'):
+            val = obj.get(field_name, '')
+            if val and isinstance(val, str):
+                val_upper = val.upper()
+                if any(val_upper.startswith(p) for p in KNOWN_NON_BTC):
+                    return False
+        # Passed: no non-BTC prefix in any field
         if isinstance(urn, str) and urn:
             urn_upper = urn.upper()
             if urn_upper.startswith('BTC:'):
                 return True
-            # No known prefix = BTC-native
-            has_other = any(urn_upper.startswith(p) for p in KNOWN_PREFIXES if not p.startswith('BTC'))
-            if not has_other:
-                return True
-        return False
+            # Bare string or txid with no prefix = BTC-native
+            return True
+        # No URN at all — check native chain
+        return native_chain == '' and ('BTC' in wb or not wb)
 
-    # Non-BTC chains: match prefix in URN, URI, Image
+    # Non-BTC, non-IPFS chains (LTC, DOG, MZC):
+    # Match if native chain matches OR if URN/URI/Image has the chain's prefix
+    if native_chain == chain_upper:
+        return True
+
     match_prefixes = [chain_upper + ':']
     if chain_upper == 'DOG':
         match_prefixes.append('DOGE:')
@@ -805,21 +838,28 @@ def _extract_obj_addr(item: dict) -> str:
 async def get_objects_by_chain(chain: str, network: str = 'btc-testnet', skip: int = 0, qty: int = 40):
     """Fetch objects filtered by chain prefix (ALL, MZC, DOG, LTC, IPFS, BTC).
     chain=ALL returns every known object (no chain filter).
-    Chain detection checks URN, URI, and Image fields for chain-prefixed values.
-    Results are cached for 10 minutes."""
+    Uses the authoritative blockchain wrapper from p2fk.io for chain detection.
+    Results are cached for 5 minutes and served paginated."""
     is_mainnet = 'mainnet' in network.lower()
     chain_upper = chain.upper()
     if chain_upper not in ('ALL', 'MZC', 'DOG', 'LTC', 'IPFS', 'BTC'):
         return {"objects": [], "chain": chain, "total": 0, "skip": skip, "qty": qty, "has_more": False}
 
-    # Check MongoDB cache first
-    cache_key = f"chain_objects:{chain_upper}:{network}"
+    # Always cache the full ALL set, then filter per-chain from it
+    cache_key = f"chain_objects:ALL:{network}"
     try:
         cached_doc = await api_cache_col.find_one({"_id": cache_key}, {"_id": 0})
         if cached_doc and cached_doc.get("ts"):
             age = datetime.now(timezone.utc).timestamp() - cached_doc["ts"]
-            if age < 600:  # 10 minute TTL
+            if age < 300:  # 5 minute TTL
                 cached_items = cached_doc.get("data", [])
+                # Apply chain filter from cached ALL set
+                if chain_upper != 'ALL':
+                    cached_items = [item for item in cached_items
+                                    if _object_matches_chain(
+                                        item.get('object', item) if isinstance(item, dict) else {},
+                                        chain_upper,
+                                        item.get('blockchain', '') if isinstance(item, dict) else '')]
                 total = len(cached_items)
                 page = cached_items[skip:skip + qty]
                 return {"objects": page, "chain": chain_upper, "total": total,
@@ -846,34 +886,37 @@ async def get_objects_by_chain(chain: str, network: str = 'btc-testnet', skip: i
             seen_keys.add(dedup_key)
         all_items.append(item)
 
-    # Apply chain filter (skip for ALL)
-    if chain_upper != 'ALL':
-        filtered = [item for item in all_items
-                     if _object_matches_chain(item.get('object', item) if isinstance(item, dict) else {}, chain_upper)]
-    else:
-        filtered = all_items
-
-    # Apply burn filtering
+    # Apply burn filtering on ALL items first (before caching)
     try:
-        obj_addrs = [_extract_obj_addr(item) for item in filtered]
+        obj_addrs = [_extract_obj_addr(item) for item in all_items]
         valid_addrs = [a for a in obj_addrs if a]
         if valid_addrs:
             burned = await batch_verify_burns(valid_addrs, is_mainnet, network)
             if burned:
-                filtered = [item for item, addr in zip(filtered, obj_addrs) if addr not in burned]
+                all_items = [item for item, addr in zip(all_items, obj_addrs) if addr not in burned]
     except Exception:
         pass
 
-    # Cache the results
+    # Cache the full ALL set
     try:
         await api_cache_col.update_one(
             {"_id": cache_key},
-            {"$set": {"data": filtered, "ts": datetime.now(timezone.utc).timestamp(),
+            {"$set": {"data": all_items, "ts": datetime.now(timezone.utc).timestamp(),
                       "updated_at": datetime.now(timezone.utc)}},
             upsert=True
         )
     except Exception:
         pass
+
+    # Apply chain filter
+    if chain_upper != 'ALL':
+        filtered = [item for item in all_items
+                     if _object_matches_chain(
+                         item.get('object', item) if isinstance(item, dict) else {},
+                         chain_upper,
+                         item.get('blockchain', '') if isinstance(item, dict) else '')]
+    else:
+        filtered = all_items
 
     total = len(filtered)
     page = filtered[skip:skip + qty]

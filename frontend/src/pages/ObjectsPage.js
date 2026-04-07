@@ -13,7 +13,7 @@ const API = process.env.REACT_APP_BACKEND_URL;
 
 const DEFAULT_QTY = 40;
 const DEFAULT_SEARCH = '';
-const INITIAL_QTY = 20;
+const BROWSE_PAGE_SIZE = 200;
 /** Cross-network discovery prompt */
 function CrossNetworkModal({ object, userNetwork, onClose, navigate }) {
   const [checking, setChecking] = useState(false);
@@ -209,27 +209,42 @@ export default function ObjectsPage({ network }) {
     };
   });
 
-  /** Detect the data repository from an object's URN prefix.
-   *  URN examples: "IPFS:Qm...", "DOG:txid...", "LTC:txid...", "BTC:txid..." */
-  /** Extract ALL chain prefixes present in an object's URN, URI, and Image fields.
-   *  An object can belong to multiple chains (e.g., MZC + IPFS). */
+  /** Extract the primary data chain for an object.
+   *  Checks all fields (URN, URI, Image) for chain prefixes.
+   *  For BTC: only matches if NO field has IPFS/LTC/DOG/MZC prefix.
+   *  Uses _blockchain wrapper for non-BTC native chains. */
   const getDataChains = useCallback((obj) => {
     const chains = new Set();
-    // Always include the actual blockchain the object lives on
+    const KNOWN_NON_BTC = ['LTC:', 'DOG:', 'DOGE:', 'MZC:', 'IPFS:'];
     const bc = (obj._blockchain || '').toUpperCase();
+
+    // Tag by native chain (non-BTC only — BTC-testnet is default for all testnet)
     if (bc.includes('LTC')) chains.add('LTC');
     else if (bc.includes('DOG')) chains.add('DOG');
     else if (bc.includes('MZC')) chains.add('MZC');
-    else if (bc.includes('BTC')) chains.add('BTC');
-    // Also tag by data source prefix (URN/URI/Image may reference other chains or IPFS)
+
+    // Tag by data source prefix in URN, URI, Image
+    let hasNonBtcPrefix = false;
     for (const field of [obj.URN, obj.urn, obj.URI, obj.uri, obj.Image, obj.image]) {
       if (field && typeof field === 'string' && field.includes(':')) {
         const prefix = field.split(':')[0].toUpperCase();
-        if (['BTC', 'LTC', 'DOG', 'DOGE', 'MZC', 'IPFS'].includes(prefix)) {
+        if (['LTC', 'DOG', 'DOGE', 'MZC', 'IPFS'].includes(prefix)) {
           chains.add(prefix === 'DOGE' ? 'DOG' : prefix);
+          hasNonBtcPrefix = true;
+        } else if (prefix === 'BTC') {
+          chains.add('BTC');
         }
       }
     }
+
+    // BTC: add only if no field had a non-BTC data prefix
+    if (!hasNonBtcPrefix && chains.size === 0) {
+      chains.add('BTC');
+    }
+    if (!hasNonBtcPrefix && (bc.includes('BTC') || !bc)) {
+      chains.add('BTC');
+    }
+
     if (chains.size === 0) chains.add('BTC');
     return chains;
   }, []);
@@ -275,29 +290,36 @@ export default function ObjectsPage({ network }) {
         setCurrentSkip(skip);
         skipRef.current = skip + qty;
       } else {
-        // Browse mode: use the by-chain endpoint (ALL or specific chain)
-        // Fetch all objects and cache — listing filter is applied client-side
+        // Browse mode: paginated fetch from by-chain endpoint (200 at a time)
         const chainParam = chainMatch || 'ALL';
-        const cacheId = `chain_${chainParam}_${network}`;
+        const cacheId = `chain_${chainParam}_${skip}_${BROWSE_PAGE_SIZE}_${network}`;
         const doFetch = async () => {
-          const url = `${API}/api/objects/by-chain/${chainParam}?skip=0&qty=600&network=${encodeURIComponent(network)}`;
+          const url = `${API}/api/objects/by-chain/${chainParam}?skip=${skip}&qty=${BROWSE_PAGE_SIZE}&network=${encodeURIComponent(network)}`;
           const res = await axios.get(url);
           return res.data;
         };
         const result = await cachedFetch('chain_objects', cacheId, doFetch, (freshResult) => {
           const items = freshResult?.objects || (Array.isArray(freshResult) ? freshResult : []);
           const finalObjects = processItems(items, chainMatch);
-          setObjects(finalObjects);
-          setHasMore(false);
+          if (isReset) {
+            setObjects(finalObjects);
+          } else {
+            setObjects(prev => [...prev, ...finalObjects]);
+          }
+          setHasMore(freshResult?.has_more ?? false);
           setTotalItems(freshResult?.total ?? 0);
         });
         const items = result?.objects || (Array.isArray(result) ? result : []);
         const finalObjects = processItems(items, chainMatch);
-        setObjects(finalObjects);
-        setHasMore(false);
+        if (isReset) {
+          setObjects(finalObjects);
+        } else {
+          setObjects(prev => [...prev, ...finalObjects]);
+        }
+        setHasMore(result?.has_more ?? false);
         setTotalItems(result?.total ?? 0);
-        setCurrentSkip(0);
-        skipRef.current = 0;
+        setCurrentSkip(skip);
+        skipRef.current = skip + BROWSE_PAGE_SIZE;
       }
     } catch (err) {
       console.error('p2fk search error:', err);
@@ -440,7 +462,7 @@ export default function ObjectsPage({ network }) {
   };
 
   const loadMore = () => {
-    fetchObjects(activeSearchRef.current, skipRef.current, DEFAULT_QTY, true);
+    fetchObjects(activeSearchRef.current, skipRef.current, isUserSearch ? DEFAULT_QTY : BROWSE_PAGE_SIZE, false);
   };
 
   const loadPrev = () => {
@@ -576,7 +598,7 @@ export default function ObjectsPage({ network }) {
 
               {(hasMore || currentSkip > 0) && (
                 <div className="mt-8 flex items-center justify-center gap-4">
-                  {currentSkip > 0 && (
+                  {isUserSearch && currentSkip > 0 && (
                     <button
                       onClick={loadPrev}
                       disabled={loading}
@@ -586,10 +608,20 @@ export default function ObjectsPage({ network }) {
                       {loading ? 'Loading...' : 'Previous'}
                     </button>
                   )}
-                  <span className="text-sm text-gray-500">
-                    Page {Math.floor(currentSkip / DEFAULT_QTY) + 1}
-                    {totalItems > 0 && ` of ${Math.ceil(totalItems / DEFAULT_QTY)}`}
-                    {totalItems > 0 && <span className="text-gray-600"> ({totalItems} total)</span>}
+                  <span className="text-sm text-gray-500" data-testid="storefront-page-info">
+                    {isUserSearch ? (
+                      <>
+                        Page {Math.floor(currentSkip / DEFAULT_QTY) + 1}
+                        {totalItems > 0 && ` of ${Math.ceil(totalItems / DEFAULT_QTY)}`}
+                        {totalItems > 0 && <span className="text-gray-600"> ({totalItems} total)</span>}
+                      </>
+                    ) : (
+                      <>
+                        Showing 1–{filteredObjects.length}
+                        {hasMore && '+'}
+                        {totalItems > 0 && <span className="text-gray-600"> of {totalItems}</span>}
+                      </>
+                    )}
                   </span>
                   {hasMore && (
                     <button
@@ -598,15 +630,15 @@ export default function ObjectsPage({ network }) {
                       className="px-6 py-3 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white rounded-lg transition-colors font-medium"
                       data-testid="storefront-load-more"
                     >
-                      {loading ? 'Loading...' : 'Next'}
+                      {loading ? 'Loading...' : 'Load More'}
                     </button>
                   )}
                 </div>
               )}
 
-              {!hasMore && filteredObjects.length > 0 && currentSkip === 0 && (
+              {!hasMore && filteredObjects.length > 0 && (
                 <p className="text-center py-6 text-gray-600" data-testid="storefront-end">
-                  All {totalItems || filteredObjects.length} objects loaded
+                  All {filteredObjects.length} objects loaded
                 </p>
               )}
             </>

@@ -17,10 +17,11 @@
 const TTL = {
   profile:  30 * 60 * 1000,  // 30 min
   posts:    10 * 60 * 1000,  // 10 min
-  objects:  10 * 60 * 1000,  // 10 min
+  objects:   5 * 60 * 1000,  //  5 min
   counts:    3 * 60 * 1000,  //  3 min
   feed:     10 * 60 * 1000,  // 10 min
   search:    5 * 60 * 1000,  //  5 min
+  chain_objects: 5 * 60 * 1000, // 5 min
 };
 
 function _key(prefix, id) {
