@@ -61,11 +61,13 @@ Build a modern, responsive frontend for a blockchain-based decentralized social 
 - `root_search_index`: **(NEW)** Local text search index (txid, files_json, message, signed_by, blockchain, block_date)
 
 ## Recently Completed (Apr 7, 2026)
-- **Cross-Transaction HTML Resolution in SingleObjectPage (P1):** Fixed `HtmlViewer` component to use `resolveOnchainHtml` from the shared `onchainResolver.js` utility. On-chain HTML apps with cross-transaction references now render correctly via `srcDoc`.
+- **Cross-Transaction HTML Resolution in SingleObjectPage (P1):** Fixed `HtmlViewer` component to use `resolveOnchainHtml` for cross-tx references.
 - **OnchainAppViewer Build Fix:** Removed duplicate Steps 2-4 code that caused a webpack parse error.
-- **New User Setup Flow Fix:** Fixed auth flow so new users are redirected to `/setup` instead of `/feed`.
-- **Object Detail Fresh Data (P1):** Fixed `fetch_object_by_txid` to use `GetObjectByAddress` (verbose=true) after `GetObjectByTransactionId`, ensuring fresh owners/listings data. Reversed SingleObjectPage fetch order: backend-first (fresh) → mesh fallback (may be stale). BONG now shows 8 owners, 4 listings, FREE, "Claim (Free)" button.
-- **Storefront Listed/All Filter (P1):** Added "Listed" / "All" toggle to the Objects storefront, defaulting to "Listed". Uses `useMemo` client-side filtering on `Listings` data from p2fk.io.
+- **New User Setup Flow Fix:** Fixed auth redirect to `/setup` for new/unminted users.
+- **Object Detail Fresh Data (P1):** Fixed `fetch_object_by_txid` to use `GetObjectByAddress` (verbose=false per embii's guidance — fast + includes listings). Reversed SingleObjectPage fetch order: backend-first → mesh fallback.
+- **Prefetch Normalization Fix (P1):** Fixed `SingleObjectPage` prefetch path that bypassed backend. Now properly: calculates `total_supply` from Owners dict, converts p2fk.io `Listings` dict to display array, sets `is_listed`/`min_price`, continues fetching fresh data from backend after showing preview.
+- **Storefront Listed/All Filter (P1):** Added "Listed" / "All" toggle defaulting to "Listed".
+- **Max Hodl Label Fix:** Renamed "Max Supply" to "Max Hodl" (max per profile, not max supply). Hidden when equal to total_supply.
 
 ## Upcoming Tasks
 - (P2) WebRTC mesh as TURN server / bootstrap node architecture

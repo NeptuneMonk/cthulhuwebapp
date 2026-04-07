@@ -1329,8 +1329,7 @@ export default function SingleObjectPage({ network, lookupByAddress }) {
         image: prefetched.image || prefetched.Image,
         description: prefetched.description || prefetched.Description,
         license: prefetched.license || prefetched.License,
-        maximum: prefetched.maximum ?? prefetched.Maximum,
-        total_supply: prefetched.total_supply ?? prefetched.TotalSupply,
+        maximum: prefetched.maximum ?? prefetched.Maximum ?? 0,
         transaction_id: prefetched.transaction_id || prefetched.TransactionId,
         created_date: prefetched.created_date || prefetched.CreatedDate,
         object_address: prefetched.object_address,
@@ -1338,7 +1337,7 @@ export default function SingleObjectPage({ network, lookupByAddress }) {
         attributes: prefetched.attributes || prefetched.Attributes,
         _blockchain: prefetched._blockchain,
       };
-      // Normalize owners
+      // Normalize owners (p2fk.io returns dict {addr: {Item1: qty}} or {addr: qty})
       const rawOwners = prefetched.owners || prefetched.Owners || {};
       norm.owners = Array.isArray(rawOwners)
         ? rawOwners
@@ -1346,6 +1345,10 @@ export default function SingleObjectPage({ network, lookupByAddress }) {
             address: addr,
             quantity: typeof val === 'number' ? val : (val?.Item1 ?? val?.quantity ?? 0),
           }));
+      // Calculate total_supply from owners if not provided
+      norm.total_supply = prefetched.total_supply ?? prefetched.TotalSupply
+        ?? norm.owners.reduce((sum, o) => sum + (o.quantity || 0), 0);
+      norm.owner_count = norm.owners.length;
       // Normalize creators
       const rawCreators = prefetched.creators || prefetched.Creators || {};
       norm.creators = Array.isArray(rawCreators)
@@ -1357,16 +1360,41 @@ export default function SingleObjectPage({ network, lookupByAddress }) {
       if (!norm.object_address && norm.creators.length > 0) {
         norm.object_address = norm.creators[0].address;
       }
-      norm.listings = prefetched.listings || prefetched.Listings || [];
+      // Normalize listings (p2fk.io returns dict {addr: {Qty, Value, ...}}, display expects array)
+      const rawListings = prefetched.listings || prefetched.Listings || {};
+      if (Array.isArray(rawListings)) {
+        norm.listings = rawListings;
+      } else if (typeof rawListings === 'object' && rawListings !== null) {
+        norm.listings = Object.entries(rawListings).map(([addr, l]) => ({
+          address: addr,
+          quantity: l?.Qty ?? l?.quantity ?? 0,
+          price: l?.Value ?? l?.price ?? 0,
+          requestor: l?.Requestor ?? l?.requestor ?? '',
+          block_date: l?.BlockDate ?? l?.block_date ?? '',
+        }));
+      } else {
+        norm.listings = [];
+      }
+      norm.is_listed = norm.listings.length > 0;
+      norm.min_price = norm.is_listed ? Math.min(...norm.listings.map(l => l.price ?? 0)) : 0;
       norm.offers = prefetched.offers || prefetched.Offers || [];
+      if (!Array.isArray(norm.offers) && typeof norm.offers === 'object') {
+        norm.offers = Object.entries(norm.offers).map(([addr, o]) => ({
+          address: addr,
+          quantity: o?.Qty ?? o?.quantity ?? 0,
+          price: o?.Value ?? o?.price ?? 0,
+        }));
+      }
       norm.royalties = prefetched.royalties || prefetched.Royalties || {};
       setObject(norm);
       setLoading(false);
       setError(null);
-      return;
+      // Don't return — still fetch fresh data from backend to replace prefetched data
     }
 
-    setLoading(true);
+    if (!prefetched) {
+      setLoading(true);
+    }
     setError(null);
 
     const fetchObject = async () => {
