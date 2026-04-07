@@ -1370,31 +1370,9 @@ export default function SingleObjectPage({ network, lookupByAddress }) {
     setError(null);
 
     const fetchObject = async () => {
-      // Skip mesh/blockchain for direct object lookups — backend cache is fast
+      // Always fetch directly from backend for object detail (fresh listings via GetObjectByAddress)
       try {
-        const { data, source } = await import('@/utils/meshFirstFetch').then(m =>
-          m.meshFirstFetch(`/${apiPath}`, { network }, { timeout: 2000 })
-        );
-        // Validate returned data has essential fields before accepting
-        if (data && !data.error && !data.detail && (data.name || data.urn || data.object_address)) {
-          setObject({
-            ...data,
-            owners: data.owners || [],
-            creators: data.creators || [],
-            listings: data.listings || [],
-            offers: data.offers || [],
-            royalties: data.royalties || {},
-          });
-          // Cache by URN for future cross-chain lookups
-          if (data.urn) cacheByUrn(data.urn, data, null);
-          setLoading(false);
-          return;
-        }
-      } catch {}
-
-      // Fallback to direct backend API call
-      try {
-        const res = await axios.get(`${API}/${apiPath}`, { params: { network } });
+        const res = await axios.get(`${API}/${apiPath}`, { params: { network }, timeout: 30000 });
         const d = res.data;
         if (d && !d.detail && (d.name || d.urn || d.object_address)) {
           setObject({
@@ -1406,12 +1384,32 @@ export default function SingleObjectPage({ network, lookupByAddress }) {
             royalties: d.royalties || {},
           });
           if (d?.urn) cacheByUrn(d.urn, d, null);
-        } else {
-          setError(d?.detail || 'Object data is incomplete');
+          setLoading(false);
+          return;
         }
-      } catch (err) {
-        setError(err.response?.data?.detail || 'Failed to load object');
-      }
+      } catch {}
+
+      // Fallback: try mesh if backend fails
+      try {
+        const { data, source } = await import('@/utils/meshFirstFetch').then(m =>
+          m.meshFirstFetch(`/${apiPath}`, { network }, { timeout: 8000 })
+        );
+        if (data && !data.error && !data.detail && (data.name || data.urn || data.object_address)) {
+          setObject({
+            ...data,
+            owners: data.owners || [],
+            creators: data.creators || [],
+            listings: data.listings || [],
+            offers: data.offers || [],
+            royalties: data.royalties || {},
+          });
+          if (data.urn) cacheByUrn(data.urn, data, null);
+          setLoading(false);
+          return;
+        }
+      } catch {}
+
+      setError('Failed to load object');
       setLoading(false);
     };
 

@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef, useEffect } from 'react';
+import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { FiSearch, FiTrendingUp, FiPlus, FiFilter, FiArrowLeft, FiX, FiGlobe, FiArrowRight } from 'react-icons/fi';
@@ -162,6 +162,7 @@ export default function ObjectsPage({ network }) {
   const [query, setQuery] = useState('');
   const [showCreate, setShowCreate] = useState(false);
   const [activeFilter, setActiveFilter] = useState('all');
+  const [listingFilter, setListingFilter] = useState('listed'); // 'listed' | 'all'
   const [objects, setObjects] = useState([]);
   const [loading, setLoading] = useState(false);
   const [hasMore, setHasMore] = useState(false);
@@ -406,6 +407,19 @@ export default function ObjectsPage({ network }) {
     fetchObjects('*', 0, DEFAULT_QTY, true);
   }, [activeFilter]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  /** Apply listing filter for display */
+  const filteredObjects = useMemo(() => {
+    if (listingFilter !== 'listed') return objects;
+    return objects.filter(o => {
+      const listings = o.Listings || o.listings;
+      if (o.is_listed) return true;
+      if (listings && typeof listings === 'object' && !Array.isArray(listings)) return Object.keys(listings).length > 0;
+      if (Array.isArray(listings)) return listings.length > 0;
+      return false;
+    });
+  }, [objects, listingFilter]);
+
+
   const handleSubmit = (e) => {
     e.preventDefault();
     const term = query.trim();
@@ -483,12 +497,38 @@ export default function ObjectsPage({ network }) {
           />
         </form>
 
-          {/* Chain Filters */}
+          {/* Listing + Chain Filters */}
           {!isUserSearch && (
             <div className="bg-gray-900/60 border border-gray-800 rounded-xl p-4 mb-6" data-testid="chain-filter-section">
-              <div className="flex items-center gap-2 mb-3">
-                <FiFilter size={14} className="text-gray-400" />
-                <span className="text-sm font-medium text-gray-300">Filter by Chain</span>
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <FiFilter size={14} className="text-gray-400" />
+                  <span className="text-sm font-medium text-gray-300">Filters</span>
+                </div>
+                <div className="flex items-center bg-gray-800 rounded-lg p-0.5" data-testid="listing-filter-toggle">
+                  <button
+                    onClick={() => setListingFilter('listed')}
+                    className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${
+                      listingFilter === 'listed'
+                        ? 'bg-purple-600 text-white shadow-sm'
+                        : 'text-gray-400 hover:text-gray-200'
+                    }`}
+                    data-testid="filter-listed"
+                  >
+                    Listed
+                  </button>
+                  <button
+                    onClick={() => setListingFilter('all')}
+                    className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${
+                      listingFilter === 'all'
+                        ? 'bg-gray-600 text-white shadow-sm'
+                        : 'text-gray-400 hover:text-gray-200'
+                    }`}
+                    data-testid="filter-all"
+                  >
+                    All
+                  </button>
+                </div>
               </div>
               <div className="flex flex-wrap gap-2" data-testid="chain-filters">
                 {CHAIN_FILTERS.map(f => {
@@ -511,9 +551,9 @@ export default function ObjectsPage({ network }) {
           )}
 
           {/* Results */}
-          {loading && objects.length === 0 ? (
+          {loading && filteredObjects.length === 0 ? (
             <StorefrontSkeleton />
-          ) : objects.length === 0 ? (
+          ) : filteredObjects.length === 0 ? (
             <div className="text-center py-16">
               <FiTrendingUp size={48} className="mx-auto text-gray-700 mb-4" />
               <p className="text-lg text-gray-400">
@@ -525,11 +565,11 @@ export default function ObjectsPage({ network }) {
             <>
               {isUserSearch && (
                 <p className="text-sm text-gray-500 mb-4" data-testid="objects-result-count">
-                  Showing {objects.length} result{objects.length !== 1 ? 's' : ''} for "{activeSearchRef.current}"
+                  Showing {filteredObjects.length} result{filteredObjects.length !== 1 ? 's' : ''} for "{activeSearchRef.current}"
                 </p>
               )}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
-                {objects.map((obj, idx) => (
+                {filteredObjects.map((obj, idx) => (
                   <ObjectCard key={`${obj.TransactionId || obj.transaction_id || obj.Id || obj.id || idx}`} object={obj} network={network} onCrossNetwork={setCrossNetObj} />
                 ))}
               </div>
@@ -564,9 +604,9 @@ export default function ObjectsPage({ network }) {
                 </div>
               )}
 
-              {!hasMore && objects.length > 0 && currentSkip === 0 && (
+              {!hasMore && filteredObjects.length > 0 && currentSkip === 0 && (
                 <p className="text-center py-6 text-gray-600" data-testid="storefront-end">
-                  All {totalItems || objects.length} objects loaded
+                  All {totalItems || filteredObjects.length} objects loaded
                 </p>
               )}
             </>

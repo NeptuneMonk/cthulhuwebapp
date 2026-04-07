@@ -1193,48 +1193,50 @@ async def get_object_detail(txid: str, network: str = 'btc-testnet'):
         is_mainnet = 'mainnet' in network.lower()
         formatted = None
 
-        cache_key = f"storefront:{network}"
-        cached = await object_cache_col.find_one({'cache_key': cache_key}, {'_id': 0})
-        if cached and cached.get('objects'):
-            for obj in cached['objects']:
-                if obj.get('transaction_id') == txid:
-                    formatted = dict(obj)
-                    break
+        # Always try fresh verbose fetch first (includes Listings)
+        raw = await fetch_object_by_txid(txid, is_mainnet)
+        if raw:
+            formatted = format_object_for_api(raw)
+
+        # Fallback to storefront cache
+        if not formatted:
+            cache_key = f"storefront:{network}"
+            cached = await object_cache_col.find_one({'cache_key': cache_key}, {'_id': 0})
+            if cached and cached.get('objects'):
+                for obj in cached['objects']:
+                    if obj.get('transaction_id') == txid:
+                        formatted = dict(obj)
+                        break
 
         if not formatted:
-            raw = await fetch_object_by_txid(txid, is_mainnet)
-            if not raw:
-                # Fallback: search the object_index for a cached entry with this txid
-                idx_doc = await object_index_col.find_one(
-                    {'raw.transaction_id': txid}, {'_id': 0, 'raw': 1}
-                )
-                if idx_doc and idx_doc.get('raw'):
-                    formatted = idx_doc['raw']
-                else:
-                    # Fallback 2: search SQLite api_cache for GetObjectsOwnedByAddress results
-                    try:
-                        from db_sqlite import get_conn
-                        import json as _json
-                        conn = await get_conn()
-                        async with conn.execute(
-                            "SELECT data FROM api_cache WHERE _id LIKE 'p2fk:GetObjectsOwnedByAddress/%' AND data LIKE ?",
-                            (f'%{txid}%',)
-                        ) as cursor:
-                            rows = await cursor.fetchall()
-                        for (data_str,) in rows:
-                            parsed = _json.loads(data_str)
-                            items = parsed.get('data', []) if isinstance(parsed, dict) else []
-                            for obj in items:
-                                if obj.get('TransactionId') == txid:
-                                    formatted = format_object_for_api(obj)
-                                    break
-                            if formatted:
-                                break
-                    except Exception as e:
-                        logger.debug(f"SQLite fallback error: {e}")
-
+            # Fallback: search the object_index for a cached entry with this txid
+            idx_doc = await object_index_col.find_one(
+                {'raw.transaction_id': txid}, {'_id': 0, 'raw': 1}
+            )
+            if idx_doc and idx_doc.get('raw'):
+                formatted = idx_doc['raw']
             else:
-                formatted = format_object_for_api(raw)
+                # Fallback 2: search SQLite api_cache for GetObjectsOwnedByAddress results
+                try:
+                    from db_sqlite import get_conn
+                    import json as _json
+                    conn = await get_conn()
+                    async with conn.execute(
+                        "SELECT data FROM api_cache WHERE _id LIKE 'p2fk:GetObjectsOwnedByAddress/%' AND data LIKE ?",
+                        (f'%{txid}%',)
+                    ) as cursor:
+                        rows = await cursor.fetchall()
+                    for (data_str,) in rows:
+                        parsed = _json.loads(data_str)
+                        items = parsed.get('data', []) if isinstance(parsed, dict) else []
+                        for obj in items:
+                            if obj.get('TransactionId') == txid:
+                                formatted = format_object_for_api(obj)
+                                break
+                        if formatted:
+                            break
+                except Exception as e:
+                    logger.debug(f"SQLite fallback error: {e}")
 
         if not formatted:
             raise HTTPException(status_code=404, detail="Object not found")
