@@ -171,6 +171,163 @@ async def check_urn_availability(urn: str, network: str = 'btc-testnet'):
         return {"available": True, "urn": urn, "claimed_by": None, "type": None, "error": str(e)}
 
 
+# Known image/media extensions for auto-detecting cover images
+_IMAGE_EXTS = {'jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp'}
+_MEDIA_EXTS = {'mp4', 'mp3', 'wav', 'ogg', 'webm', 'mov', 'pdf'}
+_WEB_EXTS = {'html', 'htm', 'zip'}
+
+
+@router.get("/txid/inspect/{txid}")
+async def inspect_txid(txid: str, network: str = 'btc-testnet'):
+    """Inspect a P2FK transaction and extract metadata for object claiming.
+
+    When a user wants to 'claim' an on-chain data injection as a tradeable object,
+    this endpoint fetches the P2FK root, parses its files/messages, and returns
+    structured metadata suitable for auto-populating the object creation form.
+
+    Returns:
+        - files: list of files found in the root
+        - obj_data: parsed OBJ JSON if present (already minted object)
+        - suggested_urn: auto-suggested URN based on file content
+        - suggested_image: auto-suggested image reference
+        - urn_available: whether the suggested URN is unclaimed on this network
+    """
+    txid = txid.strip().lower()
+    if not re.match(r'^[0-9a-f]{64}$', txid):
+        return {"found": False, "error": "Invalid transaction ID format"}
+
+    is_mainnet = 'mainnet' in network.lower()
+
+    # 1. Fetch root from p2fk.io (tries both networks)
+    root = await p2fk_get(f"GetRootByTransactionID/{txid}", is_mainnet)
+
+    # If not found on current network, try the other
+    if not root or not root.get('SignedBy'):
+        root = await p2fk_get(f"GetRootByTransactionID/{txid}", not is_mainnet)
+
+    if not root or not root.get('SignedBy'):
+        return {"found": False, "error": "Transaction not found or contains no P2FK data", "txid": txid}
+
+    # 2. Parse the root data
+    files_dict = root.get('File', {})
+    messages = root.get('Message', [])
+    signed_by = root.get('SignedBy', '')
+    signed = root.get('Signed', False)
+    block_date = root.get('BlockDate', '')
+    keywords = root.get('Keyword', {})
+    confirmations = root.get('Confirmations', 0)
+
+    # 3. Extract structured data
+    files_list = []
+    for fname, fsize in files_dict.items():
+        ext = fname.rsplit('.', 1)[-1].lower() if '.' in fname else ''
+        files_list.append({
+            "name": fname,
+            "size": fsize,
+            "extension": ext,
+            "is_image": ext in _IMAGE_EXTS,
+            "is_media": ext in _MEDIA_EXTS,
+            "is_web": ext in _WEB_EXTS,
+            "is_protocol": fname in ('OBJ', 'PRO', 'GIV', 'BRN', 'BUY', 'LST', 'SEC', 'INQ'),
+        })
+
+    # 4. Try to parse OBJ JSON from messages (if this is an already-minted object)
+    obj_data = None
+    for msg in messages:
+        try:
+            parsed = json.loads(msg)
+            if isinstance(parsed, dict) and ('urn' in parsed or 'URN' in parsed):
+                obj_data = parsed
+                break
+        except (json.JSONDecodeError, TypeError):
+            continue
+
+    # 4b. If root has OBJ file but no parsed JSON, fetch via GetObjectByTransactionId
+    has_obj_file = any(f['name'] == 'OBJ' for f in files_list)
+    if has_obj_file and not obj_data:
+        try:
+            obj_full = await fetch_object_by_txid(txid, is_mainnet)
+            if isinstance(obj_full, dict) and obj_full.get('Name'):
+                obj_data = {
+                    'urn': obj_full.get('URN', ''),
+                    'nme': obj_full.get('Name', ''),
+                    'dsc': obj_full.get('Description', ''),
+                    'img': obj_full.get('Image', ''),
+                    'uri': obj_full.get('URI', ''),
+                    'lic': obj_full.get('License', ''),
+                }
+        except Exception as e:
+            logger.debug(f"OBJ fetch for {txid}: {e}")
+
+    # 5. Determine suggested URN and image
+    suggested_urn = None
+    suggested_name = None
+    suggested_image = None
+    suggested_description = None
+    suggested_uri = None
+    suggested_license = None
+
+    if obj_data:
+        # Already has OBJ JSON — use its fields directly
+        suggested_urn = obj_data.get('urn') or obj_data.get('URN', '')
+        suggested_name = obj_data.get('nme') or obj_data.get('Name', '')
+        suggested_description = obj_data.get('dsc') or obj_data.get('Description', '')
+        suggested_image = obj_data.get('img') or obj_data.get('Image', '')
+        suggested_uri = obj_data.get('uri') or obj_data.get('URI', '')
+        suggested_license = obj_data.get('lic') or obj_data.get('License', '')
+    else:
+        # Raw data injection — derive URN from file names
+        # Find the first non-protocol file
+        content_files = [f for f in files_list if not f['is_protocol']]
+        if content_files:
+            primary_file = content_files[0]
+            fname = primary_file['name']
+            # URN for on-chain content: BTC:{txid}\{filename} (SUP format)
+            chain_prefix = 'BTC' if 'btc' in network.lower() or 'mainnet' in network.lower() else 'BTC'
+            for n in network.lower().split('-'):
+                if n in ('doge', 'dog'): chain_prefix = 'DOGE'
+                elif n == 'ltc': chain_prefix = 'LTC'
+                elif n == 'mzc': chain_prefix = 'MZC'
+            suggested_urn = f"{chain_prefix}:{txid}\\{fname}"
+            suggested_name = fname.rsplit('.', 1)[0] if '.' in fname else fname
+
+            # If it's an image file, suggest it as the cover image too
+            if primary_file['is_image']:
+                suggested_image = suggested_urn
+
+    # 6. Check URN availability on the current network
+    urn_available = None
+    urn_claimed_by = None
+    if suggested_urn:
+        try:
+            urn_check = await check_urn_availability(suggested_urn, network)
+            urn_available = urn_check.get('available', True)
+            urn_claimed_by = urn_check.get('claimed_by')
+        except Exception:
+            urn_available = None  # Unknown — don't block
+
+    return {
+        "found": True,
+        "txid": txid,
+        "signed_by": signed_by,
+        "signed": signed,
+        "block_date": block_date,
+        "confirmations": confirmations,
+        "files": files_list,
+        "messages": [m[:200] for m in messages] if messages else [],
+        "keywords": list(keywords.keys()) if isinstance(keywords, dict) else [],
+        "obj_data": obj_data,
+        "suggested_urn": suggested_urn,
+        "suggested_name": suggested_name,
+        "suggested_description": suggested_description,
+        "suggested_image": suggested_image,
+        "suggested_uri": suggested_uri,
+        "suggested_license": suggested_license,
+        "urn_available": urn_available,
+        "urn_claimed_by": urn_claimed_by,
+    }
+
+
 @router.get("/objects/owned/{address}")
 async def get_owned_objects(address: str, network: str = 'btc-testnet', skip: int = 0, limit: int = 5, force: bool = False):
     try:

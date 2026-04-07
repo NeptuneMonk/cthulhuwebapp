@@ -1,5 +1,5 @@
-import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { FiX, FiSend, FiPlus, FiTrash2, FiPercent, FiBox, FiImage, FiUpload, FiShield, FiCheck, FiArrowLeft, FiChevronDown } from 'react-icons/fi';
+import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
+import { FiX, FiSend, FiPlus, FiTrash2, FiPercent, FiBox, FiImage, FiUpload, FiShield, FiCheck, FiArrowLeft, FiChevronDown, FiSearch, FiDownload } from 'react-icons/fi';
 import { useWallet } from '@/hooks/useWallet';
 import { useAuth } from '@/hooks/useAuth';
 import { IpfsStatus } from '@/components/IpfsStatus';
@@ -70,6 +70,71 @@ export const ObjectCreateModal = ({ onClose, network, prefillImage, fullPage, te
   const coverFileRef = useRef(null);
   const contentFileRef = useRef(null);
   const urnCheckTimer = useRef(null);
+
+  // --- TXID Import state ---
+  const [txidInput, setTxidInput] = useState('');
+  const [txidLookup, setTxidLookup] = useState(null); // { found, files, suggested_urn, ... }
+  const [txidLoading, setTxidLoading] = useState(false);
+  const [txidError, setTxidError] = useState(null);
+  const [showTxidImport, setShowTxidImport] = useState(false);
+
+  // TXID lookup handler
+  const inspectTxid = useCallback(async (rawTxid) => {
+    const cleaned = (rawTxid || '').trim().toLowerCase();
+    if (!/^[0-9a-f]{64}$/.test(cleaned)) {
+      setTxidError('Enter a valid 64-character transaction ID');
+      setTxidLookup(null);
+      return;
+    }
+    setTxidLoading(true);
+    setTxidError(null);
+    setTxidLookup(null);
+    try {
+      const res = await axios.get(`${API}/txid/inspect/${cleaned}`, {
+        params: { network: network || 'btc-testnet' },
+      });
+      if (res.data?.found) {
+        setTxidLookup(res.data);
+      } else {
+        setTxidError(res.data?.error || 'No P2FK data found in this transaction');
+      }
+    } catch (err) {
+      setTxidError(err.response?.data?.detail || 'Failed to inspect transaction');
+    } finally {
+      setTxidLoading(false);
+    }
+  }, [network]);
+
+  // Populate form from TXID inspection result
+  const populateFromTxid = useCallback(() => {
+    if (!txidLookup) return;
+    const d = txidLookup;
+    if (d.suggested_urn) checkUrn(d.suggested_urn);
+    if (d.suggested_name && !name) setName(d.suggested_name);
+    if (d.suggested_description && !description) setDescription(d.suggested_description);
+    if (d.suggested_image && !image) setImage(d.suggested_image);
+    if (d.suggested_uri && !uri) setUri(d.suggested_uri);
+    if (d.suggested_license && !license) setLicense(d.suggested_license);
+    setShowTxidImport(false);
+  }, [txidLookup, name, description, image, uri, license]); // eslint-disable-line
+
+  // Only auto-inspect on paste, not on every keystroke
+  const handleTxidChange = useCallback((e) => {
+    const val = e.target.value;
+    setTxidInput(val);
+    setTxidLookup(null);
+    setTxidError(null);
+  }, []);
+
+  const handleTxidPaste = useCallback((e) => {
+    const pasted = (e.clipboardData || window.clipboardData).getData('text');
+    const cleaned = pasted.trim().toLowerCase();
+    if (/^[0-9a-f]{64}$/.test(cleaned)) {
+      setTxidInput(cleaned);
+      inspectTxid(cleaned);
+      e.preventDefault();
+    }
+  }, [inspectTxid]);
 
   // Auto-save draft
   useEffect(() => {
@@ -649,6 +714,137 @@ export const ObjectCreateModal = ({ onClose, network, prefillImage, fullPage, te
         </div>
       ) : (
         <>
+          {/* TXID Import — Claim unclaimed on-chain data */}
+          <div className="border border-gray-800 rounded-lg bg-gray-800/20" data-testid="txid-import-section">
+            <button
+              onClick={() => setShowTxidImport(v => !v)}
+              className="w-full flex items-center justify-between px-3 py-2.5 text-xs font-medium text-gray-400 hover:text-gray-200 transition-colors"
+              data-testid="txid-import-toggle"
+            >
+              <span className="flex items-center gap-1.5"><FiDownload size={13} /> Import from Transaction ID</span>
+              <FiChevronDown size={14} className={`transition-transform ${showTxidImport ? 'rotate-180' : ''}`} />
+            </button>
+            {showTxidImport && (
+              <div className="px-3 pb-3 space-y-2">
+                <p className="text-[10px] text-gray-600">Paste a TXID containing on-chain data to auto-populate this form. Claim unclaimed URNs as tradeable objects.</p>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={txidInput}
+                    onChange={handleTxidChange}
+                    onPaste={handleTxidPaste}
+                    placeholder="Paste transaction ID (64 hex characters)"
+                    className="flex-1 px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg text-gray-100 text-xs font-mono placeholder-gray-600 focus:border-blue-500 focus:outline-none"
+                    data-testid="txid-import-input"
+                    spellCheck={false}
+                    autoComplete="off"
+                  />
+                  <button
+                    onClick={() => inspectTxid(txidInput)}
+                    disabled={txidLoading || txidInput.trim().length !== 64}
+                    className="px-3 py-2 rounded-lg text-xs font-medium bg-blue-600 hover:bg-blue-500 disabled:bg-gray-700 disabled:text-gray-500 text-white transition-colors"
+                    data-testid="txid-inspect-btn"
+                  >
+                    {txidLoading ? <span className="inline-block w-3.5 h-3.5 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" /> : <FiSearch size={14} />}
+                  </button>
+                </div>
+
+                {txidError && <p className="text-[10px] text-red-400" data-testid="txid-error">{txidError}</p>}
+
+                {txidLookup && (
+                  <div className="space-y-2 p-2.5 bg-gray-900/60 border border-gray-700/50 rounded-lg" data-testid="txid-result">
+                    {/* Header info */}
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5">
+                        {txidLookup.signed ? (
+                          <span className="text-[10px] text-emerald-400 flex items-center gap-0.5"><FiCheck size={10} /> Signed</span>
+                        ) : (
+                          <span className="text-[10px] text-gray-500">Unsigned</span>
+                        )}
+                        {txidLookup.confirmations > 0 && (
+                          <span className="text-[10px] text-gray-500">&middot; {txidLookup.confirmations.toLocaleString()} conf</span>
+                        )}
+                      </div>
+                      {txidLookup.signed_by && (
+                        <span className="text-[10px] text-gray-500 font-mono">{txidLookup.signed_by.slice(0, 8)}...{txidLookup.signed_by.slice(-6)}</span>
+                      )}
+                    </div>
+
+                    {/* Files found */}
+                    {txidLookup.files?.length > 0 && (
+                      <div>
+                        <p className="text-[10px] text-gray-500 mb-1">Files in transaction:</p>
+                        <div className="flex flex-wrap gap-1">
+                          {txidLookup.files.map((f, i) => (
+                            <span key={i} className={`px-1.5 py-0.5 rounded text-[10px] font-mono ${
+                              f.is_protocol ? 'bg-purple-500/20 text-purple-300' :
+                              f.is_image ? 'bg-blue-500/20 text-blue-300' :
+                              f.is_media ? 'bg-amber-500/20 text-amber-300' :
+                              'bg-gray-700 text-gray-300'
+                            }`}>
+                              {f.name}{f.size ? ` (${f.size})` : ''}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Suggested fields preview */}
+                    {txidLookup.suggested_urn && (
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] text-gray-500 w-10 flex-shrink-0">URN:</span>
+                          <span className="text-[10px] text-gray-200 font-mono break-all flex-1">{txidLookup.suggested_urn}</span>
+                        </div>
+                        {txidLookup.suggested_name && (
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] text-gray-500 w-10 flex-shrink-0">Name:</span>
+                            <span className="text-[10px] text-gray-200">{txidLookup.suggested_name}</span>
+                          </div>
+                        )}
+                        {txidLookup.suggested_image && (
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] text-gray-500 w-10 flex-shrink-0">Image:</span>
+                            <span className="text-[10px] text-gray-200 font-mono break-all flex-1">{txidLookup.suggested_image}</span>
+                          </div>
+                        )}
+                        {txidLookup.suggested_description && (
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] text-gray-500 w-10 flex-shrink-0">Desc:</span>
+                            <span className="text-[10px] text-gray-200 truncate">{txidLookup.suggested_description}</span>
+                          </div>
+                        )}
+
+                        {/* URN availability status */}
+                        <div className="flex items-center gap-1.5 mt-1">
+                          {txidLookup.urn_available === true && (
+                            <span className="text-[10px] text-emerald-400 flex items-center gap-0.5"><FiCheck size={10} /> URN available — ready to claim</span>
+                          )}
+                          {txidLookup.urn_available === false && (
+                            <span className="text-[10px] text-red-400">URN already claimed by {txidLookup.urn_claimed_by || 'another user'}</span>
+                          )}
+                          {txidLookup.urn_available === null && (
+                            <span className="text-[10px] text-gray-500">URN availability unknown</span>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Populate button */}
+                    <button
+                      onClick={populateFromTxid}
+                      disabled={txidLookup.urn_available === false}
+                      className="w-full py-1.5 rounded text-xs font-medium bg-blue-600 hover:bg-blue-500 text-white disabled:bg-gray-700 disabled:text-gray-500 transition-colors flex items-center justify-center gap-1.5"
+                      data-testid="txid-populate-btn"
+                    >
+                      <FiDownload size={12} /> Populate Form
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
           {/* URN (required) — the media/content being claimed */}
           <div>
             <label className="block text-xs text-gray-400 font-medium mb-1.5">URN (content/media) *</label>
