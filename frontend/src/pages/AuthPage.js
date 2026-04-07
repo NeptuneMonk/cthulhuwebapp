@@ -6,7 +6,7 @@ import { copyToClipboard } from '@/utils/clipboard';
 import { CTHULHU_SVG } from '@/components/CthulhuLogo';
 
 export default function AuthPage() {
-  const { importKeyLogin, createNewWallet, unlockWallet, isConnected, isWalletUnlocked, needsUnlock, lookingUp } = useAuth();
+  const { importKeyLogin, createNewWallet, unlockWallet, isConnected, isWalletUnlocked, needsUnlock, lookingUp, isMinted } = useAuth();
   const navigate = useNavigate();
   const [mode, setMode] = useState('import'); // 'import' | 'create' | 'backup' | 'unlock'
   const [password, setPassword] = useState('');
@@ -45,8 +45,10 @@ export default function AuthPage() {
 
   // If already logged in with unlocked wallet, redirect
   useEffect(() => {
-    if (isConnected && isWalletUnlocked && mode !== 'backup') navigate('/feed');
-  }, [isConnected, isWalletUnlocked, navigate, mode]);
+    if (isConnected && isWalletUnlocked && !lookingUp && mode !== 'backup') {
+      navigate(isMinted ? '/feed' : '/setup');
+    }
+  }, [isConnected, isWalletUnlocked, lookingUp, isMinted, navigate, mode]);
 
   const handleImportKey = async (e) => {
     e?.preventDefault();
@@ -58,7 +60,7 @@ export default function AuthPage() {
     try {
       localStorage.setItem('cthulhu_network', authNetwork);
       await importKeyLogin(importWif.trim(), password, authNetwork);
-      navigate('/feed');
+      // Navigation handled by auto-redirect useEffect after state settles
     } catch (err) {
       console.error('Import error:', err);
       setError(err.message || 'Import failed — check console for details');
@@ -136,7 +138,7 @@ export default function AuthPage() {
           // Re-import with the decrypted WIF (this sets up full user state)
           await importKeyLogin(wifDecrypted, password, recovery.network);
         }
-        navigate('/feed');
+        // Navigation handled by auto-redirect useEffect
       } catch (err) {
         console.error('Unlock error:', err);
         setError(err.message || 'Wrong password');
@@ -257,12 +259,12 @@ export default function AuthPage() {
             </label>
 
             <button
-              onClick={() => navigate('/feed')}
+              onClick={() => navigate('/setup')}
               disabled={!backedUp}
               className="w-full py-3 bg-purple-600 hover:bg-purple-700 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-lg font-medium transition-colors"
               data-testid="continue-btn"
             >
-              Continue
+              Set Up Profile
             </button>
           </div>
         </div>

@@ -61,8 +61,9 @@ Build a modern, responsive frontend for a blockchain-based decentralized social 
 - `root_search_index`: **(NEW)** Local text search index (txid, files_json, message, signed_by, blockchain, block_date)
 
 ## Recently Completed (Apr 7, 2026)
-- **Cross-Transaction HTML Resolution in SingleObjectPage (P1):** Fixed `HtmlViewer` component to use `resolveOnchainHtml` from the shared `onchainResolver.js` utility. Previously, on-chain HTML apps with cross-transaction references (e.g., `../txid/jquery.js`) rendered broken in Single Object View because the blob URL iframe couldn't resolve relative paths. Now fetches raw HTML text, resolves all cross-tx refs (inlines JS/CSS, rewrites media URLs), and renders via `srcDoc`. Tested with BONG 玉 game — renders fully with paddles, scores, and scripts.
+- **Cross-Transaction HTML Resolution in SingleObjectPage (P1):** Fixed `HtmlViewer` component to use `resolveOnchainHtml` from the shared `onchainResolver.js` utility. Previously, on-chain HTML apps with cross-transaction references (e.g., `../txid/jquery.js`) rendered broken in Single Object View because the blob URL iframe couldn't resolve relative paths. Now fetches raw HTML text, resolves all cross-tx refs (inlines JS/CSS, rewrites media URLs), and renders via `srcDoc`. Tested with BONG game — renders fully with paddles, scores, and scripts.
 - **OnchainAppViewer Build Fix:** Removed duplicate Steps 2-4 code that was left behind after the resolver extraction. This code tried to reassign a `const` variable (`assembled`), causing a webpack parse error that blocked the component from compiling.
+- **New User Setup Flow Fix:** Fixed auth flow so new users are redirected to `/setup` (Profile Setup wizard) instead of `/feed`. Backup screen button now says "Set Up Profile". Auto-redirect useEffect checks `isMinted` status. Returning users who unlock still go to `/feed`.
 
 ## Upcoming Tasks
 - (P2) WebRTC mesh as TURN server / bootstrap node architecture
