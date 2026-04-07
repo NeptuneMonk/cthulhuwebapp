@@ -717,21 +717,30 @@ const HtmlViewer = ({ src, fallbackSrc, filename, source, chain, txid: propTxid,
         });
 
         if (!cancelled) {
-          // Inject viewer/genid params for generative art apps
+          // Inject responsive CSS + viewer/genid params for on-chain apps
           let finalHtml = resolved;
+
+          // 1. Responsive fit: center canvas content with minimal CSS, dark background
+          const fitCss = `<style>html,body{margin:0;padding:0;background:#000;display:flex;align-items:center;justify-content:center;min-height:100vh;overflow:auto}</style>`;
+          const fitScript = '';
+
+          // 2. Viewer/genid query param injection for generative art
+          let paramScript = '';
           if (viewerUrn || genid) {
             const params = {};
             if (viewerUrn) params.viewer = viewerUrn;
             if (genid) params.genid = genid;
             const qs = Object.entries(params).map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join('&');
-            const injection = `<script>(function(){var qs="?${qs.replace(/"/g, '\\"')}";var O=URLSearchParams;window.URLSearchParams=function(i){return new O(!i||i===""||i==="?"||i===location.search?qs:i)};window.URLSearchParams.prototype=O.prototype;${Object.entries(params).map(([k, v]) => `window.${k}="${v.replace(/"/g, '\\"')}"`).join(';')}})();<\/script>`;
-            // Insert right after <head> or at the very beginning
-            if (finalHtml.match(/<head[^>]*>/i)) {
-              finalHtml = finalHtml.replace(/<head[^>]*>/i, '$&' + injection);
-            } else {
-              finalHtml = injection + finalHtml;
-            }
+            paramScript = `<script>(function(){var qs="?${qs.replace(/"/g, '\\"')}";var O=URLSearchParams;window.URLSearchParams=function(i){return new O(!i||i===""||i==="?"||i===location.search?qs:i)};window.URLSearchParams.prototype=O.prototype;${Object.entries(params).map(([k, v]) => `window.${k}="${v.replace(/"/g, '\\"')}"`).join(';')}})();<\/script>`;
           }
+
+          const injection = fitCss + fitScript + paramScript;
+          if (finalHtml.match(/<head[^>]*>/i)) {
+            finalHtml = finalHtml.replace(/<head[^>]*>/i, '$&' + injection);
+          } else {
+            finalHtml = injection + finalHtml;
+          }
+
           setResolvedHtml(finalHtml);
           setDetectedType('html');
           setResolving(false);

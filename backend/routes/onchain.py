@@ -44,6 +44,7 @@ def parse_p2fk_root(raw_bytes: bytes, target_filename: str = None) -> dict:
     )
 
     all_files = []
+    P2FK_DELIMS = b'\\/:*?"<>|'
     for match in file_pattern.finditer(ascii_str):
         filename = match.group(1).strip()
         ext = match.group(2).lower()
@@ -51,6 +52,9 @@ def parse_p2fk_root(raw_bytes: bytes, target_filename: str = None) -> dict:
         size_val = int(size_str)
 
         content_start = match.end()
+        # Skip delimiter byte between size and content (P2FK protocol)
+        if content_start < len(raw_bytes) and raw_bytes[content_start] in P2FK_DELIMS:
+            content_start += 1
         content_bytes = raw_bytes[content_start:content_start + size_val]
 
         is_valid = True
