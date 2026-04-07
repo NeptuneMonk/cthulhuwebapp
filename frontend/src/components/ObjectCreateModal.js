@@ -726,7 +726,7 @@ export const ObjectCreateModal = ({ onClose, network, prefillImage, fullPage, te
             </button>
             {showTxidImport && (
               <div className="px-3 pb-3 space-y-2">
-                <p className="text-[10px] text-gray-600">Paste a TXID containing on-chain data to auto-populate this form. Claim unclaimed URNs as tradeable objects.</p>
+                <p className="text-[10px] text-gray-600">Paste a TXID containing on-chain data to auto-populate this form. Supports BTC, LTC, DOGE, MZC chains.</p>
                 <div className="flex gap-2">
                   <input
                     type="text"
@@ -756,6 +756,9 @@ export const ObjectCreateModal = ({ onClose, network, prefillImage, fullPage, te
                     {/* Header info */}
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-1.5">
+                        {txidLookup.chain && txidLookup.chain !== 'BTC' && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 font-medium">{txidLookup.chain}</span>
+                        )}
                         {txidLookup.signed ? (
                           <span className="text-[10px] text-emerald-400 flex items-center gap-0.5"><FiCheck size={10} /> Signed</span>
                         ) : (
@@ -817,13 +820,16 @@ export const ObjectCreateModal = ({ onClose, network, prefillImage, fullPage, te
 
                         {/* URN availability status */}
                         <div className="flex items-center gap-1.5 mt-1">
-                          {txidLookup.urn_available === true && (
+                          {txidLookup.urn_available === true && !txidLookup.existing_claim && (
                             <span className="text-[10px] text-emerald-400 flex items-center gap-0.5"><FiCheck size={10} /> URN available — ready to claim</span>
                           )}
-                          {txidLookup.urn_available === false && (
+                          {txidLookup.existing_claim && (
+                            <span className="text-[10px] text-amber-400">Already claimed as "{txidLookup.existing_claim.name}" on {txidLookup.existing_claim.blockchain}</span>
+                          )}
+                          {txidLookup.urn_available === false && !txidLookup.existing_claim && (
                             <span className="text-[10px] text-red-400">URN already claimed by {txidLookup.urn_claimed_by || 'another user'}</span>
                           )}
-                          {txidLookup.urn_available === null && (
+                          {txidLookup.urn_available === null && !txidLookup.existing_claim && (
                             <span className="text-[10px] text-gray-500">URN availability unknown</span>
                           )}
                         </div>
@@ -833,7 +839,7 @@ export const ObjectCreateModal = ({ onClose, network, prefillImage, fullPage, te
                     {/* Populate button */}
                     <button
                       onClick={populateFromTxid}
-                      disabled={txidLookup.urn_available === false}
+                      disabled={txidLookup.urn_available === false || !!txidLookup.existing_claim}
                       className="w-full py-1.5 rounded text-xs font-medium bg-blue-600 hover:bg-blue-500 text-white disabled:bg-gray-700 disabled:text-gray-500 transition-colors flex items-center justify-center gap-1.5"
                       data-testid="txid-populate-btn"
                     >

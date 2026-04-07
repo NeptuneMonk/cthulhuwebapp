@@ -15,6 +15,7 @@ from utils.helpers import (
     batch_verify_burns,
 )
 from utils.http_pool import get_client
+from routes.onchain import detect_chain_from_address
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api")
@@ -175,6 +176,10 @@ async def check_urn_availability(urn: str, network: str = 'btc-testnet'):
 _IMAGE_EXTS = {'jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp'}
 _MEDIA_EXTS = {'mp4', 'mp3', 'wav', 'ogg', 'webm', 'mov', 'pdf'}
 _WEB_EXTS = {'html', 'htm', 'zip'}
+_PROTOCOL_FILES = {'OBJ', 'PRO', 'GIV', 'BRN', 'BUY', 'LST', 'SEC', 'INQ', 'SIG', 'LNK', 'ADD', 'MSG'}
+
+# Chain short code → URN prefix mapping
+_CHAIN_URN_PREFIX = {'BTC': '', 'LTC': 'LTC:', 'DOG': 'DOG:', 'MZC': 'MZC:', 'DTC': 'DTC:'}
 
 
 @router.get("/txid/inspect/{txid}")
@@ -197,69 +202,225 @@ async def inspect_txid(txid: str, network: str = 'btc-testnet'):
         return {"found": False, "error": "Invalid transaction ID format"}
 
     is_mainnet = 'mainnet' in network.lower()
+    detected_chain = None  # Will be set if found via bitfossil cross-chain
 
-    # 1. Fetch root from p2fk.io (tries both networks)
+    # 1. Fetch root from p2fk.io (tries BTC mainnet, then testnet)
     root = await p2fk_get(f"GetRootByTransactionID/{txid}", is_mainnet)
-
-    # If not found on current network, try the other
-    if not root or not root.get('SignedBy'):
+    if not root or not root.get('File'):
         root = await p2fk_get(f"GetRootByTransactionID/{txid}", not is_mainnet)
 
-    if not root or not root.get('SignedBy'):
-        return {"found": False, "error": "Transaction not found or contains no P2FK data", "txid": txid}
-
-    # 2. Parse the root data
-    files_dict = root.get('File', {})
-    messages = root.get('Message', [])
-    signed_by = root.get('SignedBy', '')
-    signed = root.get('Signed', False)
-    block_date = root.get('BlockDate', '')
-    keywords = root.get('Keyword', {})
-    confirmations = root.get('Confirmations', 0)
-
-    # 3. Extract structured data
-    files_list = []
-    for fname, fsize in files_dict.items():
-        ext = fname.rsplit('.', 1)[-1].lower() if '.' in fname else ''
-        files_list.append({
-            "name": fname,
-            "size": fsize,
-            "extension": ext,
-            "is_image": ext in _IMAGE_EXTS,
-            "is_media": ext in _MEDIA_EXTS,
-            "is_web": ext in _WEB_EXTS,
-            "is_protocol": fname in ('OBJ', 'PRO', 'GIV', 'BRN', 'BUY', 'LST', 'SEC', 'INQ'),
-        })
-
-    # 4. Try to parse OBJ JSON from messages (if this is an already-minted object)
-    obj_data = None
-    for msg in messages:
+    # 2. If BTC-specific lookup failed, try WITHOUT mainnet param (cross-chain: LTC, DOGE, MZC)
+    cross_chain_root = None
+    if not root or not root.get('File'):
         try:
-            parsed = json.loads(msg)
-            if isinstance(parsed, dict) and ('urn' in parsed or 'URN' in parsed):
-                obj_data = parsed
-                break
-        except (json.JSONDecodeError, TypeError):
-            continue
-
-    # 4b. If root has OBJ file but no parsed JSON, fetch via GetObjectByTransactionId
-    has_obj_file = any(f['name'] == 'OBJ' for f in files_list)
-    if has_obj_file and not obj_data:
-        try:
-            obj_full = await fetch_object_by_txid(txid, is_mainnet)
-            if isinstance(obj_full, dict) and obj_full.get('Name'):
-                obj_data = {
-                    'urn': obj_full.get('URN', ''),
-                    'nme': obj_full.get('Name', ''),
-                    'dsc': obj_full.get('Description', ''),
-                    'img': obj_full.get('Image', ''),
-                    'uri': obj_full.get('URI', ''),
-                    'lic': obj_full.get('License', ''),
-                }
+            client = get_client()
+            xc_resp = await client.get(
+                f"https://p2fk.io/GetRootByTransactionID/{txid}",
+                timeout=15.0,
+            )
+            if xc_resp.status_code == 200:
+                xc_data = xc_resp.json()
+                if isinstance(xc_data, dict) and xc_data.get('File'):
+                    root = xc_data
+                    cross_chain_root = xc_data
+                    logger.info(f"Cross-chain root found for {txid[:16]}... (no mainnet param)")
         except Exception as e:
-            logger.debug(f"OBJ fetch for {txid}: {e}")
+            logger.debug(f"Cross-chain root lookup failed for {txid[:16]}...: {e}")
 
-    # 5. Determine suggested URN and image
+    # 3. Also check if this TXID has already been claimed as an object on any chain
+    existing_claim = None
+    if root and root.get('File'):
+        try:
+            client = get_client()
+            obj_resp = await client.get(
+                f"https://p2fk.io/GetKnownObjectsBySearchString",
+                params={"searchString": txid, "qty": "3", "skip": "0", "showSystemFiles": "true"},
+                timeout=10.0,
+            )
+            if obj_resp.status_code == 200:
+                obj_data = obj_resp.json()
+                if isinstance(obj_data, list) and obj_data:
+                    for oi in obj_data:
+                        obj_info = oi.get('object', {})
+                        urn_val = obj_info.get('URN', '')
+                        if txid in urn_val.lower():
+                            existing_claim = {
+                                'urn': urn_val,
+                                'name': obj_info.get('Name', ''),
+                                'blockchain': oi.get('blockchain', 'BTC'),
+                            }
+                            break
+        except Exception:
+            pass
+
+    # 4. Final fallback: bitfossil.com (indexes raw on-chain data across all chains)
+    bitfossil_result = None
+    if not root or not root.get('File'):
+        try:
+            client = get_client()
+            bf_resp = await client.get(f"https://bitfossil.com/{txid}/index.htm", timeout=15.0, follow_redirects=True)
+            if bf_resp.status_code == 200 and bf_resp.text:
+                from bs4 import BeautifulSoup
+                soup = BeautifulSoup(bf_resp.text, 'html.parser')
+                meta = {}
+                for row in soup.find_all('td'):
+                    txt = row.get_text(strip=True)
+                    if txt == 'BLOCKCHAIN' and row.find_next_sibling('td'):
+                        meta['blockchain'] = row.find_next_sibling('td').get_text(strip=True)
+                    elif txt == 'DATE' and row.find_next_sibling('td'):
+                        meta['block_date'] = row.find_next_sibling('td').get_text(strip=True)
+
+                bc_map = {'Bitcoin': 'BTC', 'Litecoin': 'LTC', 'Dogecoin': 'DOGE', 'Mazacoin': 'MZC', 'Maza': 'MZC'}
+                detected_chain = bc_map.get(meta.get('blockchain', ''), None)
+
+                bf_images = []
+                bf_files = []
+                for a_tag in soup.find_all('a', href=True):
+                    href = a_tag['href']
+                    if '/' in href:
+                        parts = href.split('/')
+                        if len(parts) >= 2 and parts[0] == txid:
+                            fname = '/'.join(parts[1:])
+                            if fname in ('index.htm',): continue
+                            if '.' in fname:
+                                ext = fname.rsplit('.', 1)[-1].lower()
+                                if ext in _IMAGE_EXTS:
+                                    bf_images.append(fname)
+                                else:
+                                    bf_files.append(fname)
+
+                bf_messages = []
+                for i in range(1, 10):
+                    tag = soup.find(id=f'MSG{i}')
+                    if tag:
+                        bf_messages.append(tag.get_text(strip=True))
+
+                if detected_chain or bf_images or bf_files:
+                    bitfossil_result = {
+                        'chain': detected_chain or 'BTC',
+                        'images': bf_images,
+                        'files': bf_files,
+                        'messages': bf_messages,
+                        'metadata': meta,
+                    }
+                    logger.info(f"Bitfossil found TXID {txid[:16]}... on chain {detected_chain}")
+        except Exception as e:
+            logger.debug(f"Bitfossil lookup failed for {txid[:16]}...: {e}")
+
+    # 3. Build response from whichever source found data
+    if root and root.get('File'):
+        # --- P2FK.io path ---
+        files_dict = root.get('File', {})
+        messages = root.get('Message', [])
+        signed_by = root.get('SignedBy', '')
+        signed = root.get('Signed', False)
+        block_date = root.get('BlockDate', '')
+        keywords = root.get('Keyword', {})
+        confirmations = root.get('Confirmations', 0)
+
+        # Detect chain from: 1) cross-chain search blockchain field, 2) SignedBy address, 
+        # 3) existing_claim URN prefix, 4) keyword addresses
+        if cross_chain_root and isinstance(cross_chain_root, dict) and cross_chain_root.get('blockchain'):
+            bc_val = cross_chain_root['blockchain'].upper()
+            bc_name_map = {'BITCOIN': 'BTC', 'LITECOIN': 'LTC', 'DOGECOIN': 'DOG', 'MAZACOIN': 'MZC', 'MAZA': 'MZC'}
+            source_chain = bc_name_map.get(bc_val, bc_val)
+        elif signed_by:
+            detected_addr_chain, _ = detect_chain_from_address(signed_by)
+            source_chain = detected_addr_chain or 'BTC'
+        elif existing_claim and existing_claim.get('urn', ''):
+            # Extract chain prefix from claimed URN (e.g., "LTC:txid/file" → LTC)
+            claim_urn = existing_claim['urn']
+            if ':' in claim_urn:
+                prefix = claim_urn.split(':')[0].upper()
+                if prefix in ('LTC', 'DOG', 'MZC', 'DTC', 'BTC'):
+                    source_chain = prefix
+                else:
+                    source_chain = 'BTC'
+            else:
+                source_chain = 'BTC'
+        elif keywords and isinstance(keywords, dict):
+            # Try to detect from first keyword address
+            first_kw = next(iter(keywords.keys()), '')
+            if first_kw:
+                kw_chain, _ = detect_chain_from_address(first_kw)
+                source_chain = kw_chain or 'BTC'
+            else:
+                source_chain = 'BTC'
+        else:
+            source_chain = 'BTC'
+
+        files_list = []
+        for fname, fsize in files_dict.items():
+            ext = fname.rsplit('.', 1)[-1].lower() if '.' in fname else ''
+            files_list.append({
+                "name": fname, "size": fsize, "extension": ext,
+                "is_image": ext in _IMAGE_EXTS, "is_media": ext in _MEDIA_EXTS,
+                "is_web": ext in _WEB_EXTS,
+                "is_protocol": fname in _PROTOCOL_FILES,
+            })
+
+        # Try to parse OBJ JSON from messages
+        obj_data = None
+        for msg in messages:
+            try:
+                parsed = json.loads(msg)
+                if isinstance(parsed, dict) and ('urn' in parsed or 'URN' in parsed):
+                    obj_data = parsed
+                    break
+            except (json.JSONDecodeError, TypeError):
+                continue
+
+        # If root has OBJ file but no parsed JSON, fetch via GetObjectByTransactionId
+        has_obj_file = any(f['name'] == 'OBJ' for f in files_list)
+        if has_obj_file and not obj_data:
+            try:
+                obj_full = await fetch_object_by_txid(txid, is_mainnet)
+                if isinstance(obj_full, dict) and obj_full.get('Name'):
+                    obj_data = {
+                        'urn': obj_full.get('URN', ''),
+                        'nme': obj_full.get('Name', ''),
+                        'dsc': obj_full.get('Description', ''),
+                        'img': obj_full.get('Image', ''),
+                        'uri': obj_full.get('URI', ''),
+                        'lic': obj_full.get('License', ''),
+                    }
+            except Exception as e:
+                logger.debug(f"OBJ fetch for {txid}: {e}")
+
+    elif bitfossil_result:
+        # --- Bitfossil path (cross-chain: LTC, DOGE, MZC, etc.) ---
+        source_chain = bitfossil_result['chain']
+        signed_by = ''
+        signed = False
+        block_date = bitfossil_result['metadata'].get('block_date', '')
+        keywords = {}
+        confirmations = 0
+        messages = bitfossil_result['messages']
+        obj_data = None
+
+        files_list = []
+        for fname in bitfossil_result['images'] + bitfossil_result['files']:
+            ext = fname.rsplit('.', 1)[-1].lower() if '.' in fname else ''
+            files_list.append({
+                "name": fname, "size": None, "extension": ext,
+                "is_image": ext in _IMAGE_EXTS, "is_media": ext in _MEDIA_EXTS,
+                "is_web": ext in _WEB_EXTS,
+                "is_protocol": fname in _PROTOCOL_FILES,
+            })
+
+        # Try to parse OBJ JSON from bitfossil messages
+        for msg in messages:
+            try:
+                parsed = json.loads(msg)
+                if isinstance(parsed, dict) and ('urn' in parsed or 'URN' in parsed):
+                    obj_data = parsed
+                    break
+            except (json.JSONDecodeError, TypeError):
+                continue
+    else:
+        return {"found": False, "error": "Transaction not found on any chain (BTC, LTC, DOGE, MZC)", "txid": txid}
+
+    # 4. Determine suggested URN and image
     suggested_urn = None
     suggested_name = None
     suggested_image = None
@@ -267,8 +428,10 @@ async def inspect_txid(txid: str, network: str = 'btc-testnet'):
     suggested_uri = None
     suggested_license = None
 
+    # Chain prefix mapping for URN construction
+    chain_prefix = _CHAIN_URN_PREFIX.get(source_chain, '')
+
     if obj_data:
-        # Already has OBJ JSON — use its fields directly
         suggested_urn = obj_data.get('urn') or obj_data.get('URN', '')
         suggested_name = obj_data.get('nme') or obj_data.get('Name', '')
         suggested_description = obj_data.get('dsc') or obj_data.get('Description', '')
@@ -276,39 +439,31 @@ async def inspect_txid(txid: str, network: str = 'btc-testnet'):
         suggested_uri = obj_data.get('uri') or obj_data.get('URI', '')
         suggested_license = obj_data.get('lic') or obj_data.get('License', '')
     else:
-        # Raw data injection — derive URN from file names
-        # Find the first non-protocol file
         content_files = [f for f in files_list if not f['is_protocol']]
         if content_files:
             primary_file = content_files[0]
             fname = primary_file['name']
-            # URN for on-chain content: BTC:{txid}\{filename} (SUP format)
-            chain_prefix = 'BTC' if 'btc' in network.lower() or 'mainnet' in network.lower() else 'BTC'
-            for n in network.lower().split('-'):
-                if n in ('doge', 'dog'): chain_prefix = 'DOGE'
-                elif n == 'ltc': chain_prefix = 'LTC'
-                elif n == 'mzc': chain_prefix = 'MZC'
-            suggested_urn = f"{chain_prefix}:{txid}\\{fname}"
+            suggested_urn = f"{chain_prefix}{txid}/{fname}"
             suggested_name = fname.rsplit('.', 1)[0] if '.' in fname else fname
-
-            # If it's an image file, suggest it as the cover image too
             if primary_file['is_image']:
                 suggested_image = suggested_urn
 
-    # 6. Check URN availability on the current network
+    # 5. Check URN availability (checks p2fk.io across mainnet)
     urn_available = None
     urn_claimed_by = None
     if suggested_urn:
         try:
+            # Check on mainnet first (most claims happen there)
             urn_check = await check_urn_availability(suggested_urn, network)
             urn_available = urn_check.get('available', True)
             urn_claimed_by = urn_check.get('claimed_by')
         except Exception:
-            urn_available = None  # Unknown — don't block
+            urn_available = None
 
     return {
         "found": True,
         "txid": txid,
+        "chain": source_chain,
         "signed_by": signed_by,
         "signed": signed,
         "block_date": block_date,
@@ -325,6 +480,7 @@ async def inspect_txid(txid: str, network: str = 'btc-testnet'):
         "suggested_license": suggested_license,
         "urn_available": urn_available,
         "urn_claimed_by": urn_claimed_by,
+        "existing_claim": existing_claim,
     }
 
 
