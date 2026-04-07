@@ -39,6 +39,9 @@ Build a modern, responsive frontend for a blockchain-based decentralized social 
 ## Pending Issues
 - None active
 
+## Recently Fixed (Apr 2026 - continued)
+- **P2FK Duplicate Address Bug (P0):** When `urn` and `img` contained the same long hash string and the JSON layout caused the inter-string distance to be a multiple of 20, the 20-byte P2FK chunk encoding produced duplicate addresses. The P2FK indexer (Root.cs) uses Dictionary.Add which throws on duplicates, silently rejecting the claim. Fixed with `encodeObjJsonSafe()` which detects duplicates and reorders JSON fields (img immediately after urn) to break the chunk alignment. Applied to both `buildObjectTransaction` and `buildObjectUpdateTransaction`.
+
 ## Recently Fixed (Apr 2026)
 - **Object Address Collision Bug (P0):** `deriveObjectAddress()` skips delimiter-unsafe indices, but `bumpObjectIndex()` only incremented by 1 from the start index. When indices were skipped, the next mint reused the same address. Fixed by bumping to `usedIndex + 1` instead of `startIndex + 1`.
 - **Fee Rate Not Persisting (P1):** `sessionStorage.removeItem('cthulhu_fee_rate')` was called after every successful broadcast, causing subsequent transactions to fall back to 3 sat/vB. Removed the clearing logic — user's selected fee rate now persists across transactions.

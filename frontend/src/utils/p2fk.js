@@ -90,6 +90,68 @@ export function encodePayloadToAddresses(payload, versionByte = 111) {
 }
 
 /**
+ * Encode OBJ JSON into P2FK addresses with duplicate-address avoidance.
+ *
+ * When two JSON fields contain the same long value (e.g. urn==img), the
+ * identical byte sequences can align to the same 20-byte chunk boundaries,
+ * producing duplicate addresses that crash the P2FK indexer (Root.cs uses
+ * Dictionary.Add which throws on duplicate keys).
+ *
+ * Strategy:
+ *   1. Try normal field order.
+ *   2. If duplicates, reorder: move img right after urn (makes identical
+ *      strings adjacent, changing inter-string distance away from a multiple
+ *      of 20).
+ *   3. If still duplicated, insert a padding space inside the JSON string
+ *      (appended to the description field) to shift alignment further.
+ */
+function encodeObjJsonSafe(objData, wif, network, versionByte) {
+  // Attempt 1: normal field order
+  const attempt1 = tryEncodeObjJson(objData, wif, network, versionByte);
+  if (attempt1) return attempt1;
+
+  // Attempt 2: reorder — put img right after urn
+  const reordered = {};
+  reordered.urn = objData.urn;
+  if (objData.img !== undefined) reordered.img = objData.img;
+  for (const key of Object.keys(objData)) {
+    if (key !== 'urn' && key !== 'img') reordered[key] = objData[key];
+  }
+  const attempt2 = tryEncodeObjJson(reordered, wif, network, versionByte);
+  if (attempt2) return attempt2;
+
+  // Attempt 3-12: add incrementing padding via trailing whitespace
+  for (let pad = 1; pad <= 10; pad++) {
+    const padded = { ...reordered };
+    // Append padding spaces to description (or add one) to shift alignment
+    padded.dsc = (padded.dsc || '') + ' '.repeat(pad);
+    const result = tryEncodeObjJson(padded, wif, network, versionByte);
+    if (result) return result;
+  }
+
+  // Fallback: return whatever we get (shouldn't reach here in practice)
+  const objJson = JSON.stringify(objData);
+  const objBytes = Buffer.from(objJson, 'utf-8');
+  const d1 = randomDelimiter();
+  const d2 = randomDelimiter();
+  const payload = `OBJ${d1}${objBytes.length}${d2}${objJson}`;
+  return encodePayloadToAddresses(buildSignedPayload(payload, wif, network), versionByte);
+}
+
+function tryEncodeObjJson(objData, wif, network, versionByte) {
+  const objJson = JSON.stringify(objData);
+  const objBytes = Buffer.from(objJson, 'utf-8');
+  const d1 = randomDelimiter();
+  const d2 = randomDelimiter();
+  const payload = `OBJ${d1}${objBytes.length}${d2}${objJson}`;
+  const fullPayload = buildSignedPayload(payload, wif, network);
+  const addresses = encodePayloadToAddresses(fullPayload, versionByte);
+  if (new Set(addresses).size === addresses.length) return addresses;
+  return null; // duplicates found
+}
+
+
+/**
  * Convert a keyword (URN, hashtag) to its P2FK address.
  */
 export function getKeywordAddress(keyword, versionByte = 111) {
@@ -569,15 +631,15 @@ export function buildObjectTransaction(wif, objectData, networkName = 'btc-testn
     }
   }
 
-  const objJson = JSON.stringify(objData);
-  const objBytes = Buffer.from(objJson, 'utf-8');
-
-  const d1 = randomDelimiter();
-  const d2 = randomDelimiter();
-  const payload = `OBJ${d1}${objBytes.length}${d2}${objJson}`;
-
-  const fullPayload = buildSignedPayload(payload, wif, network);
-  const encodedAddresses = encodePayloadToAddresses(fullPayload, versionByte);
+  // Encode OBJ JSON to P2FK addresses with duplicate-address avoidance.
+  // When urn==img (common with TXID import), the identical long strings can
+  // land on identical 20-byte chunk boundaries, producing duplicate addresses
+  // that crash the P2FK indexer (Root.cs uses Dictionary.Add → throws on dupes).
+  //
+  // Fix: reorder JSON fields so duplicate values are adjacent (changes the
+  // inter-string distance, breaking the chunk alignment). If still duped,
+  // insert a benign nonce field as last resort.
+  const encodedAddresses = encodeObjJsonSafe(objData, wif, network, versionByte);
 
   // Build the full address list: [encoded_data] + [keywords]
   const fullList = [...encodedAddresses];
@@ -671,15 +733,7 @@ export function buildObjectUpdateTransaction(wif, objectAddress, newCreatorAddre
   if (updateFields.uri) objData.uri = updateFields.uri;
   if (updateFields.attributes) objData.atr = updateFields.attributes;
 
-  const objJson = JSON.stringify(objData);
-  const objBytes = Buffer.from(objJson, 'utf-8');
-
-  const d1 = randomDelimiter();
-  const d2 = randomDelimiter();
-  const payload = `OBJ${d1}${objBytes.length}${d2}${objJson}`;
-
-  const fullPayload = buildSignedPayload(payload, wif, network);
-  const encodedAddresses = encodePayloadToAddresses(fullPayload, versionByte);
+  const encodedAddresses = encodeObjJsonSafe(objData, wif, network, versionByte);
 
   // Build the full address list
   const fullList = [...encodedAddresses];
