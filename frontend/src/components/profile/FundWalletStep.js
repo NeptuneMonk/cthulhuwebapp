@@ -37,13 +37,15 @@ export default function FundWalletStep({ user, balance, balanceLoading, fetchBal
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ recipient_address: user.address, network: network || 'btc-testnet' }),
       });
-      const data = await res.json();
+      // Clone before reading to avoid "body disturbed" errors from service workers
+      const clone = res.clone();
+      let data;
+      try { data = await res.json(); } catch { data = await clone.json(); }
       if (data.success) {
         setFaucetResult({ success: true, txid: data.txid, amount: data.amount_sats });
-        // Trigger balance refresh after a short delay
         setTimeout(() => fetchBalance(), 3000);
       } else {
-        setFaucetResult({ success: false, error: data.detail || 'Faucet request failed' });
+        setFaucetResult({ success: false, error: data.detail || data.error || 'Faucet request failed' });
       }
     } catch (err) {
       setFaucetResult({ success: false, error: err.message });
