@@ -147,13 +147,22 @@ export function getCachedRoyaltiesAddress(mainAddress) {
 /**
  * Build and broadcast a simple BTC send (non-P2FK) transaction.
  */
-export async function buildAndSend(wif, recipientAddress, amountSats, networkName = 'btc-testnet', feeRate = 2) {
+export async function buildAndSend(wif, recipientAddress, amountSats, networkName = 'btc-testnet', feeRate = 0) {
   const isMainnet = networkName.includes('mainnet');
   const network = isMainnet ? bitcoin.networks.bitcoin : bitcoin.networks.testnet;
   const keyPair = parseWIFForNetwork(wif, network);
   const { address: senderAddress } = bitcoin.payments.p2pkh({ pubkey: keyPair.publicKey, network });
   const changeKeyPair = deriveChangeKeyPair(keyPair, network);
   const { address: changeAddress } = bitcoin.payments.p2pkh({ pubkey: changeKeyPair.publicKey, network });
+
+  // Use selected fee rate from FeePicker (sessionStorage), fallback to 3
+  let effectiveFeeRate = feeRate;
+  if (!effectiveFeeRate || effectiveFeeRate <= 0) {
+    try {
+      const stored = sessionStorage.getItem('cthulhu_fee_rate');
+      effectiveFeeRate = stored ? Math.max(parseInt(stored, 10), 3) : 3;
+    } catch { effectiveFeeRate = 3; }
+  }
 
   // Platform tax for regular sends
   let sendTaxOutput = null;
@@ -205,12 +214,12 @@ export async function buildAndSend(wif, recipientAddress, amountSats, networkNam
     selectedUtxos.push(utxo);
     selectedTotal += utxo.value;
     const txSize = selectedUtxos.length * 148 + outputVBytes;
-    const fee = Math.max(txSize * feeRate, 300);
+    const fee = Math.max(txSize * effectiveFeeRate, 300);
     if (selectedTotal >= totalSendAmount + fee) break;
   }
 
   const estimatedTxSize = selectedUtxos.length * 148 + outputVBytes;
-  const estimatedFee = Math.max(estimatedTxSize * feeRate, 300);
+  const estimatedFee = Math.max(estimatedTxSize * effectiveFeeRate, 300);
 
   if (selectedTotal < totalSendAmount + estimatedFee) {
     throw new Error(`Insufficient balance. Need ~${totalSendAmount + estimatedFee} sats, have ${selectedTotal} sats.`);
@@ -255,13 +264,22 @@ export async function buildAndSend(wif, recipientAddress, amountSats, networkNam
  * Preserves P2FK sendmany address ordering — no scrambling.
  * Each UTXO carries its ownerAddress so the correct signing key is used.
  */
-export async function buildAndSendWithUtxos(wif, recipientAddress, amountSats, selectedUtxos, networkName = 'btc-testnet', feeRate = 2) {
+export async function buildAndSendWithUtxos(wif, recipientAddress, amountSats, selectedUtxos, networkName = 'btc-testnet', feeRate = 0) {
   const isMainnet = networkName.includes('mainnet');
   const network = isMainnet ? bitcoin.networks.bitcoin : bitcoin.networks.testnet;
   const keyPair = parseWIFForNetwork(wif, network);
   const { address: senderAddress } = bitcoin.payments.p2pkh({ pubkey: keyPair.publicKey, network });
   const changeKeyPair = deriveChangeKeyPair(keyPair, network);
   const { address: changeAddress } = bitcoin.payments.p2pkh({ pubkey: changeKeyPair.publicKey, network });
+
+  // Use selected fee rate from FeePicker (sessionStorage), fallback to 3
+  let effectiveFeeRate = feeRate;
+  if (!effectiveFeeRate || effectiveFeeRate <= 0) {
+    try {
+      const stored = sessionStorage.getItem('cthulhu_fee_rate');
+      effectiveFeeRate = stored ? Math.max(parseInt(stored, 10), 3) : 3;
+    } catch { effectiveFeeRate = 3; }
+  }
 
   // Derive royalties key for signing royalty UTXOs
   const royTag = Buffer.from('p2fk-royalties', 'utf-8');
@@ -288,7 +306,7 @@ export async function buildAndSendWithUtxos(wif, recipientAddress, amountSats, s
   const totalSendAmount = amountSats + sendTaxTotal;
   const numOutputs = 2 + (sendTaxOutput ? 1 : 0);
   const estimatedTxSize = selectedUtxos.length * 148 + numOutputs * 34 + 10;
-  const estimatedFee = Math.max(estimatedTxSize * feeRate, 300);
+  const estimatedFee = Math.max(estimatedTxSize * effectiveFeeRate, 300);
   const selectedTotal = selectedUtxos.reduce((sum, u) => sum + u.value, 0);
 
   if (selectedTotal < totalSendAmount + estimatedFee) {
