@@ -549,7 +549,7 @@ export const ComposeModal = ({ onClose, network, replyTo }) => {
                 </span>
               </div>
 
-              <FeePicker network={network} />
+              <FeePicker network={network} compact />
 
               <button
                 onClick={handlePost}

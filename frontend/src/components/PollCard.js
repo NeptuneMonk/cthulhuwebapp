@@ -162,7 +162,7 @@ export default function PollCard({ poll, network, onVoted }) {
 
       {/* Fee picker for voting */}
       {isConnected && activeWif && !votedFor && !isClosed && !isPending && (
-        <FeePicker network={network} />
+        <FeePicker network={network} compact />
       )}
 
       {/* Answers */}

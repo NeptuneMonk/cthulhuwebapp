@@ -537,7 +537,7 @@ export const ComposeBar = ({ network, onPostSuccess, targetAddress, placeholder:
                 <span className="text-[10px] flex items-center gap-0.5" style={{ color: 'var(--c-accent)', opacity: 0.5 }} title="Signed locally">
                   <FiShield size={9} /> Local
                 </span>
-                <FeePicker network={network} />
+                <FeePicker network={network} compact />
                 <button
                   onClick={handlePost}
                   disabled={!canPost || sending || !isConnected}
