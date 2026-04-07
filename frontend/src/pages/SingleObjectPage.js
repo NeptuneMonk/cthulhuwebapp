@@ -1870,9 +1870,9 @@ export default function SingleObjectPage({ network, lookupByAddress }) {
                   <span className="text-gray-500">Supply</span>
                   <span className="text-gray-200 font-mono">{(object.total_supply ?? 0).toLocaleString()}</span>
                 </div>
-                {object.maximum > 0 && (
+                {object.maximum > 0 && object.maximum !== object.total_supply && (
                   <div className="flex justify-between">
-                    <span className="text-gray-500">Max Supply</span>
+                    <span className="text-gray-500">Max Hodl</span>
                     <span className="text-gray-200 font-mono">{(object.maximum ?? 0).toLocaleString()}</span>
                   </div>
                 )}

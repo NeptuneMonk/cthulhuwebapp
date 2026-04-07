@@ -1011,8 +1011,8 @@ async def get_object_by_address(address: str, network: str = 'btc-testnet'):
         is_mainnet = 'mainnet' in network.lower()
         formatted = None
 
-        # Try 1: Fast call via GetObjectByAddress (verbose=true to include Listings)
-        raw = await p2fk_get(f"GetObjectByAddress/{address}", is_mainnet, {"verbose": "true"})
+        # Try 1: Fast call via GetObjectByAddress (verbose=false is fast and includes listings)
+        raw = await p2fk_get(f"GetObjectByAddress/{address}", is_mainnet, {"verbose": "false"})
         if raw and isinstance(raw, dict) and raw.get('Name'):
             formatted = format_object_for_api(raw)
 

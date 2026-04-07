@@ -773,14 +773,14 @@ async def fetch_objects_created_by_address(address: str, mainnet: bool = False):
 
 async def fetch_object_by_txid(txid: str, mainnet: bool = False):
     # Step 1: Get initial object data to find the object address
-    data = await p2fk_get(f"GetObjectByTransactionId/{txid}", mainnet, {"verbose": "true"})
+    data = await p2fk_get(f"GetObjectByTransactionId/{txid}", mainnet, {"verbose": "false"})
     if not isinstance(data, dict) or not data.get('Name'):
         return None
-    # Step 2: Fetch CURRENT state via GetObjectByAddress (returns up-to-date owners/listings)
+    # Step 2: Fetch CURRENT state via GetObjectByAddress (fresh owners/listings, verbose=false is fast)
     creators = data.get('Creators') or {}
     obj_address = list(creators.keys())[0] if creators else None
     if obj_address:
-        fresh = await p2fk_get(f"GetObjectByAddress/{obj_address}", mainnet, {"verbose": "true"})
+        fresh = await p2fk_get(f"GetObjectByAddress/{obj_address}", mainnet, {"verbose": "false"})
         if isinstance(fresh, dict) and fresh.get('Name'):
             return fresh
     return data
