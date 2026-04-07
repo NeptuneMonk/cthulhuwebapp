@@ -277,10 +277,11 @@ export default function ObjectsPage({ network }) {
         skipRef.current = skip + qty;
       } else {
         // Browse mode: use the by-chain endpoint (ALL or specific chain)
+        // Fetch all objects and cache — listing filter is applied client-side
         const chainParam = chainMatch || 'ALL';
-        const cacheId = `chain_${chainParam}_${skip}_${qty}_${network}`;
+        const cacheId = `chain_${chainParam}_${network}`;
         const doFetch = async () => {
-          const url = `${API}/api/objects/by-chain/${chainParam}?skip=${skip}&qty=${qty}&network=${encodeURIComponent(network)}`;
+          const url = `${API}/api/objects/by-chain/${chainParam}?skip=0&qty=600&network=${encodeURIComponent(network)}`;
           const res = await axios.get(url);
           return res.data;
         };
@@ -288,16 +289,16 @@ export default function ObjectsPage({ network }) {
           const items = freshResult?.objects || (Array.isArray(freshResult) ? freshResult : []);
           const finalObjects = processItems(items, chainMatch);
           setObjects(finalObjects);
-          setHasMore(freshResult?.has_more ?? false);
+          setHasMore(false);
           setTotalItems(freshResult?.total ?? 0);
         });
         const items = result?.objects || (Array.isArray(result) ? result : []);
         const finalObjects = processItems(items, chainMatch);
         setObjects(finalObjects);
-        setHasMore(result?.has_more ?? false);
+        setHasMore(false);
         setTotalItems(result?.total ?? 0);
-        setCurrentSkip(skip);
-        skipRef.current = skip + qty;
+        setCurrentSkip(0);
+        skipRef.current = 0;
       }
     } catch (err) {
       console.error('p2fk search error:', err);
@@ -407,9 +408,9 @@ export default function ObjectsPage({ network }) {
     fetchObjects('*', 0, DEFAULT_QTY, true);
   }, [activeFilter]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  /** Apply listing filter for display */
+  /** Apply listing filter for display (skip for search results — stale p2fk.io data lacks listings) */
   const filteredObjects = useMemo(() => {
-    if (listingFilter !== 'listed') return objects;
+    if (listingFilter !== 'listed' || isUserSearch) return objects;
     return objects.filter(o => {
       const listings = o.Listings || o.listings;
       if (o.is_listed) return true;
@@ -417,7 +418,7 @@ export default function ObjectsPage({ network }) {
       if (Array.isArray(listings)) return listings.length > 0;
       return false;
     });
-  }, [objects, listingFilter]);
+  }, [objects, listingFilter, isUserSearch]);
 
 
   const handleSubmit = (e) => {
