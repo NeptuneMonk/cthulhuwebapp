@@ -53,6 +53,13 @@ Build a modern, responsive frontend for a blockchain-based decentralized social 
   - `ScannerPanel` — per-chain scan progress with start/stop controls
   - `NoWalletsOverlay` — guides user to start Core Wallet daemons
   - Networks: BTC mainnet, BTC testnet, LTC mainnet, DOG mainnet, MZC mainnet
+- **Desktop Phase 4: Tauri Packaging (DONE Apr 2026)**
+  - `craco.desktop.config.js` — separate webpack config, entry point `desktop-index.js`, `REACT_APP_BACKEND_URL=http://localhost:8001`
+  - `cthulhu-api.spec` — PyInstaller spec with all hidden imports (routes, rpc, utils, uvicorn, aiosqlite, etc.)
+  - Enhanced `main.rs` — data dir management, env vars for sidecars, graceful shutdown on window close
+  - `tauri.conf.json` — CSP for desktop (localhost + blockchain APIs + IPFS gateways), sidecar config, app metadata
+  - `scripts/build-desktop.sh` — automated 4-step pipeline (frontend → PyInstaller → Kubo → Tauri), platform detection
+  - `TAURI_PACKAGING.md` — complete build guide, architecture docs, environment variable reference
 
 ## Key API Endpoints (Web App)
 - `GET /api/objects/by-chain/{chain}` — Paginated objects by chain (5min cache)
@@ -111,11 +118,10 @@ Build a modern, responsive frontend for a blockchain-based decentralized social 
 - [x] Phase 1: Core Wallet RPC Layer (DONE)
 - [x] Phase 2: Local P2FK Decoder & Chain Scanner (DONE)
 - [x] Phase 3: Desktop Frontend Adaptation (DONE)
-- [ ] Phase 4: Tauri Packaging (PyInstaller + Kubo sidecar bundling)
+- [x] Phase 4: Tauri Packaging (DONE)
 - [ ] Phase 5: WebRTC Mesh Integration (desktop peer announcements)
 
 ## Upcoming Tasks
-- (P0) Desktop Phase 4: Tauri Packaging
 - (P1) Desktop Phase 5: WebRTC Mesh Integration
 
 ## Future/Backlog
