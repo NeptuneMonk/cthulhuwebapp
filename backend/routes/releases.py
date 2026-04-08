@@ -483,6 +483,41 @@ async def set_platform_urls(req: SetPlatformUrlsRequest, _=Depends(_get_admin_ve
     return {"success": True, "version": req.version, "platforms": req.platforms}
 
 
+class QuickReleaseRequest(BaseModel):
+    """Create a release without on-chain etching — just metadata."""
+    version: str
+    name: str = ""
+    description: str = ""
+    changelog: str = ""
+    network: str = "btc-testnet"
+
+
+@router.post("/quick-publish")
+async def quick_publish_release(req: QuickReleaseRequest, _=Depends(_get_admin_verify())):
+    """
+    Create a release record without etching on-chain.
+    Use this when you just want to make a desktop binary downloadable.
+    Upload the binary with /upload-binary, or set URLs with /set-platform-urls.
+    """
+    await _ensure_tables()
+    release_doc = {
+        "version": req.version,
+        "name": req.name or f"Cthulhu Desktop v{req.version}",
+        "description": req.description,
+        "changelog": req.changelog,
+        "zip_cid": "",
+        "image_cid": "",
+        "txid": "",
+        "object_address": "",
+        "sender_address": "",
+        "network": req.network,
+        "platforms": {},
+        "published_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await _insert_release(release_doc)
+    return {"success": True, "version": req.version, "message": "Release created. Upload binaries with /upload-binary."}
+
+
 @router.get("")
 async def list_releases(network: str = "", limit: int = 20, _=Depends(_get_admin_verify())):
     """Admin: list all published releases."""
@@ -514,6 +549,95 @@ async def get_latest_release(network: str = "btc-testnet"):
         "platforms": release.get("platforms", {}),
         "published_at": release.get("published_at"),
     }
+
+
+# ─── Desktop Binary Upload & Download ───
+
+import shutil
+from fastapi import UploadFile, File, Form
+from fastapi.responses import FileResponse
+
+DESKTOP_BUILDS_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "desktop_builds")
+os.makedirs(DESKTOP_BUILDS_DIR, exist_ok=True)
+
+
+@router.post("/upload-binary")
+async def upload_desktop_binary(
+    platform: str = Form(...),
+    version: str = Form("0.1.0"),
+    file: UploadFile = File(...),
+    _=Depends(_get_admin_verify()),
+):
+    """Upload a built desktop binary (.msi, .dmg, .AppImage) for a platform."""
+    valid_platforms = ["windows", "mac_arm", "mac_intel", "linux"]
+    if platform not in valid_platforms:
+        raise HTTPException(400, f"Invalid platform. Use: {valid_platforms}")
+
+    # Save the file
+    filename = file.filename or f"cthulhu-{version}-{platform}"
+    dest = os.path.join(DESKTOP_BUILDS_DIR, filename)
+    with open(dest, "wb") as f:
+        shutil.copyfileobj(file.file, f)
+
+    file_size = os.path.getsize(dest)
+    size_str = f"{file_size / (1024*1024):.1f}MB"
+
+    # Auto-update the release platforms with the served URL
+    await _ensure_tables()
+    release = await _get_latest_release("btc-testnet")
+    if release:
+        platforms = release.get("platforms", {})
+        platforms[platform] = {
+            "url": f"/api/releases/download/{filename}",
+            "filename": filename,
+            "size": size_str,
+        }
+        release["platforms"] = platforms
+        conn = await get_conn()
+        await conn.execute(
+            "UPDATE releases SET data = ? WHERE version = ?",
+            (json.dumps(release), release.get("version", version))
+        )
+        await conn.commit()
+
+    logger.info(f"Desktop binary uploaded: {filename} ({size_str})")
+    return {
+        "success": True,
+        "platform": platform,
+        "filename": filename,
+        "size": size_str,
+        "download_url": f"/api/releases/download/{filename}",
+    }
+
+
+@public_router.get("/download/{filename}")
+async def download_desktop_binary(filename: str):
+    """Serve a desktop binary for download."""
+    # Sanitize filename
+    safe_name = os.path.basename(filename)
+    filepath = os.path.join(DESKTOP_BUILDS_DIR, safe_name)
+    if not os.path.exists(filepath):
+        raise HTTPException(404, "Build not found")
+
+    # Determine content type
+    ext = os.path.splitext(safe_name)[1].lower()
+    media_types = {
+        ".msi": "application/x-msi",
+        ".exe": "application/x-msdownload",
+        ".dmg": "application/x-apple-diskimage",
+        ".appimage": "application/x-executable",
+        ".deb": "application/vnd.debian.binary-package",
+        ".zip": "application/zip",
+        ".tar.gz": "application/gzip",
+    }
+    media_type = media_types.get(ext, "application/octet-stream")
+
+    return FileResponse(
+        filepath,
+        media_type=media_type,
+        filename=safe_name,
+        headers={"Content-Disposition": f"attachment; filename={safe_name}"},
+    )
 
 
 # ─── Helper ───

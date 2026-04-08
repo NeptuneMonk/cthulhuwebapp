@@ -76,6 +76,12 @@ Build a modern, responsive frontend for a blockchain-based decentralized social 
   - Backend updated: `platforms` field in release publish, `set-platform-urls` admin endpoint
   - 4-step setup guide, Desktop vs Web comparison, Core Wallet requirements with config example
   - Build from Source section for developers
+- **Server-Hosted Binary Downloads (DONE Apr 2026)**
+  - `POST /api/admin/releases/quick-publish` — create release without on-chain etching
+  - `POST /api/admin/releases/upload-binary` — upload `.msi`/`.dmg`/`.AppImage` to server
+  - `GET /api/releases/download/{filename}` — public download endpoint with proper Content-Type
+  - Auto-updates release `platforms` dict when binary is uploaded
+  - `WINDOWS_BUILD_GUIDE.md` — step-by-step Windows build guide (Rust, Node, Python, PyInstaller, Tauri)
 
 ## Key API Endpoints (Web App)
 - `GET /api/objects/by-chain/{chain}` — Paginated objects by chain (5min cache)
