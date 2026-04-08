@@ -170,14 +170,15 @@ async def check_urn_availability(urn: str, network: str = 'btc-testnet'):
 
         # Check local api_cache — our backend may have resolved this object
         # via /api/object/addr/ even if p2fk.io's GetObjectByURN hasn't indexed it yet.
+        # Filter by network to avoid cross-network false positives.
         try:
             conn = await get_conn()
-            # Search cached GetObjectByAddress responses for a matching URN
+            network_flag = str(is_mainnet)  # "True" or "False" matches cache key format
             for urn_variant in search_variants:
                 esc = urn_variant.replace("'", "''")
                 async with conn.execute(
-                    "SELECT data FROM api_cache WHERE _id LIKE 'p2fk:GetObjectByAddress/%' AND data LIKE ? LIMIT 1",
-                    (f'%"URN":"{esc}"%',)
+                    "SELECT data FROM api_cache WHERE _id LIKE ? AND data LIKE ? LIMIT 1",
+                    (f'p2fk:GetObjectByAddress/%:{network_flag}:%', f'%"URN":"{esc}"%')
                 ) as cursor:
                     row = await cursor.fetchone()
                     if row:
