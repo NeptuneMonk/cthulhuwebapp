@@ -69,6 +69,13 @@ Build a modern, responsive frontend for a blockchain-based decentralized social 
   - Capability announcements (`master_announce`, `master_inventory`) on peer connect
   - `MeshPanel.js` — sidebar UI showing master node status, peers, stats grid (relayed, requests, blockchain queries, index queries, IPFS served)
   - Integrated into DesktopSidebar as collapsible section
+- **Download Page with Platform Detection (DONE Apr 2026)**
+  - Auto-detects OS (Windows/macOS Intel/macOS ARM/Linux) via UA + GPU renderer hinting
+  - Shows per-platform download cards with "RECOMMENDED" badge on detected OS
+  - Fetches latest release from `/api/releases/latest` with `platforms` dict
+  - Backend updated: `platforms` field in release publish, `set-platform-urls` admin endpoint
+  - 4-step setup guide, Desktop vs Web comparison, Core Wallet requirements with config example
+  - Build from Source section for developers
 
 ## Key API Endpoints (Web App)
 - `GET /api/objects/by-chain/{chain}` — Paginated objects by chain (5min cache)

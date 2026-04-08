@@ -157,6 +157,13 @@ class PublishReleaseRequest(BaseModel):
     wallet_session_id: str = ""
     wallet_address: str = ""
     network: str = "btc-testnet"
+    platforms: dict = {}  # {"windows": {"url":"...", "filename":"...", "size":"..."}, ...}
+
+
+class SetPlatformUrlsRequest(BaseModel):
+    """Set download URLs for each platform on an existing release."""
+    version: str
+    platforms: dict  # {"windows": {"url":"...", "filename":"...", "size":"..."}, ...}
 
 
 # ─── Config ───
@@ -421,6 +428,7 @@ async def publish_release(req: PublishReleaseRequest, _=Depends(_get_admin_verif
                 "dust_cost_sats": dust_cost,
                 "obj_json": obj_json,
                 "keywords": req.keywords,
+                "platforms": req.platforms,
                 "published_at": datetime.now(timezone.utc).isoformat(),
             }
             await _insert_release(release_doc)
@@ -452,6 +460,29 @@ async def publish_release(req: PublishReleaseRequest, _=Depends(_get_admin_verif
 
 # ─── List & Latest ───
 
+@router.post("/set-platform-urls")
+async def set_platform_urls(req: SetPlatformUrlsRequest, _=Depends(_get_admin_verify())):
+    """Update per-platform download URLs for an existing release."""
+    await _ensure_tables()
+    conn = await get_conn()
+    async with conn.execute(
+        "SELECT data FROM releases WHERE version = ? ORDER BY published_at DESC LIMIT 1",
+        (req.version,)
+    ) as cur:
+        row = await cur.fetchone()
+    if not row:
+        raise HTTPException(404, f"Release {req.version} not found")
+
+    release = json.loads(row[0])
+    release["platforms"] = req.platforms
+    await conn.execute(
+        "UPDATE releases SET data = ? WHERE version = ?",
+        (json.dumps(release), req.version)
+    )
+    await conn.commit()
+    return {"success": True, "version": req.version, "platforms": req.platforms}
+
+
 @router.get("")
 async def list_releases(network: str = "", limit: int = 20, _=Depends(_get_admin_verify())):
     """Admin: list all published releases."""
@@ -480,6 +511,7 @@ async def get_latest_release(network: str = "btc-testnet"):
         "image_cid": release.get("image_cid"),
         "txid": release.get("txid"),
         "download_url": f"https://ipfs.io/ipfs/{release['zip_cid']}" if release.get("zip_cid") else "",
+        "platforms": release.get("platforms", {}),
         "published_at": release.get("published_at"),
     }
 
