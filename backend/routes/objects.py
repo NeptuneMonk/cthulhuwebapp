@@ -5,8 +5,10 @@ import asyncio
 import logging
 import json
 import re
+import urllib.parse
 
 from db import object_cache_col, object_index_col, api_cache_col
+from db_sqlite import get_conn
 from utils.helpers import (
     p2fk_get, fetch_objects_owned, fetch_objects_by_address,
     fetch_objects_created_by_address, fetch_object_by_txid,
@@ -146,7 +148,9 @@ async def check_urn_availability(urn: str, network: str = 'btc-testnet'):
 
         for search_urn in search_variants:
             try:
-                obj = await p2fk_get(f"GetObjectByURN/{search_urn}", is_mainnet)
+                # URL-encode the URN to preserve slashes as %2F (not path separators)
+                encoded_urn = urllib.parse.quote(search_urn, safe='')
+                obj = await p2fk_get(f"GetObjectByURN/{encoded_urn}", is_mainnet)
                 if isinstance(obj, dict) and obj.get('Name'):
                     obj_urn = (obj.get('URN', '') or '').replace('\\', '/').lower()
                     if obj_urn == norm_urn:
@@ -163,6 +167,37 @@ async def check_urn_availability(urn: str, network: str = 'btc-testnet'):
                         }
             except Exception:
                 pass
+
+        # Check local api_cache — our backend may have resolved this object
+        # via /api/object/addr/ even if p2fk.io's GetObjectByURN hasn't indexed it yet.
+        try:
+            conn = await get_conn()
+            # Search cached GetObjectByAddress responses for a matching URN
+            for urn_variant in search_variants:
+                esc = urn_variant.replace("'", "''")
+                async with conn.execute(
+                    "SELECT data FROM api_cache WHERE _id LIKE 'p2fk:GetObjectByAddress/%' AND data LIKE ? LIMIT 1",
+                    (f'%"URN":"{esc}"%',)
+                ) as cursor:
+                    row = await cursor.fetchone()
+                    if row:
+                        cached = json.loads(row[0])
+                        obj = cached.get('data', cached)
+                        obj_urn = (obj.get('URN', '') or '').replace('\\', '/').lower()
+                        if obj_urn == norm_urn and obj.get('Name'):
+                            claimed_by = None
+                            creators = obj.get('Creators')
+                            if isinstance(creators, dict):
+                                claimed_by = next(iter(creators.keys()), None)
+                            return {
+                                "available": False,
+                                "urn": urn,
+                                "claimed_by": claimed_by,
+                                "type": "object",
+                                "name": obj.get('Name') or obj.get('URN'),
+                            }
+        except Exception as e:
+            logger.debug(f"Local URN cache check error: {e}")
 
         return {"available": True, "urn": urn, "claimed_by": None, "type": None}
     except Exception as e:
