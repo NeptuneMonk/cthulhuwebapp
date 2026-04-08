@@ -42,6 +42,17 @@ Build a modern, responsive frontend for a blockchain-based decentralized social 
   - P2FK epoch heights configured for BTC/LTC/DOG/MZC (mainnet + testnet)
   - `/api/node/scanner/*` routes — start/stop/progress for chain scanning
   - `/api/node/index/*` routes — query index by txid, address, keyword, file type, search
+- **Desktop Phase 3: Desktop Frontend Adaptation (DONE Apr 2026)**
+  - `NodeContext.js` — replaces AuthContext; manages Core Wallet connections via `/api/node/*`
+  - `DesktopApp.js` — complete separate app shell with no login/auth
+  - `desktop-index.js` — separate entry point for Tauri build (web app's index.js untouched)
+  - `WalletStatusBar` — BTC/LTC/DOG/MZC connection indicators with balances
+  - `DesktopSidebar` — network picker (BTC mainnet+testnet, LTC/DOG/MZC mainnet), nav, scanner controls
+  - `DesktopNodeHeader` — action bar with wallet status and Ink menu
+  - `DesktopWalletPanel` — Core Wallet details (balance, UTXOs, transactions, address generation)
+  - `ScannerPanel` — per-chain scan progress with start/stop controls
+  - `NoWalletsOverlay` — guides user to start Core Wallet daemons
+  - Networks: BTC mainnet, BTC testnet, LTC mainnet, DOG mainnet, MZC mainnet
 
 ## Key API Endpoints (Web App)
 - `GET /api/objects/by-chain/{chain}` — Paginated objects by chain (5min cache)
@@ -71,15 +82,26 @@ Build a modern, responsive frontend for a blockchain-based decentralized social 
 ## Desktop App Architecture
 ```
 /app/backend/rpc/
-  wallet_rpc.py    — CoreWalletRPC, WalletManager, WalletConfig
-  chain_scanner.py — ChainScanner, ScannerManager, block decoder
-  p2fk_index.py    — SQLite index for decoded roots (separate DB)
+  wallet_rpc.py      — CoreWalletRPC, WalletManager, WalletConfig
+  chain_scanner.py   — ChainScanner, ScannerManager, block decoder
+  p2fk_index.py      — SQLite index for decoded roots (separate DB)
 /app/backend/routes/
-  node.py          — /api/node/* routes (wallet RPC proxy)
-  node_scan.py     — /api/node/scanner/* + /api/node/index/* routes
+  node.py            — /api/node/* routes (wallet RPC proxy)
+  node_scan.py       — /api/node/scanner/* + /api/node/index/* routes
+/app/frontend/src/
+  desktop-index.js   — Separate entry point for Tauri build
+  DesktopApp.js      — Desktop app shell (no login, wallet-driven)
+  contexts/
+    NodeContext.js   — Core Wallet connection manager (replaces AuthContext)
+  components/desktop/
+    WalletStatusBar.js    — Chain connection indicators
+    DesktopSidebar.js     — Network picker, nav, scanner controls
+    DesktopNodeHeader.js  — Action bar with Ink menu
+    DesktopWalletPanel.js — Wallet details (balance, UTXOs, txs)
+    ScannerPanel.js       — Chain scanner progress + controls
 /app/src-tauri/
-  tauri.conf.json  — Tauri build config, sidecar binaries
-  src/main.rs      — Sidecar lifecycle management
+  tauri.conf.json    — Tauri build config, sidecar binaries
+  src/main.rs        — Sidecar lifecycle management
 ```
 
 ## Pending Issues
@@ -88,13 +110,12 @@ Build a modern, responsive frontend for a blockchain-based decentralized social 
 ## Desktop App — Phases
 - [x] Phase 1: Core Wallet RPC Layer (DONE)
 - [x] Phase 2: Local P2FK Decoder & Chain Scanner (DONE)
-- [ ] Phase 3: Desktop Frontend Adaptation (NodeContext.js, no login, wallet status UI)
+- [x] Phase 3: Desktop Frontend Adaptation (DONE)
 - [ ] Phase 4: Tauri Packaging (PyInstaller + Kubo sidecar bundling)
 - [ ] Phase 5: WebRTC Mesh Integration (desktop peer announcements)
 
 ## Upcoming Tasks
-- (P0) Desktop Phase 3: Desktop Frontend Adaptation
-- (P1) Desktop Phase 4: Tauri Packaging
+- (P0) Desktop Phase 4: Tauri Packaging
 - (P1) Desktop Phase 5: WebRTC Mesh Integration
 
 ## Future/Backlog
