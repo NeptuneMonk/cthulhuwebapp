@@ -20,6 +20,7 @@ KUBO_API = "http://127.0.0.1:5001/api/v0"
 # Viewed CIDs are auto-pinned on access and GC'd after 48 hours.
 _cid_access_log: dict[str, float] = {}  # cid -> last_access_timestamp
 _uploaded_cids: set[str] = set()  # CIDs uploaded by our users (always keep)
+_discovered_pin_queue: set[str] = set()  # CIDs already queued for discovery-based pinning (dedup)
 STALE_THRESHOLD = 48 * 3600  # 48 hours in seconds
 _gc_running = False
 
@@ -57,6 +58,61 @@ async def _persist_uploaded_cid(cid: str):
         await conn.commit()
     except Exception as e:
         logger.warning(f"Could not persist uploaded CID {cid[:20]}: {e}")
+
+
+# ─── Discovery-Based Auto-Pinning ───
+# When new objects/roots arrive from p2fk.io, extract IPFS CIDs and pin them
+# so this node acts as a local pinning node for all discovered content.
+
+import re as _re
+
+_IPFS_CID_PATTERN = _re.compile(r'IPFS:([A-Za-z0-9]{46,})')
+
+
+def extract_ipfs_cids(data) -> set[str]:
+    """Recursively scan any data structure for IPFS:CID strings and return the CID set."""
+    cids = set()
+    if isinstance(data, str):
+        for match in _IPFS_CID_PATTERN.finditer(data):
+            cids.add(match.group(1))
+    elif isinstance(data, dict):
+        for v in data.values():
+            cids.update(extract_ipfs_cids(v))
+    elif isinstance(data, list):
+        for item in data:
+            cids.update(extract_ipfs_cids(item))
+    return cids
+
+
+async def pin_discovered_cids(data):
+    """Extract IPFS CIDs from any data structure and pin new ones to Kubo.
+    Called as a fire-and-forget task when fresh data arrives from p2fk.io.
+    Deduplicates against already-queued CIDs to avoid redundant pin requests."""
+    try:
+        cids = extract_ipfs_cids(data)
+        if not cids:
+            return
+
+        new_cids = cids - _discovered_pin_queue - _uploaded_cids
+        if not new_cids:
+            return
+
+        # Mark as queued before pinning (prevent races)
+        _discovered_pin_queue.update(new_cids)
+
+        client = get_client()
+        for cid in new_cids:
+            try:
+                resp = await client.post(f"{KUBO_API}/pin/add?arg={cid}", timeout=120.0)
+                if resp.status_code == 200:
+                    _cid_access_log[cid] = time.time()
+                    logger.info(f"Auto-pinned discovered CID: {cid[:20]}...")
+                else:
+                    logger.debug(f"Auto-pin failed for {cid[:20]}: {resp.status_code}")
+            except Exception as e:
+                logger.debug(f"Auto-pin error for {cid[:20]}: {e}")
+    except Exception as e:
+        logger.warning(f"pin_discovered_cids error: {e}")
 
 
 @router.post("/ipfs/restart")
@@ -556,19 +612,18 @@ async def ipfs_list_pins():
         return {"success": True, "count": 0, "pins": []}
 
 
-# ─── Garbage Collection ───
-
-async def _is_on_public_gateway(cid: str) -> bool:
-    """Quick check if a CID is available on a public gateway (HEAD request)."""
+async def _count_public_gateways(cid: str) -> int:
+    """Check how many public gateways have this CID available (HEAD requests)."""
     client = get_client()
-    for gw in PUBLIC_IPFS_GATEWAYS[:2]:
+    count = 0
+    for gw in PUBLIC_IPFS_GATEWAYS:
         try:
             resp = await client.head(f"{gw}{cid}", timeout=8.0, follow_redirects=True)
             if resp.status_code == 200:
-                return True
+                count += 1
         except Exception:
             continue
-    return False
+    return count
 
 
 async def _unpin_cid(cid: str) -> bool:
@@ -591,8 +646,8 @@ async def _run_gc():
     """Run IPFS garbage collection:
     1. Get all pinned CIDs
     2. Skip user-uploaded CIDs (always keep)
-    3. Unpin CIDs not accessed in 48h
-    4. For recently-accessed CIDs, unpin if available on public gateways
+    3. Unpin stale CIDs (not accessed in 48h) ONLY if on 2+ public gateways
+    4. For recently-accessed CIDs, unpin if confirmed on 2+ public gateways
     5. Run Kubo repo GC to reclaim disk space
     """
     global _gc_running
@@ -630,16 +685,22 @@ async def _run_gc():
             age = now - last_access if last_access > 0 else float('inf')
 
             # Stale: not accessed in 48 hours (or never tracked)
+            # Only unpin if confirmed on 2+ public gateways
             if age > STALE_THRESHOLD:
-                if await _unpin_cid(cid):
-                    stats["unpinned_stale"] += 1
-                    _cid_access_log.pop(cid, None)
+                gw_count = await _count_public_gateways(cid)
+                if gw_count >= 2:
+                    if await _unpin_cid(cid):
+                        stats["unpinned_stale"] += 1
+                        _cid_access_log.pop(cid, None)
+                    else:
+                        stats["errors"] += 1
                 else:
-                    stats["errors"] += 1
+                    stats["kept_recent"] += 1  # Keep — not enough gateway redundancy
                 continue
 
-            # Recently accessed but check if public gateways have it
-            if await _is_on_public_gateway(cid):
+            # Recently accessed — unpin only if 2+ public gateways have it
+            gw_count = await _count_public_gateways(cid)
+            if gw_count >= 2:
                 if await _unpin_cid(cid):
                     stats["unpinned_gateway"] += 1
                     _cid_access_log.pop(cid, None)

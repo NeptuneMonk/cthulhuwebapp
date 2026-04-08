@@ -23,6 +23,15 @@ from blockchain_api import (
 
 logger = logging.getLogger(__name__)
 
+
+async def _auto_pin_discovered(data):
+    """Fire-and-forget: extract IPFS CIDs from fresh p2fk data and pin to local Kubo."""
+    try:
+        from routes.ipfs import pin_discovered_cids
+        await pin_discovered_cids(data)
+    except Exception as e:
+        logger.debug(f"Auto-pin discovered CIDs error: {e}")
+
 # TTL for API cache: roots are immutable (1yr), profiles=1hr, default=10min
 _CACHE_TTL_ROOT = 31536000  # 1 year — immutable blockchain data (GetRootByTransactionId)
 _CACHE_TTL_PROFILE = 3600
@@ -488,6 +497,8 @@ async def p2fk_get(path: str, mainnet: bool = False, extra_params: dict = None, 
         logger.info(f"Local decoder served [{path}] in {local_ms:.0f}ms")
         track_decoder_source(path, "local_decoder", local_ms)
         asyncio.create_task(_set_api_cache(cache_key, local_result))
+        # Auto-pin any IPFS CIDs discovered in fresh data
+        asyncio.create_task(_auto_pin_discovered(local_result))
         return local_result
     track_decoder_source(path, "local_decoder", local_ms, success=False)
 
@@ -561,6 +572,8 @@ async def p2fk_get(path: str, mainnet: bool = False, extra_params: dict = None, 
                     # Index root data for local text search
                     if 'Root' in path or 'GetRootsByAddress' in path:
                         asyncio.create_task(_index_roots_for_search(data, path, mainnet))
+                    # Auto-pin any IPFS CIDs discovered in fresh data
+                    asyncio.create_task(_auto_pin_discovered(data))
                     track_decoder_source(path, "p2fk_io", duration_ms)
                 else:
                     # p2fk.io returned garbage — try stale cache instead

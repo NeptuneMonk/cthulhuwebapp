@@ -136,6 +136,14 @@ Build a modern, responsive frontend for a blockchain-based decentralized social 
 ## Pending Issues
 - None active
 
+## Recently Completed
+- **IPFS Auto-Pinning for Discovered CIDs (DONE Apr 2026)**
+  - Hooked into `p2fk_get()` to extract `IPFS:CID` strings from all fresh data flowing from p2fk.io or local decoder
+  - New CIDs are automatically pinned to the local Kubo daemon in the background (fire-and-forget)
+  - Dedup set prevents redundant pin requests
+  - GC updated: CIDs are only unpinned after confirmed available on **2+ public IPFS gateways**
+  - Files: `routes/ipfs.py` (extract_ipfs_cids, pin_discovered_cids, _count_public_gateways), `utils/helpers.py` (_auto_pin_discovered hook)
+
 ## Desktop App — Phases
 - [x] Phase 1: Core Wallet RPC Layer (DONE)
 - [x] Phase 2: Local P2FK Decoder & Chain Scanner (DONE)
