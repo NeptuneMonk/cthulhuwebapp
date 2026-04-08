@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useCachedIPFS } from '@/hooks/useCachedIPFS';
 import { FiFile, FiLoader, FiDownload, FiMaximize2, FiX } from 'react-icons/fi';
 import { LinkPreview } from '@/components/LinkPreview';
+import { MediaEmbed, getEmbedInfo } from '@/components/MediaEmbed';
 import { resolveUrnOfficial } from '@/hooks/useUrnVerify';
 
 /**
@@ -521,8 +522,13 @@ export const MessageContent = ({ content, files, txid }) => {
       {fileEntries.length > 0 && fileEntries.map(([fname, fsize], i) => (
         <FileAttachment key={`file-${i}`} filename={fname} fileSize={fsize} txid={txid} />
       ))}
-      {/* Show link previews for the first URL only (to avoid clutter) */}
-      {urls.length > 0 && <LinkPreview url={urls[0]} />}
+      {/* Render embeds for recognized providers, LinkPreview for the rest */}
+      {urls.map((u, i) => {
+        if (getEmbedInfo(u)) return <MediaEmbed key={`embed-${i}`} url={u} />;
+        // Only show LinkPreview for the first non-embeddable URL
+        if (i === urls.findIndex(x => !getEmbedInfo(x))) return <LinkPreview key={`lp-${i}`} url={u} />;
+        return null;
+      })}
     </div>
   );
 };
