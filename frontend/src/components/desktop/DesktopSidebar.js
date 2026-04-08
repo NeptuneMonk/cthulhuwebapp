@@ -13,9 +13,10 @@
 
 import { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { FiRss, FiGrid, FiSearch, FiHardDrive, FiSettings, FiFilm, FiMusic, FiDatabase, FiChevronDown } from 'react-icons/fi';
+import { FiRss, FiGrid, FiSearch, FiHardDrive, FiSettings, FiFilm, FiMusic, FiDatabase, FiChevronDown, FiWifi } from 'react-icons/fi';
 import { useNode, DESKTOP_NETWORKS } from '@/contexts/NodeContext';
 import { ScannerPanel } from './ScannerPanel';
+import { MeshPanel } from './MeshPanel';
 import { CthulhuLogo } from '@/components/CthulhuLogo';
 
 const NAV_ITEMS = [
@@ -33,6 +34,7 @@ export function DesktopSidebar({ network }) {
   const { activeConfig, switchNetwork, connectedChains, wallets, scanning, scanWallets } = useNode();
   const [showNetworkPicker, setShowNetworkPicker] = useState(false);
   const [showScanner, setShowScanner] = useState(false);
+  const [showMesh, setShowMesh] = useState(false);
 
   return (
     <div className="h-full flex flex-col" data-testid="desktop-sidebar">
@@ -177,6 +179,20 @@ export function DesktopSidebar({ network }) {
           <FiChevronDown size={11} className={`text-gray-500 transition-transform ${showScanner ? 'rotate-180' : ''}`} />
         </button>
         {showScanner && <ScannerPanel />}
+      </div>
+
+      {/* Mesh Network (collapsible) */}
+      <div className="border-t border-white/[0.04]">
+        <button
+          onClick={() => setShowMesh(!showMesh)}
+          className="w-full flex items-center gap-2 px-4 py-2 text-left hover:bg-white/[0.03] transition-colors"
+          data-testid="mesh-toggle"
+        >
+          <FiWifi size={13} className="text-gray-500" />
+          <span className="text-[11px] font-medium text-gray-400 flex-1">Mesh Network</span>
+          <FiChevronDown size={11} className={`text-gray-500 transition-transform ${showMesh ? 'rotate-180' : ''}`} />
+        </button>
+        {showMesh && <MeshPanel />}
       </div>
 
       {/* Settings */}

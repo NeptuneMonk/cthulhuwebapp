@@ -60,6 +60,15 @@ Build a modern, responsive frontend for a blockchain-based decentralized social 
   - `tauri.conf.json` — CSP for desktop (localhost + blockchain APIs + IPFS gateways), sidecar config, app metadata
   - `scripts/build-desktop.sh` — automated 4-step pipeline (frontend → PyInstaller → Kubo → Tauri), platform detection
   - `TAURI_PACKAGING.md` — complete build guide, architecture docs, environment variable reference
+- **Desktop Phase 5: WebRTC Mesh Integration (DONE Apr 2026)**
+  - `desktopMeshNode.js` — master node that joins the same mesh as web peers
+  - Registers as `node_type: "master"` with services: `ipfs, api_cache, feed, blockchain, p2fk_index, utxo`
+  - Serves blockchain data via whitelisted RPC methods (`getblock`, `getrawtransaction`, `estimatesmartfee`, etc.)
+  - Serves P2FK index queries (roots, keywords, objects, profiles, search) from local scanner
+  - Serves IPFS content from local Kubo daemon
+  - Capability announcements (`master_announce`, `master_inventory`) on peer connect
+  - `MeshPanel.js` — sidebar UI showing master node status, peers, stats grid (relayed, requests, blockchain queries, index queries, IPFS served)
+  - Integrated into DesktopSidebar as collapsible section
 
 ## Key API Endpoints (Web App)
 - `GET /api/objects/by-chain/{chain}` — Paginated objects by chain (5min cache)
@@ -119,10 +128,11 @@ Build a modern, responsive frontend for a blockchain-based decentralized social 
 - [x] Phase 2: Local P2FK Decoder & Chain Scanner (DONE)
 - [x] Phase 3: Desktop Frontend Adaptation (DONE)
 - [x] Phase 4: Tauri Packaging (DONE)
-- [ ] Phase 5: WebRTC Mesh Integration (desktop peer announcements)
+- [x] Phase 5: WebRTC Mesh Integration (DONE)
 
 ## Upcoming Tasks
-- (P1) Desktop Phase 5: WebRTC Mesh Integration
+- (P1) Web app mesh client: teach web MeshNode to prefer desktop master nodes for blockchain/index queries (requires web app changes — deferred per user request)
+- (P2) "Ink Log" wallet transaction history tab
 
 ## Future/Backlog
 - (P2) "Ink Log" wallet transaction history tab
