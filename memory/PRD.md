@@ -3,12 +3,16 @@
 ## Original Problem Statement
 Build a modern, responsive frontend for a blockchain-based decentralized social media platform (Cthulhu). The platform uses a fully client-side signing architecture (WIF encrypted in browser) and interacts with the P2FK protocol. Complete decentralization is required: SQLite (NO MONGODB), Local Kubo IPFS daemon, P2FK Decoder fetching from reliable blockchain explorers.
 
+**Desktop App (NEW):** Package Cthulhu as a native Tauri desktop application that connects to locally-running Core Wallets (Bitcoin, Litecoin, Dogecoin, Maza) via JSON-RPC. No WIF/login — signing happens inside the Core Wallet daemon. Desktop logic is strictly isolated from web app code.
+
 ## Core Architecture
 - **Frontend:** React (CRA with config-overrides for crypto polyfills)
 - **Backend:** FastAPI + SQLite (aiosqlite, MongoDB-compatible API wrapper)
-- **Auth:** 100% client-side WIF signing. Private key encrypted in browser localStorage.
+- **Auth (Web):** 100% client-side WIF signing. Private key encrypted in browser localStorage.
+- **Auth (Desktop):** None — relies on locally-running Core Wallet daemons via JSON-RPC
 - **Blockchain:** P2FK protocol on BTC, LTC, DOG, MZC chains
 - **IPFS:** Local Kubo daemon for uploads, public gateways for reads
+- **Desktop Shell:** Tauri (Rust) with PyInstaller-frozen FastAPI + Kubo as sidecars
 
 ## What's Implemented
 - Full client-side signing (profile minting, posting, object creation, give/buy/burn)
@@ -22,36 +26,69 @@ Build a modern, responsive frontend for a blockchain-based decentralized social 
 - Network isolation (mainnet/testnet)
 - Feed with cached background updates
 - Dynamic fee selector (FeePicker) integrated into all transaction modals
-- **TXID Import in Object Create Modal** (NEW) — paste a TXID to auto-populate URN, name, image, etc. from on-chain P2FK data. Cross-chain support (BTC, LTC, DOG, MZC).
-- **Cross-Chain Discover Search** (NEW) — DiscoverPage search fans out to all chains (BTC, LTC, DOG, MZC) in parallel via p2fk.io `GetKnownRootsBySearchString?blockchain={chain}` and `GetKnownObjectsBySearchString`. Finds both claimed objects and unclaimed raw injections.
-- **Chat Header Fix** (FIXED Apr 2026) — `/api/object/addr/{address}` now resolves names from the latest/active root instead of the oldest, preventing burned object names from appearing in chat room headers.
+- TXID Import in Object Create Modal
+- Cross-Chain Discover Search
+- Media Embeds (Archive.org, YouTube, Spotify, Vimeo)
+- **Desktop Phase 1: Core Wallet RPC Layer (DONE Apr 2026)**
+  - `WalletConfig` — per-chain connection config with default ports, cookie auth
+  - `CoreWalletRPC` — async JSON-RPC client (getbalance, listunspent, sign, broadcast, blocks, fees)
+  - `WalletManager` — multi-chain connection manager with concurrent scan
+  - `/api/node/*` routes — fully isolated desktop-only API endpoints
 
-## Key API Endpoints
+## Key API Endpoints (Web App)
 - `GET /api/objects/by-chain/{chain}` — Paginated objects by chain (5min cache)
 - `GET /api/onchain/file/{txid}/{filename}` — On-chain file resolution
 - `GET /api/wallet/utxos/{address}` — UTXOs for PSBT construction
 - `POST /api/wallet/broadcast` — Broadcast signed transaction hex
 - `POST /api/upload` — IPFS file upload via local Kubo daemon
-- `GET /api/txid/inspect/{txid}` — (NEW) Inspect P2FK root data from a TXID, cross-chain with existing claim check
-- `GET /api/p2fk/search/roots` — (UPDATED) Roots search now fans out to BTC/LTC/DOG/MZC in parallel
-- `POST /api/objects/discover` — (UPDATED) Discovery search uses per-chain root search + objects search
+- `GET /api/txid/inspect/{txid}` — Inspect P2FK root data from a TXID
+- `GET /api/p2fk/search/roots` — Cross-chain root search
+- `POST /api/objects/discover` — Discovery search
+
+## Key API Endpoints (Desktop App — NEW)
+- `GET /api/node/status` — Connection status for all wallets
+- `POST /api/node/scan` — Probe all Core Wallet daemons
+- `GET /api/node/wallet/{chain}` — Detailed wallet + blockchain info
+- `GET /api/node/address/{chain}` — Get new receiving address
+- `GET /api/node/utxos/{chain}` — List unspent outputs from wallet
+- `POST /api/node/tx/create` — Create raw unsigned transaction
+- `POST /api/node/tx/sign` — Sign via Core Wallet (keys never leave daemon)
+- `POST /api/node/tx/broadcast` — Broadcast signed transaction
+- `GET /api/node/transactions/{chain}` — Transaction history
+- `GET /api/node/tx/{chain}/{txid}` — Transaction details
+- `GET /api/node/block/{chain}/{height_or_hash}` — Block data
+- `GET /api/node/fee/{chain}` — Fee estimation
+- `POST /api/node/rpc` — Generic RPC passthrough
+
+## Desktop App Architecture
+```
+/app/backend/rpc/
+  wallet_rpc.py    — CoreWalletRPC, WalletManager, WalletConfig
+/app/backend/routes/
+  node.py          — /api/node/* routes (desktop-only)
+/app/src-tauri/
+  tauri.conf.json  — Tauri build config, sidecar binaries
+  src/main.rs      — Sidecar lifecycle management
+```
 
 ## Pending Issues
 - None active
 
-## Recently Fixed (Apr 2026 - continued)
-- **P2FK Duplicate Address Bug (P0):** When `urn` and `img` contained the same long hash string and the JSON layout caused the inter-string distance to be a multiple of 20, the 20-byte P2FK chunk encoding produced duplicate addresses. The P2FK indexer (Root.cs) uses Dictionary.Add which throws on duplicates, silently rejecting the claim. Fixed with `encodeObjJsonSafe()` which detects duplicates and reorders JSON fields (img immediately after urn) to break the chunk alignment. Applied to both `buildObjectTransaction` and `buildObjectUpdateTransaction`.
-
-## Recently Fixed (Apr 2026)
-- **Object Address Collision Bug (P0):** `deriveObjectAddress()` skips delimiter-unsafe indices, but `bumpObjectIndex()` only incremented by 1 from the start index. When indices were skipped, the next mint reused the same address. Fixed by bumping to `usedIndex + 1` instead of `startIndex + 1`.
-- **Fee Rate Not Persisting (P1):** `sessionStorage.removeItem('cthulhu_fee_rate')` was called after every successful broadcast, causing subsequent transactions to fall back to 3 sat/vB. Removed the clearing logic — user's selected fee rate now persists across transactions.
-- **Chat Header Showing Burned Names (P0):** `/api/object/addr/{address}` was iterating roots oldest-first and picking burned object names. Fixed to iterate newest-first via `reversed(roots)`.
+## Desktop App — Phases
+- [x] Phase 1: Core Wallet RPC Layer (DONE)
+- [ ] Phase 2: Local P2FK Decoder (full chain scan from epoch heights, SQLite index)
+- [ ] Phase 3: Desktop Frontend Adaptation (NodeContext.js, no login, wallet status UI)
+- [ ] Phase 4: Tauri Packaging (PyInstaller + Kubo sidecar bundling)
+- [ ] Phase 5: WebRTC Mesh Integration (desktop peer announcements)
 
 ## Upcoming Tasks
-- (P2) WebRTC mesh / TURN server architecture evaluation
-- (P2) "Ink Log" wallet transaction history tab
+- (P0) Desktop Phase 2: Local P2FK Decoder
+- (P0) Desktop Phase 3: Desktop Frontend Adaptation
+- (P1) Desktop Phase 4: Tauri Packaging
+- (P1) Desktop Phase 5: WebRTC Mesh Integration
 
 ## Future/Backlog
+- (P2) "Ink Log" wallet transaction history tab
 - (P3) "SupFlix" Media Gallery for video/audio objects
 - (P3) IPFS client-side IndexedDB caching & settings page
 - (P3) Evaluate paid blockchain explorer APIs
@@ -59,7 +96,9 @@ Build a modern, responsive frontend for a blockchain-based decentralized social 
 
 ## Key Technical Decisions
 - **No MongoDB** — strictly SQLite via aiosqlite
-- **Client-side signing** — user WIF never leaves the browser
-- **Cross-chain discovery** — p2fk.io `blockchain` param (BTC/LTC/DOG/MZC) instead of `mainnet` param
-- **Fee rates** — dynamic via mempool.space, stored in sessionStorage, enforced minimums (3/7/15 sat/vB)
-- **Protocol files** — SIG, LNK, OBJ, PRO, GIV, BRN, BUY, LST, SEC, INQ, ADD, MSG are protocol files, filtered from content display
+- **Client-side signing (Web)** — user WIF never leaves the browser
+- **Core Wallet signing (Desktop)** — keys never leave the daemon, sign via `signrawtransactionwithwallet`
+- **Strict isolation** — Desktop code in `/rpc/` and `/routes/node.py`, never touches web app routes
+- **Cross-chain discovery** — p2fk.io `blockchain` param (BTC/LTC/DOG/MZC)
+- **Fee rates** — dynamic via mempool.space, stored in sessionStorage
+- **Protocol files** — SIG, LNK, OBJ, PRO, GIV, BRN, BUY, LST, SEC, INQ, ADD, MSG are protocol files
