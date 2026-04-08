@@ -34,6 +34,14 @@ Build a modern, responsive frontend for a blockchain-based decentralized social 
   - `CoreWalletRPC` — async JSON-RPC client (getbalance, listunspent, sign, broadcast, blocks, fees)
   - `WalletManager` — multi-chain connection manager with concurrent scan
   - `/api/node/*` routes — fully isolated desktop-only API endpoints
+- **Desktop Phase 2: Local P2FK Decoder & Chain Scanner (DONE Apr 2026)**
+  - `ChainScanner` — background block walker using Core Wallet RPC `getblock(hash,2)`
+  - `ScannerManager` — per-chain scanner lifecycle (start/stop/progress)
+  - `p2fk_index.py` — dedicated SQLite index (roots, keywords, files, scan_progress tables)
+  - `_extract_roots_from_block()` — pre-filters transactions by dust count, decodes via existing `p2fk_decoder.py`
+  - P2FK epoch heights configured for BTC/LTC/DOG/MZC (mainnet + testnet)
+  - `/api/node/scanner/*` routes — start/stop/progress for chain scanning
+  - `/api/node/index/*` routes — query index by txid, address, keyword, file type, search
 
 ## Key API Endpoints (Web App)
 - `GET /api/objects/by-chain/{chain}` — Paginated objects by chain (5min cache)
@@ -64,8 +72,11 @@ Build a modern, responsive frontend for a blockchain-based decentralized social 
 ```
 /app/backend/rpc/
   wallet_rpc.py    — CoreWalletRPC, WalletManager, WalletConfig
+  chain_scanner.py — ChainScanner, ScannerManager, block decoder
+  p2fk_index.py    — SQLite index for decoded roots (separate DB)
 /app/backend/routes/
-  node.py          — /api/node/* routes (desktop-only)
+  node.py          — /api/node/* routes (wallet RPC proxy)
+  node_scan.py     — /api/node/scanner/* + /api/node/index/* routes
 /app/src-tauri/
   tauri.conf.json  — Tauri build config, sidecar binaries
   src/main.rs      — Sidecar lifecycle management
@@ -76,13 +87,12 @@ Build a modern, responsive frontend for a blockchain-based decentralized social 
 
 ## Desktop App — Phases
 - [x] Phase 1: Core Wallet RPC Layer (DONE)
-- [ ] Phase 2: Local P2FK Decoder (full chain scan from epoch heights, SQLite index)
+- [x] Phase 2: Local P2FK Decoder & Chain Scanner (DONE)
 - [ ] Phase 3: Desktop Frontend Adaptation (NodeContext.js, no login, wallet status UI)
 - [ ] Phase 4: Tauri Packaging (PyInstaller + Kubo sidecar bundling)
 - [ ] Phase 5: WebRTC Mesh Integration (desktop peer announcements)
 
 ## Upcoming Tasks
-- (P0) Desktop Phase 2: Local P2FK Decoder
 - (P0) Desktop Phase 3: Desktop Frontend Adaptation
 - (P1) Desktop Phase 4: Tauri Packaging
 - (P1) Desktop Phase 5: WebRTC Mesh Integration
