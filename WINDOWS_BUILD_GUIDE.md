@@ -36,6 +36,10 @@ rustc --version   # Should show rustc 1.xx.x
 winget install OpenJS.NodeJS.LTS
 # Restart PowerShell
 node --version    # Should show v20.x.x or v22.x.x
+
+# IMPORTANT: Enable script execution first (PowerShell blocks npm scripts by default)
+Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
+
 npm install -g yarn
 ```
 
