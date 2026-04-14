@@ -953,9 +953,9 @@ export const ObjectCreateModal = ({ onClose, network, prefillImage, fullPage, te
 
           {/* File / Content URI */}
           <div>
-            <label className="block text-xs text-gray-400 font-medium mb-1.5 flex items-center gap-1"><FiUpload size={12} /> File / Content (music, video, PDF, HTML, zip)</label>
+            <label className="block text-xs text-gray-400 font-medium mb-1.5 flex items-center gap-1"><FiUpload size={12} /> File / Content URI</label>
             <div className="flex gap-2">
-              <input type="text" value={uri} onChange={e => setUri(e.target.value)} placeholder="IPFS:QmHash/song.mp3 or leave empty"
+              <input type="text" value={uri} onChange={e => setUri(e.target.value)} placeholder="IPFS:QmHash/file.mp3 or https://example.com"
                 className="flex-1 px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-gray-100 text-sm placeholder-gray-500 focus:border-blue-500 focus:outline-none font-mono text-xs" data-testid="object-uri-input" />
               <input type="file" ref={contentFileRef} className="hidden" onChange={e => handleUpload(e.target.files[0], 'file')} />
               <button onClick={() => contentFileRef.current?.click()} disabled={uploading === 'file'}
