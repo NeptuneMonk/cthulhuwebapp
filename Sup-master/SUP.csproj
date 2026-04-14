@@ -1,0 +1,914 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
+  <PropertyGroup>
+    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
+    <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
+    <ProjectGuid>{829A1BE3-3E72-4D91-A2D0-B0931AB67F0F}</ProjectGuid>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>SUP</RootNamespace>
+    <AssemblyName>SUP</AssemblyName>
+    <TargetFrameworkVersion>v4.7.2</TargetFrameworkVersion>
+    <FileAlignment>512</FileAlignment>
+    <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
+    <Deterministic>true</Deterministic>
+    <NuGetPackageImportStamp>
+    </NuGetPackageImportStamp>
+    <PublishUrl>publish\</PublishUrl>
+    <Install>true</Install>
+    <InstallFrom>Disk</InstallFrom>
+    <UpdateEnabled>false</UpdateEnabled>
+    <UpdateMode>Foreground</UpdateMode>
+    <UpdateInterval>7</UpdateInterval>
+    <UpdateIntervalUnits>Days</UpdateIntervalUnits>
+    <UpdatePeriodically>false</UpdatePeriodically>
+    <UpdateRequired>false</UpdateRequired>
+    <MapFileExtensions>true</MapFileExtensions>
+    <ApplicationRevision>0</ApplicationRevision>
+    <ApplicationVersion>1.0.0.%2a</ApplicationVersion>
+    <IsWebBootstrapper>false</IsWebBootstrapper>
+    <UseApplicationTrust>false</UseApplicationTrust>
+    <BootstrapperEnabled>true</BootstrapperEnabled>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <DebugSymbols>true</DebugSymbols>
+    <DebugType>full</DebugType>
+    <Optimize>false</Optimize>
+    <OutputPath>bin\Debug\</OutputPath>
+    <DefineConstants>DEBUG;TRACE</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <DebugType>pdbonly</DebugType>
+    <Optimize>true</Optimize>
+    <OutputPath>bin\Release\</OutputPath>
+    <DefineConstants>TRACE</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+  </PropertyGroup>
+  <PropertyGroup>
+    <StartupObject />
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="PresentationCore" />
+    <Reference Include="PresentationFramework" />
+    <Reference Include="System" />
+    <Reference Include="System.ComponentModel.Composition">
+      <Private>True</Private>
+    </Reference>
+    <Reference Include="System.ComponentModel.DataAnnotations" />
+    <Reference Include="System.Core">
+      <Private>True</Private>
+    </Reference>
+    <Reference Include="System.IO.Compression.FileSystem, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089, processorArchitecture=MSIL" />
+    <Reference Include="System.Management" />
+    <Reference Include="System.Numerics">
+      <Private>True</Private>
+    </Reference>
+    <Reference Include="System.Runtime" />
+    <Reference Include="System.Web" />
+    <Reference Include="System.Xml.Linq">
+      <Private>True</Private>
+    </Reference>
+    <Reference Include="System.Data.DataSetExtensions">
+      <Private>True</Private>
+    </Reference>
+    <Reference Include="Microsoft.CSharp" />
+    <Reference Include="System.Data">
+      <Private>True</Private>
+    </Reference>
+    <Reference Include="System.Deployment">
+      <Private>True</Private>
+    </Reference>
+    <Reference Include="System.Drawing">
+      <Private>True</Private>
+    </Reference>
+    <Reference Include="System.Net.Http">
+      <Private>True</Private>
+    </Reference>
+    <Reference Include="System.Windows.Forms">
+      <Private>True</Private>
+    </Reference>
+    <Reference Include="System.Xml">
+      <Private>True</Private>
+    </Reference>
+    <Reference Include="WindowsBase">
+      <Private>True</Private>
+    </Reference>
+    <Reference Include="WindowsFormsIntegration">
+      <Private>True</Private>
+    </Reference>
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="AudioPlayer.cs" />
+    <Compile Include="IpfsHelper.cs" />
+    <Compile Include="Connections.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Connections.Designer.cs">
+      <DependentUpon>Connections.cs</DependentUpon>
+    </Compile>
+    <Compile Include="DiscoBall.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="DiscoBall.Designer.cs">
+      <DependentUpon>DiscoBall.cs</DependentUpon>
+    </Compile>
+    <Compile Include="FoundINQControl.cs">
+      <SubType>UserControl</SubType>
+    </Compile>
+    <Compile Include="FoundINQControl.Designer.cs">
+      <DependentUpon>FoundINQControl.cs</DependentUpon>
+    </Compile>
+    <Compile Include="FoundCollectionControl.cs">
+      <SubType>UserControl</SubType>
+    </Compile>
+    <Compile Include="FoundCollectionControl.Designer.cs">
+      <DependentUpon>FoundCollectionControl.cs</DependentUpon>
+    </Compile>
+    <Compile Include="FullScreenView.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="p2fk\contracts\INQ.cs" />
+    <Compile Include="INQSearch.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="INQSearch.Designer.cs">
+      <DependentUpon>INQSearch.cs</DependentUpon>
+    </Compile>
+    <Compile Include="INQMint.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="INQMint.Designer.cs">
+      <DependentUpon>INQMint.cs</DependentUpon>
+    </Compile>
+    <Compile Include="SupFlix.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="SupFlix.Designer.cs">
+      <DependentUpon>SupFlix.cs</DependentUpon>
+    </Compile>
+    <Compile Include="JukeBox.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="JukeBox.Designer.cs">
+      <DependentUpon>JukeBox.cs</DependentUpon>
+    </Compile>
+    <Compile Include="GifTool.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="GifTool.Designer.cs">
+      <DependentUpon>GifTool.cs</DependentUpon>
+    </Compile>
+    <Compile Include="ObjectBuy.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="ObjectBuy.Designer.cs">
+      <DependentUpon>ObjectBuy.cs</DependentUpon>
+    </Compile>
+    <Compile Include="ObjectGive.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="ObjectGive.Designer.cs">
+      <DependentUpon>ObjectGive.cs</DependentUpon>
+    </Compile>
+    <Compile Include="ObjectBurn.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="ObjectBurn.Designer.cs">
+      <DependentUpon>ObjectBurn.cs</DependentUpon>
+    </Compile>
+    <Compile Include="ObjectDetails.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="ObjectDetails.designer.cs">
+      <DependentUpon>ObjectDetails.cs</DependentUpon>
+    </Compile>
+    <Compile Include="ObjectBrowserControl.cs">
+      <SubType>UserControl</SubType>
+    </Compile>
+    <Compile Include="ObjectBrowserControl.Designer.cs">
+      <DependentUpon>ObjectBrowserControl.cs</DependentUpon>
+    </Compile>
+    <Compile Include="ObjectMint.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="ObjectMint.Designer.cs">
+      <DependentUpon>ObjectMint.cs</DependentUpon>
+    </Compile>
+    <Compile Include="p2fk\classes\BlockchainRPC.cs" />
+    <Compile Include="p2fk\classes\BlockchainRPC.Methods.cs" />
+    <Compile Include="p2fk\classes\BlockchainRPCException.cs" />
+    <Compile Include="p2fk\classes\RPCError.cs" />
+    <Compile Include="p2fk\classes\RPCRequest.cs" />
+    <Compile Include="p2fk\classes\RPCResponse.cs" />
+    <Compile Include="ProfileMint.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="ProfileMint.Designer.cs">
+      <DependentUpon>ProfileMint.cs</DependentUpon>
+    </Compile>
+    <Compile Include="MessageCache.cs" />
+    <Compile Include="MemoryDiagnostics.cs" />
+    <Compile Include="PrivateMessageAdapter.cs" />
+    <Compile Include="PublicMessageAdapter.cs" />
+    <Compile Include="PublicMessageViewModel.cs" />
+    <Compile Include="PrivateMessageViewModel.cs" />
+    <Compile Include="VirtualizedMessageList.cs">
+      <SubType>UserControl</SubType>
+    </Compile>
+    <Compile Include="SupMain.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="SupMain.Designer.cs">
+      <DependentUpon>SupMain.cs</DependentUpon>
+    </Compile>
+    <Compile Include="SupThread.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="SupThread.Designer.cs">
+      <DependentUpon>SupThread.cs</DependentUpon>
+    </Compile>
+    <Compile Include="WorkBench.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="WorkBench.Designer.cs">
+      <DependentUpon>WorkBench.cs</DependentUpon>
+    </Compile>
+    <Compile Include="ObjectBrowser.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="ObjectBrowser.Designer.cs">
+      <DependentUpon>ObjectBrowser.cs</DependentUpon>
+    </Compile>
+    <Compile Include="FoundObjectControl.cs">
+      <SubType>UserControl</SubType>
+    </Compile>
+    <Compile Include="FoundObjectControl.Designer.cs">
+      <DependentUpon>FoundObjectControl.cs</DependentUpon>
+    </Compile>
+    <Compile Include="p2fk\classes\BigIntExtensions.cs" />
+    <Compile Include="p2fk\classes\ECElGamal.cs" />
+    <Compile Include="p2fk\classes\ECEncryption.cs" />
+    <Compile Include="p2fk\classes\ECPoint.cs" />
+    <Compile Include="p2fk\classes\Hash160.cs" />
+    <Compile Include="p2fk\classes\Hex.cs" />
+    <Compile Include="p2fk\contracts\OBJ.cs" />
+    <Compile Include="p2fk\contracts\PRO.cs" />
+    <Compile Include="p2fk\classes\RIPEMD160.cs" />
+    <Compile Include="p2fk\classes\Secp256k1.cs" />
+    <Compile Include="Program.cs" />
+    <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="p2fk\classes\Base58.cs" />
+    <Compile Include="p2fk\contracts\Root.cs" />
+    <Compile Include="p2fk\classes\SHA256.cs" />
+    <EmbeddedResource Include="Connections.resx">
+      <DependentUpon>Connections.cs</DependentUpon>
+      <SubType>Designer</SubType>
+    </EmbeddedResource>
+    <EmbeddedResource Include="DiscoBall.resx">
+      <DependentUpon>DiscoBall.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="FoundINQControl.resx">
+      <DependentUpon>FoundINQControl.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="FoundCollectionControl.resx">
+      <DependentUpon>FoundCollectionControl.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="FullScreenView.resx">
+      <DependentUpon>FullScreenView.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="INQSearch.resx">
+      <DependentUpon>INQSearch.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="INQMint.resx">
+      <DependentUpon>INQMint.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="SupFlix.resx">
+      <DependentUpon>SupFlix.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="JukeBox.resx">
+      <DependentUpon>JukeBox.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="GifTool.resx">
+      <DependentUpon>GifTool.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="ObjectBuy.resx">
+      <DependentUpon>ObjectBuy.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="ObjectGive.resx">
+      <DependentUpon>ObjectGive.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="ObjectBurn.resx">
+      <DependentUpon>ObjectBurn.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="ObjectDetails.resx">
+      <DependentUpon>ObjectDetails.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="ObjectBrowserControl.resx">
+      <DependentUpon>ObjectBrowserControl.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="ObjectMint.resx">
+      <DependentUpon>ObjectMint.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="ProfileMint.resx">
+      <DependentUpon>ProfileMint.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="SupMain.resx">
+      <DependentUpon>SupMain.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="SupThread.resx">
+      <DependentUpon>SupThread.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="WorkBench.resx">
+      <DependentUpon>WorkBench.cs</DependentUpon>
+      <SubType>Designer</SubType>
+    </EmbeddedResource>
+    <EmbeddedResource Include="ObjectBrowser.resx">
+      <DependentUpon>ObjectBrowser.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="FoundObjectControl.resx">
+      <DependentUpon>FoundObjectControl.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Properties\Resources.resx">
+      <Generator>ResXFileCodeGenerator</Generator>
+      <LastGenOutput>Resources.Designer.cs</LastGenOutput>
+      <SubType>Designer</SubType>
+    </EmbeddedResource>
+    <Compile Include="Properties\Resources.Designer.cs">
+      <AutoGen>True</AutoGen>
+      <DependentUpon>Resources.resx</DependentUpon>
+      <DesignTime>True</DesignTime>
+    </Compile>
+    <None Include="p2fk\samples\Create Poll.json">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+    <None Include="p2fk\samples\List Object.json">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+    <None Include="p2fk\samples\Give Object.json">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+    <None Include="packages.config" />
+    <None Include="Properties\Settings.settings">
+      <Generator>SettingsSingleFileGenerator</Generator>
+      <LastGenOutput>Settings.Designer.cs</LastGenOutput>
+    </None>
+    <Compile Include="Properties\Settings.Designer.cs">
+      <AutoGen>True</AutoGen>
+      <DependentUpon>Settings.settings</DependentUpon>
+      <DesignTimeSharedInput>True</DesignTimeSharedInput>
+    </Compile>
+    <None Include="p2fk\samples\Burn Object.json">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+    <None Include="p2fk\samples\Create Object.json">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+    <None Include="p2fk\samples\Create Profile.json">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+    <None Include="p2fk\samples\Buy Object.json">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="AngleSharp">
+      <Version>1.4.0</Version>
+    </PackageReference>
+    <PackageReference Include="AngleSharp.Css">
+      <Version>0.17.0</Version>
+    </PackageReference>
+    <PackageReference Include="CommandLineParser">
+      <Version>2.9.1</Version>
+    </PackageReference>
+    <PackageReference Include="HtmlSanitizer">
+      <Version>9.0.892</Version>
+    </PackageReference>
+    <PackageReference Include="Microsoft.AspNetCore">
+      <Version>2.3.0</Version>
+    </PackageReference>
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.Abstractions">
+      <Version>2.3.0</Version>
+    </PackageReference>
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.Core">
+      <Version>2.3.0</Version>
+    </PackageReference>
+    <PackageReference Include="Microsoft.AspNetCore.Connections.Abstractions">
+      <Version>10.0.1</Version>
+    </PackageReference>
+    <PackageReference Include="Microsoft.AspNetCore.Diagnostics">
+      <Version>2.3.0</Version>
+    </PackageReference>
+    <PackageReference Include="Microsoft.AspNetCore.Diagnostics.Abstractions">
+      <Version>2.3.0</Version>
+    </PackageReference>
+    <PackageReference Include="Microsoft.AspNetCore.HostFiltering">
+      <Version>2.3.0</Version>
+    </PackageReference>
+    <PackageReference Include="Microsoft.AspNetCore.Hosting">
+      <Version>2.3.0</Version>
+    </PackageReference>
+    <PackageReference Include="Microsoft.AspNetCore.Hosting.Abstractions">
+      <Version>2.3.0</Version>
+    </PackageReference>
+    <PackageReference Include="Microsoft.AspNetCore.Hosting.Server.Abstractions">
+      <Version>2.3.0</Version>
+    </PackageReference>
+    <PackageReference Include="Microsoft.AspNetCore.Http">
+      <Version>2.3.0</Version>
+    </PackageReference>
+    <PackageReference Include="Microsoft.AspNetCore.Http.Abstractions">
+      <Version>2.3.0</Version>
+    </PackageReference>
+    <PackageReference Include="Microsoft.AspNetCore.Http.Extensions">
+      <Version>2.3.0</Version>
+    </PackageReference>
+    <PackageReference Include="Microsoft.AspNetCore.Http.Features">
+      <Version>2.3.0</Version>
+    </PackageReference>
+    <PackageReference Include="Microsoft.AspNetCore.HttpOverrides">
+      <Version>2.3.7</Version>
+    </PackageReference>
+    <PackageReference Include="Microsoft.AspNetCore.Routing">
+      <Version>2.3.0</Version>
+    </PackageReference>
+    <PackageReference Include="Microsoft.AspNetCore.Routing.Abstractions">
+      <Version>2.3.0</Version>
+    </PackageReference>
+    <PackageReference Include="Microsoft.AspNetCore.Server.IIS">
+      <Version>2.2.6</Version>
+    </PackageReference>
+    <PackageReference Include="Microsoft.AspNetCore.Server.IISIntegration">
+      <Version>2.3.0</Version>
+    </PackageReference>
+    <PackageReference Include="Microsoft.AspNetCore.Server.Kestrel">
+      <Version>2.3.0</Version>
+    </PackageReference>
+    <PackageReference Include="Microsoft.AspNetCore.Server.Kestrel.Core">
+      <Version>2.3.6</Version>
+    </PackageReference>
+    <PackageReference Include="Microsoft.AspNetCore.Server.Kestrel.Https">
+      <Version>2.3.0</Version>
+    </PackageReference>
+    <PackageReference Include="Microsoft.AspNetCore.Server.Kestrel.Transport.Abstractions">
+      <Version>2.3.0</Version>
+    </PackageReference>
+    <PackageReference Include="Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets">
+      <Version>2.3.0</Version>
+    </PackageReference>
+    <PackageReference Include="Microsoft.AspNetCore.WebUtilities">
+      <Version>2.3.0</Version>
+    </PackageReference>
+    <PackageReference Include="Microsoft.Bcl.AsyncInterfaces">
+      <Version>10.0.1</Version>
+    </PackageReference>
+    <PackageReference Include="Microsoft.CSharp">
+      <Version>4.7.0</Version>
+    </PackageReference>
+    <PackageReference Include="Microsoft.Extensions.Configuration">
+      <Version>10.0.1</Version>
+    </PackageReference>
+    <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions">
+      <Version>10.0.1</Version>
+    </PackageReference>
+    <PackageReference Include="Microsoft.Extensions.Configuration.Binder">
+      <Version>10.0.1</Version>
+    </PackageReference>
+    <PackageReference Include="Microsoft.Extensions.Configuration.CommandLine">
+      <Version>10.0.1</Version>
+    </PackageReference>
+    <PackageReference Include="Microsoft.Extensions.Configuration.EnvironmentVariables">
+      <Version>10.0.1</Version>
+    </PackageReference>
+    <PackageReference Include="Microsoft.Extensions.Configuration.FileExtensions">
+      <Version>10.0.1</Version>
+    </PackageReference>
+    <PackageReference Include="Microsoft.Extensions.Configuration.Json">
+      <Version>10.0.1</Version>
+    </PackageReference>
+    <PackageReference Include="Microsoft.Extensions.Configuration.UserSecrets">
+      <Version>10.0.1</Version>
+    </PackageReference>
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection">
+      <Version>10.0.1</Version>
+    </PackageReference>
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions">
+      <Version>10.0.1</Version>
+    </PackageReference>
+    <PackageReference Include="Microsoft.Extensions.Diagnostics.Abstractions">
+      <Version>10.0.1</Version>
+    </PackageReference>
+    <PackageReference Include="Microsoft.Extensions.FileProviders.Abstractions">
+      <Version>10.0.1</Version>
+    </PackageReference>
+    <PackageReference Include="Microsoft.Extensions.FileProviders.Physical">
+      <Version>10.0.1</Version>
+    </PackageReference>
+    <PackageReference Include="Microsoft.Extensions.FileSystemGlobbing">
+      <Version>10.0.1</Version>
+    </PackageReference>
+    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions">
+      <Version>10.0.1</Version>
+    </PackageReference>
+    <PackageReference Include="Microsoft.Extensions.Logging">
+      <Version>10.0.1</Version>
+    </PackageReference>
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions">
+      <Version>10.0.1</Version>
+    </PackageReference>
+    <PackageReference Include="Microsoft.Extensions.Logging.Configuration">
+      <Version>10.0.1</Version>
+    </PackageReference>
+    <PackageReference Include="Microsoft.Extensions.Logging.Console">
+      <Version>10.0.1</Version>
+    </PackageReference>
+    <PackageReference Include="Microsoft.Extensions.Logging.Debug">
+      <Version>10.0.1</Version>
+    </PackageReference>
+    <PackageReference Include="Microsoft.Extensions.Logging.EventSource">
+      <Version>10.0.1</Version>
+    </PackageReference>
+    <PackageReference Include="Microsoft.Extensions.ObjectPool">
+      <Version>10.0.1</Version>
+    </PackageReference>
+    <PackageReference Include="Microsoft.Extensions.Options">
+      <Version>10.0.1</Version>
+    </PackageReference>
+    <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions">
+      <Version>10.0.1</Version>
+    </PackageReference>
+    <PackageReference Include="Microsoft.Extensions.Primitives">
+      <Version>10.0.1</Version>
+    </PackageReference>
+    <PackageReference Include="Microsoft.Net.Http.Headers">
+      <Version>2.3.0</Version>
+    </PackageReference>
+    <PackageReference Include="Microsoft.Web.WebView2">
+      <Version>1.0.3650.58</Version>
+    </PackageReference>
+    <PackageReference Include="Microsoft.Win32.Registry">
+      <Version>5.0.0</Version>
+    </PackageReference>
+    <PackageReference Include="NAudio">
+      <Version>2.2.1</Version>
+    </PackageReference>
+    <PackageReference Include="NAudio.Asio">
+      <Version>2.2.1</Version>
+    </PackageReference>
+    <PackageReference Include="NAudio.Core">
+      <Version>2.2.1</Version>
+    </PackageReference>
+    <PackageReference Include="NAudio.Midi">
+      <Version>2.2.1</Version>
+    </PackageReference>
+    <PackageReference Include="NAudio.Wasapi">
+      <Version>2.2.1</Version>
+    </PackageReference>
+    <PackageReference Include="NAudio.WinForms">
+      <Version>2.2.1</Version>
+    </PackageReference>
+    <PackageReference Include="NAudio.WinMM">
+      <Version>2.2.1</Version>
+    </PackageReference>
+    <PackageReference Include="NBitcoin">
+      <Version>9.0.4</Version>
+    </PackageReference>
+    <PackageReference Include="NReco.VideoConverter">
+      <Version>1.2.1</Version>
+    </PackageReference>
+    <PackageReference Include="Newtonsoft.Json">
+      <Version>13.0.4</Version>
+    </PackageReference>
+    <PackageReference Include="QrCode.Net">
+      <Version>0.4.0.0</Version>
+    </PackageReference>
+    <PackageReference Include="System.Buffers">
+      <Version>4.6.1</Version>
+    </PackageReference>
+    <PackageReference Include="System.Collections">
+      <Version>4.3.0</Version>
+    </PackageReference>
+    <PackageReference Include="System.Collections.Concurrent">
+      <Version>4.3.0</Version>
+    </PackageReference>
+    <PackageReference Include="System.Collections.Immutable">
+      <Version>10.0.1</Version>
+    </PackageReference>
+    <PackageReference Include="System.ComponentModel.Annotations">
+      <Version>5.0.0</Version>
+    </PackageReference>
+    <PackageReference Include="System.Diagnostics.Debug">
+      <Version>4.3.0</Version>
+    </PackageReference>
+    <PackageReference Include="System.Diagnostics.DiagnosticSource">
+      <Version>10.0.1</Version>
+    </PackageReference>
+    <PackageReference Include="System.Globalization">
+      <Version>4.3.0</Version>
+    </PackageReference>
+    <PackageReference Include="System.IO">
+      <Version>4.3.0</Version>
+    </PackageReference>
+    <PackageReference Include="System.IO.Compression.ZipFile">
+      <Version>4.3.0</Version>
+    </PackageReference>
+    <PackageReference Include="System.IO.Pipelines">
+      <Version>10.0.1</Version>
+    </PackageReference>
+    <PackageReference Include="System.Linq">
+      <Version>4.3.0</Version>
+    </PackageReference>
+    <PackageReference Include="System.Memory">
+      <Version>4.6.3</Version>
+    </PackageReference>
+    <PackageReference Include="System.Numerics.Vectors">
+      <Version>4.6.1</Version>
+    </PackageReference>
+    <PackageReference Include="System.Reflection">
+      <Version>4.3.0</Version>
+    </PackageReference>
+    <PackageReference Include="System.Reflection.Metadata">
+      <Version>10.0.1</Version>
+    </PackageReference>
+    <PackageReference Include="System.Resources.ResourceManager">
+      <Version>4.3.0</Version>
+    </PackageReference>
+    <PackageReference Include="System.Runtime">
+      <Version>4.3.1</Version>
+    </PackageReference>
+    <PackageReference Include="System.Runtime.CompilerServices.Unsafe">
+      <Version>6.1.2</Version>
+    </PackageReference>
+    <PackageReference Include="System.Runtime.Extensions">
+      <Version>4.3.1</Version>
+    </PackageReference>
+    <PackageReference Include="System.Runtime.InteropServices">
+      <Version>4.3.0</Version>
+    </PackageReference>
+    <PackageReference Include="System.Security.AccessControl">
+      <Version>6.0.1</Version>
+    </PackageReference>
+    <PackageReference Include="System.Security.Cryptography.Algorithms">
+      <Version>4.3.1</Version>
+    </PackageReference>
+    <PackageReference Include="System.Security.Cryptography.Cng">
+      <Version>5.0.0</Version>
+    </PackageReference>
+    <PackageReference Include="System.Security.Cryptography.Encoding">
+      <Version>4.3.0</Version>
+    </PackageReference>
+    <PackageReference Include="System.Security.Cryptography.Primitives">
+      <Version>4.3.0</Version>
+    </PackageReference>
+    <PackageReference Include="System.Security.Principal.Windows">
+      <Version>5.0.0</Version>
+    </PackageReference>
+    <PackageReference Include="System.Text.Encoding.CodePages">
+      <Version>10.0.1</Version>
+    </PackageReference>
+    <PackageReference Include="System.Text.Encodings.Web">
+      <Version>10.0.1</Version>
+    </PackageReference>
+    <PackageReference Include="System.Text.Json">
+      <Version>10.0.1</Version>
+    </PackageReference>
+    <PackageReference Include="System.Threading.Tasks.Extensions">
+      <Version>4.6.3</Version>
+    </PackageReference>
+    <PackageReference Include="System.ValueTuple">
+      <Version>4.6.1</Version>
+    </PackageReference>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="App.config" />
+  </ItemGroup>
+  <ItemGroup>
+    <BootstrapperPackage Include=".NETFramework,Version=v4.7.2">
+      <Visible>False</Visible>
+      <ProductName>Microsoft .NET Framework 4.7.2 %28x86 and x64%29</ProductName>
+      <Install>true</Install>
+    </BootstrapperPackage>
+    <BootstrapperPackage Include="Microsoft.Net.Framework.3.5.SP1">
+      <Visible>False</Visible>
+      <ProductName>.NET Framework 3.5 SP1</ProductName>
+      <Install>false</Install>
+    </BootstrapperPackage>
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="includes\anon.png">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="includes\BCT_Logo.png">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="includes\BC_Logo.png">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="includes\SUP31.gif">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="includes\SUP32.gif">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="includes\SUP33.gif">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="includes\SUP34.gif">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="includes\SUP35.gif">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="includes\sup42.gif">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="includes\sup43.gif">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="includes\SUPS.gif" />
+    <Content Include="includes\SUPT.gif" />
+    <Content Include="includes\SUPU.gif" />
+    <Content Include="includes\SUPV.gif" />
+    <Content Include="includes\SUPW.gif" />
+    <Content Include="includes\SUPX.gif" />
+    <Content Include="includes\SUPY.gif" />
+    <Content Include="includes\SUPZ.gif" />
+    <Content Include="runtimes\win-arm64\native\WebView2Loader.dll">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="runtimes\win-x64\native\WebView2Loader.dll">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="runtimes\win-x86\native\WebView2Loader.dll">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <None Include="includes\disco.png">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+    <Content Include="includes\HugPuddle.jpg">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="includes\loading.html">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="includes\notfound.html">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="includes\progress.gif">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="includes\Sup1.gif">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="includes\sup10.gif">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="includes\sup11.gif">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="includes\sup12.gif">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="includes\sup13.gif">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="includes\sup14.gif">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="includes\sup16.gif">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="includes\sup18.gif">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="includes\sup2.gif">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="includes\sup20.gif">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="includes\sup21.gif">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="includes\sup22.gif">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="includes\sup23.gif">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="includes\sup24.gif">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="includes\sup25.gif">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="includes\sup26.gif">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="includes\sup27.gif">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="includes\sup28.gif">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="includes\sup3.gif">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="includes\sup30.gif">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="includes\sup4.gif">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="includes\sup5.gif">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="includes\sup6.gif">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="includes\sup7.gif">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="includes\sup8.gif">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="includes\sup9.gif">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="includes\SupA.gif">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="includes\SupB.gif">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="includes\SupC.gif">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="includes\SupD.gif">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="includes\SupE.gif">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="includes\SUPF.gif">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="includes\SUPG.gif">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="includes\SUPH.gif">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="includes\SUPI.gif">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="includes\SUPJ.gif">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="includes\SUPK.gif">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="includes\SUPL.gif">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="includes\SUPM.gif">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="includes\SUPN.gif">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="includes\SUPO.gif">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="includes\SUPP.gif">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="includes\SUPQ.gif">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="includes\SUPR.gif">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="bitcoin-qt.exe">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="dogecoin-qt.exe">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="ipfs\ipfs.exe">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="litecoin-qt.exe">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="maza-qt.exe">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+  <ItemGroup />
+  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+</Project>
