@@ -918,6 +918,7 @@ export const ObjectCreateModal = ({ onClose, network, prefillImage, fullPage, te
             <label className="block text-xs text-gray-400 font-medium mb-1.5">Display Name</label>
             <input type="text" value={name} onChange={e => setName(e.target.value)} placeholder="My Object"
               className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-gray-100 text-sm placeholder-gray-500 focus:border-blue-500 focus:outline-none" data-testid="object-name-input" />
+            {name.trim().length > 40 && <p className="mt-1 text-[10px] text-amber-400/80" data-testid="name-length-warning">Name is {name.trim().length} chars — may be truncated on-chain. Keep under 40.</p>}
           </div>
 
           {/* Description */}
@@ -949,6 +950,9 @@ export const ObjectCreateModal = ({ onClose, network, prefillImage, fullPage, te
             )}
             {uploadSuccess?.target === 'cover' && !uploadProgress && <p className="mt-1 text-[10px] text-emerald-400" data-testid="cover-upload-success">Pinned to IPFS: {uploadSuccess.cid.slice(0, 12)}...</p>}
             {sizeWarning?.target === 'cover' && <p className="mt-1 text-[10px] text-amber-400/80" data-testid="cover-size-warning">{sizeWarning.message}</p>}
+            {image.trim() && !image.trim().startsWith('IPFS:') && !image.trim().startsWith('BTC:') && !image.trim().startsWith('LTC:') && !image.trim().startsWith('DOG:') && !image.trim().startsWith('MZC:') && !/^https?:\/\//.test(image.trim()) && (
+              <p className="mt-1 text-[10px] text-amber-400/80" data-testid="image-format-warning">Expected format: IPFS:QmHash/file.png, BTC:txid/file.png, or https://url</p>
+            )}
           </div>
 
           {/* File / Content URI */}
@@ -972,6 +976,9 @@ export const ObjectCreateModal = ({ onClose, network, prefillImage, fullPage, te
             )}
             {uploadSuccess?.target === 'file' && !uploadProgress && <p className="mt-1 text-[10px] text-emerald-400" data-testid="file-upload-success">Pinned to IPFS: {uploadSuccess.cid.slice(0, 12)}...</p>}
             {sizeWarning?.target === 'file' && <p className="mt-1 text-[10px] text-amber-400/80" data-testid="file-size-warning">{sizeWarning.message}</p>}
+            {uri.trim() && !uri.trim().startsWith('IPFS:') && !uri.trim().startsWith('BTC:') && !uri.trim().startsWith('LTC:') && !uri.trim().startsWith('DOG:') && !uri.trim().startsWith('MZC:') && !/^https?:\/\//.test(uri.trim()) && (
+              <p className="mt-1 text-[10px] text-amber-400/80" data-testid="uri-format-warning">Expected format: IPFS:QmHash/file, BTC:txid/file, or https://url</p>
+            )}
           </div>
 
           <div className="grid grid-cols-2 gap-3">
