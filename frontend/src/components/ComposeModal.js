@@ -79,6 +79,8 @@ export const ComposeModal = ({ onClose, network, replyTo }) => {
       let contentParts = [];
       if (text.trim()) contentParts.push(text.trim());
       if (attachedGif) contentParts.push(`<<${attachedGif.ref}>>`);
+      // Embed parent TXID for reply threading (SUP ignores <<>> tags, Cthulhu parses them)
+      if (replyTo?.txid) contentParts.push(`<<re:${replyTo.txid.slice(0, 16)}>>`);
 
       if (attachedFiles.length > 0) {
         setSendingStatus('uploading');

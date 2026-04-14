@@ -539,7 +539,9 @@ async def _build_feed_from_scratch(network: str, is_mainnet: bool) -> list:
 
 
 @router.get("/feed/{network}")
-async def get_feed(network: str, skip: int = 0, limit: int = 5, mode: str = 'global', followed: str = ''):
+async def get_feed(network: str, skip: int = 0, limit: int = 20, mode: str = 'global', followed: str = ''):
+    """Feed served from MongoDB cache with 30s background refresh.
+    New posts appear within ~30 seconds of broadcast."""
     try:
         is_mainnet = 'mainnet' in network.lower()
         cache_key = f"feed:{network}"
@@ -557,7 +559,6 @@ async def get_feed(network: str, skip: int = 0, limit: int = 5, mode: str = 'glo
                 announcements = await _get_system_announcements(network)
                 if announcements:
                     all_messages = announcements + all_messages
-                    # Re-sort so announcements appear in chronological position
                     all_messages.sort(
                         key=lambda m: m.get('block_time') or m.get('created_at') or '',
                         reverse=True,
@@ -572,12 +573,13 @@ async def get_feed(network: str, skip: int = 0, limit: int = 5, mode: str = 'glo
             total = len(all_messages)
             page = all_messages[skip:skip + limit]
 
+            # Trigger background refresh every 30s (was 300s)
             refreshing = _feed_refreshing.get(network, False)
-            if cache_age > 300 and not refreshing:
-                asyncio.create_task(_refresh_feed_cache(network, is_mainnet, f"feed:{network}"))
+            if cache_age > 30 and not refreshing:
+                asyncio.create_task(_refresh_feed_cache(network, is_mainnet, cache_key))
                 refreshing = True
 
-            # Proactive IPFS pin: pin all CIDs referenced in the feed page
+            # Proactive IPFS pin
             asyncio.create_task(_proactive_pin_feed_cids(page))
 
             return {
@@ -588,7 +590,7 @@ async def get_feed(network: str, skip: int = 0, limit: int = 5, mode: str = 'glo
                 "mode": mode,
             }
 
-        # No cache — return empty immediately and build in background
+        # No cache — build in background, return empty
         if not _feed_refreshing.get(network):
             asyncio.create_task(_refresh_feed_cache(network, is_mainnet, cache_key))
 
@@ -599,6 +601,7 @@ async def get_feed(network: str, skip: int = 0, limit: int = 5, mode: str = 'glo
             "cached": False, "cache_age": 0, "refreshing": True,
             "mode": mode,
         }
+
     except Exception as e:
         logger.error(f"Feed error: {e}")
         return {"feed": [], "network": network, "count": 0, "total": 0, "has_more": False}

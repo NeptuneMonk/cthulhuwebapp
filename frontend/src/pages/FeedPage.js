@@ -19,7 +19,7 @@ import { FiAtSign, FiArrowDown, FiUsers, FiGlobe } from 'react-icons/fi';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const PAGE_SIZE = 20;
-const MAX_RENDERED_POSTS = 150;
+const BUFFER_SIZE = 60;
 const FEED_MODE_KEY = 'cthulhu_feed_mode';
 
 function getFeedMode() {
@@ -27,15 +27,17 @@ function getFeedMode() {
 }
 
 export default function FeedPage({ network, follows = [] }) {
+  // Rolling buffer: keep ~60 messages, render ~20 visible
   const [feed, setFeed] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [hasMore, setHasMore] = useState(true);
+  const [hasMore, setHasMore] = useState(true);      // can load older
+  const [hasNewer, setHasNewer] = useState(false);    // can load newer (scrolled into history)
   const [initialLoad, setInitialLoad] = useState(true);
   const [replyTo, setReplyTo] = useState(null);
   const [myProfileImage, setMyProfileImage] = useState(null);
   const [pendingPosts, setPendingPosts] = useState([]);
-  const [forwardMsg, setForwardMsg] = useState(null); // { txid, senderUrn, senderAddress, content }
-  const [tipMsg, setTipMsg] = useState(null); // { txid, senderUrn, senderAddress }
+  const [forwardMsg, setForwardMsg] = useState(null);
+  const [tipMsg, setTipMsg] = useState(null);
   const [feedMode, setFeedMode] = useState(getFeedMode);
   const { user } = useAuth();
   const { filterBlocked, blockUser } = useBlockList(network);
@@ -43,11 +45,6 @@ export default function FeedPage({ network, follows = [] }) {
   const { newTxCount, clearNewTxCount } = useFeedMonitor(network, user?.address);
   const { unseenCount, scrollToNext, registerMentionRef, isMention, isUnseen } = useMentions(feed);
   const { wallpaperStyle, theme } = useTheme();
-
-  // Load pending posts
-  const refreshPending = useCallback(() => {
-    setPendingPosts(getPendingPosts(network));
-  }, [network]);
 
   const toggleFeedMode = useCallback(() => {
     setFeedMode(prev => {
@@ -66,23 +63,20 @@ export default function FeedPage({ network, follows = [] }) {
     }).then(p => { if (p?.image) setMyProfileImage(p.image); }).catch(() => {});
   }, [user?.address, user?.network, network]);
 
+  // Refs for scroll/load state
   const skipRef = useRef(0);
   const loadingRef = useRef(false);
   const hasMoreRef = useRef(true);
-  const observerRef = useRef(null);
   const bottomRef = useRef(null);
   const hasScrolledRef = useRef(false);
   const scrollContainerRef = useRef(null);
   const [showBackToBottom, setShowBackToBottom] = useState(false);
 
-  // Track scroll position to show/hide "back to latest" button
+  // Track scroll position
   useEffect(() => {
     const container = scrollContainerRef.current;
     if (!container) return;
     const handleScroll = () => {
-      // scrollContainerRef wraps the flex-col-reverse child.
-      // At the visual bottom (newest posts): scrollTop ≈ scrollHeight - clientHeight
-      // Scrolling towards older posts: scrollTop decreases
       const { scrollTop, scrollHeight, clientHeight } = container;
       const distFromBottom = scrollHeight - clientHeight - scrollTop;
       setShowBackToBottom(distFromBottom > 400);
@@ -91,30 +85,75 @@ export default function FeedPage({ network, follows = [] }) {
     return () => container.removeEventListener('scroll', handleScroll);
   }, []);
 
-  const scrollToBottom = useCallback(() => {
-    // Reset feed to fresh state — clears all loaded history
-    setFeed([]);
-    skipRef.current = 0;
-    setHasMore(true);
-    hasMoreRef.current = true;
-    setShowBackToBottom(false);
-    fetchPageRef.current(0, true);
-    // Scroll to bottom after new data loads
-    setTimeout(() => {
-      const container = scrollContainerRef.current;
-      if (container) container.scrollTop = container.scrollHeight;
-    }, 500);
-  }, []);
+  // Load pending posts
+  const refreshPending = useCallback(() => {
+    setPendingPosts(getPendingPosts(network));
+  }, [network]);
 
+  // Fetch a page of feed data (always fresh, no message caching)
+  const fetchPage = useCallback(async (skip, isReset = false) => {
+    if (loadingRef.current) return;
+    loadingRef.current = true; setLoading(true);
+    try {
+      const params = { skip, limit: PAGE_SIZE };
+      if (feedMode === 'following' && follows.length > 0) {
+        params.mode = 'following';
+        const followedAddrs = follows.map(f => f.address);
+        if (user?.address && !followedAddrs.includes(user.address)) {
+          followedAddrs.push(user.address);
+        }
+        params.followed = followedAddrs.join(',');
+      }
+      const { data: res } = await meshFirstFetch(`/feed/${network}`, params);
+      if (!res) throw new Error('All sources failed');
+      const newPosts = res.feed || [];
+
+      setFeed(prev => {
+        if (isReset) {
+          // Fresh load — just use the new data
+          return newPosts;
+        }
+        // Appending older posts — combine and trim to BUFFER_SIZE
+        const combined = [...prev, ...newPosts];
+        // Dedup by transaction_id
+        const seen = new Set();
+        const deduped = combined.filter(p => {
+          if (seen.has(p.transaction_id)) return false;
+          seen.add(p.transaction_id);
+          return true;
+        });
+        // If buffer exceeds limit, trim the oldest (end of array since sorted newest-first)
+        if (deduped.length > BUFFER_SIZE) {
+          setHasNewer(false); // We're at the newest end since we're loading older
+          return deduped.slice(0, BUFFER_SIZE);
+        }
+        return deduped;
+      });
+
+      setHasMore(res.has_more);
+      hasMoreRef.current = res.has_more;
+      skipRef.current = skip + PAGE_SIZE;
+    } catch (err) {
+      console.error('Feed error:', err);
+      setHasMore(false); hasMoreRef.current = false;
+    } finally { loadingRef.current = false; setLoading(false); setInitialLoad(false); }
+  }, [network, feedMode, follows, user?.address]);
+
+  const fetchPageRef = useRef(fetchPage);
+  fetchPageRef.current = fetchPage;
+
+  // Reset feed on network/mode change
   useEffect(() => {
     setFeed([]); skipRef.current = 0;
     setHasMore(true); hasMoreRef.current = true;
-    setInitialLoad(true); fetchPageRef.current(0, true);
+    setHasNewer(false);
+    setInitialLoad(true);
+    fetchPageRef.current(0, true);
     refreshPending();
     hasScrolledRef.current = false;
   }, [network, feedMode]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Auto-scroll to bottom on initial load (chat-style: newest at bottom)
+  // Auto-scroll to bottom on initial load
   useEffect(() => {
     if (!initialLoad && feed.length > 0 && !hasScrolledRef.current) {
       hasScrolledRef.current = true;
@@ -132,7 +171,7 @@ export default function FeedPage({ network, follows = [] }) {
     return () => clearInterval(interval);
   }, [network, refreshPending]);
 
-  // Listen for surgical post deletion events
+  // Surgical post deletion
   useEffect(() => {
     const handler = (e) => {
       const deletedTxid = e.detail?.txid;
@@ -144,62 +183,38 @@ export default function FeedPage({ network, follows = [] }) {
     return () => window.removeEventListener('cthulhu-post-deleted', handler);
   }, []);
 
-  const fetchPageRef = useRef(null);
-  const fetchPage = useCallback(async (skip, isReset = false) => {
-    if (loadingRef.current) return;
-    loadingRef.current = true; setLoading(true);
-    try {
-      // Build query params for feed mode
-      const params = { skip, limit: PAGE_SIZE };
-      if (feedMode === 'following' && follows.length > 0) {
-        params.mode = 'following';
-        // Include user's own address so their posts appear in "Following" feed too
-        const followedAddrs = follows.map(f => f.address);
-        if (user?.address && !followedAddrs.includes(user.address)) {
-          followedAddrs.push(user.address);
-        }
-        params.followed = followedAddrs.join(',');
-      }
-      // Mesh-first: peers → blockchain → backend
-      const { data: res, source } = await meshFirstFetch(`/feed/${network}`, params);
-      if (!res) throw new Error('All sources failed');
-      const newPosts = res.feed || [];
-      setFeed(prev => {
-        const updated = isReset ? newPosts : [...prev, ...newPosts];
-        if (updated.length >= MAX_RENDERED_POSTS) {
-          setHasMore(false); hasMoreRef.current = false;
-          return updated.slice(0, MAX_RENDERED_POSTS);
-        }
-        return updated;
-      });
-      const more = res.has_more;
-      if (skip + PAGE_SIZE < MAX_RENDERED_POSTS) {
-        setHasMore(more); hasMoreRef.current = more;
-      }
-      skipRef.current = skip + PAGE_SIZE;
-    } catch (err) {
-      console.error('Feed error:', err);
-      setHasMore(false); hasMoreRef.current = false;
-    } finally { loadingRef.current = false; setLoading(false); setInitialLoad(false); }
-  }, [network, feedMode, follows]);
-  fetchPageRef.current = fetchPage;
-
+  // IntersectionObserver for loading older posts (scroll toward top = older)
   const sentinelRef = useCallback((node) => {
-    if (observerRef.current) observerRef.current.disconnect();
     if (!node) return;
-    observerRef.current = new IntersectionObserver(
-      (entries) => { if (entries[0].isIntersecting && !loadingRef.current && hasMoreRef.current) fetchPage(skipRef.current); },
-      { threshold: 0.1, rootMargin: '800px' }
+    const obs = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && !loadingRef.current && hasMoreRef.current) {
+          fetchPageRef.current(skipRef.current);
+        }
+      },
+      { threshold: 0.1, rootMargin: '600px' }
     );
-    observerRef.current.observe(node);
-  }, [fetchPage]);
+    obs.observe(node);
+    return () => obs.disconnect();
+  }, []);
+
+  const scrollToBottom = useCallback(() => {
+    // Jump back to latest — full reset
+    setFeed([]);
+    skipRef.current = 0;
+    setHasMore(true); hasMoreRef.current = true;
+    setHasNewer(false);
+    setShowBackToBottom(false);
+    fetchPageRef.current(0, true);
+    setTimeout(() => {
+      const container = scrollContainerRef.current;
+      if (container) container.scrollTop = container.scrollHeight;
+    }, 500);
+  }, []);
 
   const handlePostSuccess = () => {
     refreshPending();
     setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 300);
-    // Don't re-fetch immediately — the pending post is already visible in the feed.
-    // The feed monitor will detect the new TX and show "new transactions detected" banner.
-    // The pending post system handles the transition: pending → confirmed → merged into feed.
   };
 
   // Merge pending posts at top, excluding any already in the feed
@@ -289,10 +304,10 @@ export default function FeedPage({ network, follows = [] }) {
               />
             ))}
 
-            {/* New TX banner (visual bottom area) */}
+            {/* New TX banner */}
             {newTxCount > 0 && (
               <button
-                onClick={() => { clearNewTxCount(); setFeed([]); skipRef.current = 0; hasMoreRef.current = true; fetchPage(0, true); }}
+                onClick={() => { clearNewTxCount(); scrollToBottom(); }}
                 className="w-full py-2 rounded-lg border text-xs font-medium hover:opacity-80 transition-colors"
                 style={{ backgroundColor: 'rgba(var(--c-accent-rgb), 0.15)', borderColor: 'rgba(var(--c-accent-rgb), 0.2)', color: 'var(--c-accent)' }}
                 data-testid="feed-new-activity-banner"
@@ -301,7 +316,7 @@ export default function FeedPage({ network, follows = [] }) {
               </button>
             )}
 
-            {/* Feed posts: feed[0]=newest at visual bottom, feed[n]=oldest at visual top */}
+            {/* Feed posts */}
             {filterBlocked(feed).map((item, idx) => (
               <FeedCard
                 key={`${item.transaction_id}-${idx}`}
@@ -329,13 +344,7 @@ export default function FeedPage({ network, follows = [] }) {
               </div>
             )}
             {hasMore && !initialLoad && <div ref={sentinelRef} className="h-4" data-testid="feed-scroll-sentinel" />}
-            {!hasMore && feed.length > 0 && feed.length >= MAX_RENDERED_POSTS && (
-              <div className="text-center py-6" data-testid="feed-cap">
-                <p className="text-gray-500 text-sm">Showing latest {MAX_RENDERED_POSTS} transmissions</p>
-                <p className="text-gray-700 text-xs mt-1">Older posts archived to keep the feed fast</p>
-              </div>
-            )}
-            {!hasMore && feed.length > 0 && feed.length < MAX_RENDERED_POSTS && (
+            {!hasMore && feed.length > 0 && (
               <div className="text-center py-6 text-gray-600" data-testid="feed-end">End of transmission</div>
             )}
           </div>
@@ -349,7 +358,6 @@ export default function FeedPage({ network, follows = [] }) {
 
       {replyTo && <ComposeModal onClose={() => { setReplyTo(null); refreshPending(); }} network={network} replyTo={replyTo} />}
 
-      {/* Forward recipient picker */}
       {forwardMsg && (
         <ForwardModal
           message={forwardMsg}
@@ -362,7 +370,6 @@ export default function FeedPage({ network, follows = [] }) {
         />
       )}
 
-      {/* Monetized Like / Tip modal */}
       {tipMsg && (
         <MonetizedLikeModal
           txid={tipMsg.txid}
@@ -376,7 +383,6 @@ export default function FeedPage({ network, follows = [] }) {
         />
       )}
 
-      {/* Back to Latest floating button */}
       {showBackToBottom && (
         <button
           onClick={scrollToBottom}
@@ -389,7 +395,6 @@ export default function FeedPage({ network, follows = [] }) {
         </button>
       )}
 
-      {/* @ Mention floating badge */}
       {unseenCount > 0 && (
         <button
           onClick={scrollToNext}

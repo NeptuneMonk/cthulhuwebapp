@@ -1040,7 +1040,12 @@ async def format_message(msg, sender_profile, network: str, is_mainnet: bool):
     raw_content = msg.get('Message', '')
     content = ' '.join(raw_content) if isinstance(raw_content, list) else str(raw_content)
 
-    # Strip P2FK protocol noise: salt <<number>> and trailing keyword/address bytes
+    # Extract parent TXID from <<re:TXID_PREFIX>> tag (Cthulhu reply threading)
+    parent_txid_match = re.search(r'<<re:([a-fA-F0-9]{8,64})>>', content)
+    parent_txid = parent_txid_match.group(1) if parent_txid_match else None
+
+    # Strip P2FK protocol noise: salt <<number>>, <<re:...>>, and trailing keyword/address bytes
+    content = re.sub(r'<<re:[a-fA-F0-9]+>>', '', content)
     content = re.sub(r'<<-?\d+>>.*', '', content, flags=re.DOTALL).strip()
     # Strip non-printable / surrogate characters left from address decoding
     content = ''.join(c for c in content if c.isprintable() or c in '\n\t').strip()
@@ -1073,6 +1078,7 @@ async def format_message(msg, sender_profile, network: str, is_mainnet: bool):
         'sender_image': sender_profile.get('Image') if sender_profile else None,
         'recipient_urn': None,
         'recipient_image': None,
+        'parent_txid': parent_txid,
         'files': files if files else None,
     }
 

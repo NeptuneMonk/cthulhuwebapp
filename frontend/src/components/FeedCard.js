@@ -366,6 +366,7 @@ export const FeedCard = React.forwardRef(({ item, network, currentUserAddress, c
         style={isOwn ? { backgroundColor: 'rgba(var(--c-accent-rgb), 0.12)', borderColor: 'rgba(var(--c-accent-rgb), 0.2)' } : {}}
         data-testid={`feed-card-${txid?.substring(0, 8)}`}
         data-txid={txid}
+        data-from-address={message.from_address}
       >
         <div className="p-4">
           {/* Mention indicator */}
@@ -389,29 +390,35 @@ export const FeedCard = React.forwardRef(({ item, network, currentUserAddress, c
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                // Try to scroll to the parent post in the current feed
-                const parentCard = document.querySelector(`[data-txid="${message.to_address}"]`);
-                if (!parentCard) {
-                  // Try finding a card from this recipient in the feed
-                  const cards = document.querySelectorAll('[data-txid]');
-                  for (const card of cards) {
-                    const addr = card.closest('[data-testid]')?.querySelector('[data-testid="feed-card-sender"]')?.textContent;
-                    if (addr === (message.recipient_urn || message.to_address)) {
-                      card.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                      card.style.transition = 'box-shadow 0.3s';
-                      card.style.boxShadow = '0 0 0 2px rgba(45, 212, 191, 0.5)';
-                      setTimeout(() => { card.style.boxShadow = ''; }, 2000);
-                      return;
-                    }
+                const parentPrefix = message.parent_txid;
+                // If we have the parent TXID prefix, find the exact card
+                if (parentPrefix) {
+                  const match = document.querySelector(`[data-txid^="${parentPrefix}"]`);
+                  if (match) {
+                    match.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    match.style.transition = 'box-shadow 0.3s';
+                    match.style.boxShadow = '0 0 0 2px rgba(45, 212, 191, 0.5)';
+                    setTimeout(() => { match.style.boxShadow = ''; }, 2000);
+                    return;
                   }
-                  // Parent not in feed — navigate to their profile
-                  navigate(`/profile/${message.to_address}?network=${network}`);
-                  return;
                 }
-                parentCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                parentCard.style.transition = 'box-shadow 0.3s';
-                parentCard.style.boxShadow = '0 0 0 2px rgba(45, 212, 191, 0.5)';
-                setTimeout(() => { parentCard.style.boxShadow = ''; }, 2000);
+                // Fallback: find nearest older post from the recipient address
+                const thisCard = cardRef.current;
+                if (!thisCard) return;
+                const allCards = Array.from(document.querySelectorAll('[data-txid]'));
+                const myIdx = allCards.indexOf(thisCard);
+                for (let i = myIdx + 1; i < allCards.length; i++) {
+                  const card = allCards[i];
+                  if (card.getAttribute('data-from-address') === message.to_address) {
+                    card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    card.style.transition = 'box-shadow 0.3s';
+                    card.style.boxShadow = '0 0 0 2px rgba(45, 212, 191, 0.5)';
+                    setTimeout(() => { card.style.boxShadow = ''; }, 2000);
+                    return;
+                  }
+                }
+                // Not in buffer — go to profile
+                navigate(`/profile/${message.to_address}?network=${network}`);
               }}
               className="flex items-center gap-1 mb-2 text-teal-500/70 text-[11px] font-medium hover:text-teal-400 transition-colors"
               data-testid="reply-context"
