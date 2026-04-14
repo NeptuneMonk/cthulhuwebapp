@@ -1157,8 +1157,12 @@ export default function WalkieTalkiePage({ network = 'btc-testnet' }) {
       setIsTransmitting(true);
       setStatus('ON AIR');
       sfxRef.current.playClick();
-    } catch (err) { setStatus(`MIC ERR: ${err.message}`); }
-  }, [wif, powerOn]);
+      addLog({ type: 'tx', text: 'RECORDING...' });
+    } catch (err) {
+      addLog({ type: 'err', text: `MIC: ${err.message}` });
+      setStatus(`MIC ERR: ${err.message}`);
+    }
+  }, [wif, powerOn, addLog]);
 
   const stopTransmit = useCallback(async () => {
     if (!recorderRef.current && !transmittingRef.current) return;
@@ -1166,10 +1170,15 @@ export default function WalkieTalkiePage({ network = 'btc-testnet' }) {
     setIsTransmitting(false);
     sfxRef.current.playKrrrsh();
     setStatus('PROCESSING...');
+    addLog({ type: 'sys', text: 'PROCESSING TRANSMISSION...' });
     try {
       const blob = await recorderRef.current?.stop();
       recorderRef.current = null;
-      if (!blob || blob.size < 500) { setStatus('TOO SHORT'); return; }
+      if (!blob || blob.size < 500) {
+        addLog({ type: 'sys', text: `TOO SHORT (${blob?.size || 0}B)` });
+        setStatus('TOO SHORT');
+        return;
+      }
       addLog({ type: 'tx', text: `RECORDING ${(blob.size / 1024).toFixed(1)}KB — UPLOADING...` });
 
       // ─── Public Broadcast ─────────────────────────────────────────
