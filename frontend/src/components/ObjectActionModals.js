@@ -129,7 +129,7 @@ export const GiveModal = ({ object, network, onClose }) => {
 
       if (!result.success) throw new Error('Parent transfer failed');
 
-      addTransaction(address, { txid: result.txid, type: 'GIV', network, addresses, label: `Give ${object.name || 'object'}` });
+      addTransaction(address, { txid: result.txid, type: 'GIV', network, addresses, label: `Give "${object.name || 'object'}" to ${recipientAddress?.slice(0, 12)}` });
       addPendingTx({ txid: result.txid, type: 'Give', label: object.name || 'Object', network });
       addOptimisticItem({
         txid: result.txid, type: 'GIV', network, senderAddress: address, objectAddress,
@@ -413,7 +413,7 @@ export const BurnModal = ({ object, network, onClose }) => {
           type: 'BRN',
           network,
           addresses,
-          label: `Burn ${burnQty}x ${object.name || 'object'}`,
+          label: `Burn ${burnQty}x "${object.name || 'object'}"`,
         });
         addPendingTx({ txid: result.txid, type: 'Burn', label: `${burnQty}x ${object.name || 'Object'}`, network });
         addOptimisticItem({
@@ -649,7 +649,7 @@ export const BuyModal = ({ object, network, onClose }) => {
           type: 'BUY',
           network,
           addresses,
-          label: `Buy ${object.name || 'object'}`,
+          label: `Buy "${object.name || 'object'}"`,
         });
         addPendingTx({ txid: result.txid, type: 'Buy', label: object.name || 'Object', network });
         addOptimisticItem({

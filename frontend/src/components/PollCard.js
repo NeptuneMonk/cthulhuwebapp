@@ -6,6 +6,7 @@ import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import { FiBarChart2, FiLock, FiCheck, FiClock, FiUsers, FiZap } from 'react-icons/fi';
 import { useAuth } from '@/hooks/useAuth';
 import { useWallet } from '@/hooks/useWallet';
+import { addTransaction } from '@/utils/txHistory';
 import FeePicker from '@/components/FeePicker';
 import { toast } from 'sonner';
 
@@ -115,6 +116,8 @@ export default function PollCard({ poll, network, onVoted }) {
 
       setVotedFor(answerAddress);
       toast.success('Vote cast!');
+      const answerText = poll.answers?.find(a => a.address === answerAddress)?.answer || '?';
+      addTransaction(myAddress, { txid: poll.txid, type: 'VOTE', network, addresses, label: `Vote: "${answerText}" on poll` });
       onVoted?.();
 
       // Re-fetch fresh on-chain data after a short delay (indexer needs time to register)

@@ -14,6 +14,7 @@ import { useCallback, useState } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { addLocalReaction } from '@/hooks/useFeedMonitor';
 import { addPendingTx } from '@/utils/txBuilder';
+import { addTransaction } from '@/utils/txHistory';
 import { toast } from 'sonner';
 
 const API = process.env.REACT_APP_BACKEND_URL;
@@ -95,6 +96,7 @@ export function useOnChainActions(network) {
       const result = await buildAndBroadcast(wif, addresses, network, [], 0, 546, [], taxInsertIndex);
       if (result.success) {
         addPendingTx({ txid: result.txid, type: label, label: label, network });
+        addTransaction(user?.address, { txid: result.txid, type: label.toUpperCase(), network, addresses, label });
         toast.success(`${label} broadcast!`);
         return result;
       }
@@ -167,6 +169,7 @@ export function useOnChainActions(network) {
       const result = await buildAndBroadcast(wif, addresses, network, extraOutputs, 0, 546, [], taxInsertIndex);
       if (result.success) {
         addPendingTx({ txid: result.txid, type: 'Tip', label: `Tip ${tipAmountSats} sats`, network });
+        addTransaction(user?.address, { txid: result.txid, type: 'TIP', network, addresses, label: `Tip ${tipAmountSats} sats to ${authorAddress.slice(0, 12)}` });
         savePendingReaction(txid, 'like', user?.address, network, result.txid);
         savePendingReaction(txid, 'tip', user?.address, network, result.txid, tipAmountSats);
         toast.success(`Tipped ${tipAmountSats} sats!`);

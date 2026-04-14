@@ -188,9 +188,13 @@ export const ComposeModal = ({ onClose, network, replyTo }) => {
       const result = await buildAndBroadcast(activeWif, addresses, network || 'btc-testnet', [], 0, 546, [], taxInsertIndex);
 
       if (result.success) {
+        const isReply = !!replyTo;
+        const label = isReply
+          ? `Reply to @${replyTo.urn || replyTo.address?.substring(0, 12) || '?'}: ${(text.trim() || '').substring(0, 40)}`
+          : `Feed: ${(text.trim() || 'Post').substring(0, 50)}`;
         addTransaction(activeAddress, {
-          txid: result.txid, type: 'POST', network: network || 'btc-testnet',
-          addresses, label: (text.trim() || 'Post').substring(0, 60),
+          txid: result.txid, type: isReply ? 'REPLY' : 'POST', network: network || 'btc-testnet',
+          addresses, label,
         });
         addPendingPost({
           txid: result.txid, network: network || 'btc-testnet',

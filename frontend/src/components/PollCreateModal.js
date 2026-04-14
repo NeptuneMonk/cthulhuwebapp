@@ -8,6 +8,7 @@ import {
   FiSend, FiAlertTriangle
 } from 'react-icons/fi';
 import { useAuth } from '@/hooks/useAuth';
+import { addTransaction } from '@/utils/txHistory';
 import { useWallet } from '@/hooks/useWallet';
 import FeePicker from '@/components/FeePicker';
 import { addPendingPost } from '@/utils/pendingPosts';
@@ -147,6 +148,7 @@ export default function PollCreateModal({ onClose, network, onCreated }) {
       });
 
       toast.success('Poll created on-chain!');
+      addTransaction(user?.address, { txid: result.txid, type: 'POLL', network, addresses, label: `Poll: "${question.trim().substring(0, 40)}"` });
       console.log('INQ created:', { txid: result.txid, questionAddress, answerAddresses });
       onCreated?.();
       onClose?.();

@@ -4,6 +4,7 @@ import { FiArrowLeft, FiX, FiPhone, FiSquare, FiTrash2, FiVideo } from 'react-ic
 import { toast } from 'sonner';
 import { useAuth } from '@/hooks/useAuth';
 import { buildAndBroadcast, getChangeAddress } from '@/utils/txBuilder';
+import { addTransaction } from '@/utils/txHistory';
 import { useTheme } from '@/hooks/useTheme';
 import { ECPairFactory } from 'ecpair';
 import { ecc } from '@/utils/ecc';
@@ -1190,6 +1191,7 @@ export default function WalkieTalkiePage({ network = 'btc-testnet' }) {
       await buildAndBroadcast(wif, addresses, network, [], 0, channel);
       sfxRef.current.playClick();
       addLog({ type: 'tx', text: `TRANSMITTED ON CH ${channel}` });
+      addTransaction(userAddress, { txid: 'walkie-' + Date.now(), type: 'WALKIE', network, addresses, label: `Walkie broadcast on CH ${channel}` });
       setStatus(`CH ${channel} MONITORING`);
     } catch (err) {
       const msg = err.message?.slice(0, 40) || 'UNKNOWN';

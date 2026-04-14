@@ -534,7 +534,7 @@ export const ObjectCreateModal = ({ onClose, network, prefillImage, fullPage, te
           type: 'OBJ',
           network: network || 'btc-testnet',
           addresses: addresses,
-          label: `Object: ${urn.trim()}`,
+          label: `Minted "${urn.trim()}"`,
           object_address: objectAddress,
         });
         // Write to optimistic cache for instant UI display
