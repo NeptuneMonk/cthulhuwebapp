@@ -120,7 +120,7 @@ export default function ProfileDetailPage({ network, isFollowing, toggleFollow, 
             setProfile(freshData.profile);
             setResolvedAddr(freshData.profile?.address || address);
           }
-          if (freshData?.counts) setObjectCount(freshData.counts.owned || 0);
+          if (freshData?.counts) setObjectCount(freshData.counts.total || freshData.counts.owned || 0);
           if (freshData?.posts) {
             const items = freshData.posts.posts || [];
             setPosts(items);
@@ -134,7 +134,7 @@ export default function ProfileDetailPage({ network, isFollowing, toggleFollow, 
         setProfile(bundle.profile);
         setResolvedAddr(bundle.profile?.address || address);
       }
-      if (bundle?.counts) setObjectCount(bundle.counts.owned || 0);
+      if (bundle?.counts) setObjectCount(bundle.counts.total || bundle.counts.owned || 0);
       if (bundle?.posts) {
         const items = bundle.posts.posts || [];
         setPosts(items);
@@ -198,7 +198,7 @@ export default function ProfileDetailPage({ network, isFollowing, toggleFollow, 
       const { data: d } = await meshFirstFetch(`/objects/counts/${resolvedAddr}`, { network });
       return d;
     }).then(data => {
-      setObjectCount(data.owned || 0);
+      setObjectCount(data.total || data.owned || 0);
     }).catch(() => {});
   }, [resolvedAddr, network]);
 

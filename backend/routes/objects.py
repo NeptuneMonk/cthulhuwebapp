@@ -673,35 +673,34 @@ async def get_object_counts_fast(address: str, network: str = 'btc-testnet', for
             owned_task, created_task, return_exceptions=True
         )
 
-        # Trust p2fk.io API — it is the authoritative source of truth.
-        # Owned count: count what the API returns, minus burned objects.
-        owned_count = 0
-        if not isinstance(owned_raw, Exception) and isinstance(owned_raw, list):
-            owned_count = len(owned_raw)
+        # Combine owned + created, deduplicate by object address (URN)
+        # Some objects are both created AND owned by the same user
+        all_object_addrs = set()
 
-        # Created count: deduplicate by object address
-        created_addrs = set()
+        if not isinstance(owned_raw, Exception) and isinstance(owned_raw, list):
+            for obj in owned_raw:
+                creators = obj.get('Creators') or {}
+                oa = next(iter(creators.keys()), None) if isinstance(creators, dict) else None
+                if oa:
+                    all_object_addrs.add(oa)
+
         if not isinstance(created_raw, Exception) and isinstance(created_raw, list):
             for obj in created_raw:
                 creators = obj.get('Creators') or {}
                 oa = next(iter(creators.keys()), None) if isinstance(creators, dict) else None
                 if oa:
-                    created_addrs.add(oa)
+                    all_object_addrs.add(oa)
 
-        # Filter out burned objects from counts
+        # Filter out burned objects
         try:
             from routes.snapshot import get_burned_set
             burned_addrs = await get_burned_set(network)
             if burned_addrs:
-                if not isinstance(owned_raw, Exception) and isinstance(owned_raw, list):
-                    owned_count = sum(1 for obj in owned_raw
-                        if (next(iter((obj.get('Creators') or {}).keys()), None)
-                            if isinstance(obj.get('Creators'), dict) else None) not in burned_addrs)
-                created_addrs -= burned_addrs
+                all_object_addrs -= burned_addrs
         except Exception:
             pass
 
-        return {"owned": owned_count, "created": len(created_addrs), "address": address}
+        return {"total": len(all_object_addrs), "address": address}
     except Exception as e:
         logger.error(f"Fast object counts error: {e}")
         return {"owned": 0, "created": 0, "address": address}

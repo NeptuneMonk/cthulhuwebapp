@@ -863,24 +863,30 @@ async def get_profile_bundle(address: str, network: str = 'btc-testnet'):
         logger.warning(f"Profile bundle timeout for {real_addr} — returning profile without counts")
         return {
             "profile": profile if not isinstance(profile, Exception) else {"address": address, "urn": address},
-            "counts": {"owned": 0, "created": 0},
+            "counts": {"total": 0},
             "posts": {"posts": [], "has_more": False, "total": 0},
         }
 
-    owned_count = len(owned_raw) if isinstance(owned_raw, list) else 0
-    created_count = 0
+    owned_count = 0
+    # Combine owned + created, dedup by object address (URN)
+    all_object_addrs = set()
+    if isinstance(owned_raw, list):
+        for obj in owned_raw:
+            if isinstance(obj, dict):
+                c = obj.get('Creators') or {}
+                oa = next(iter(c.keys()), None) if isinstance(c, dict) else None
+                if oa:
+                    all_object_addrs.add(oa)
     if isinstance(created_raw, list):
-        created_addrs = set()
         for obj in created_raw:
             if isinstance(obj, dict):
                 c = obj.get('Creators') or {}
                 oa = next(iter(c.keys()), None) if isinstance(c, dict) else None
                 if oa:
-                    created_addrs.add(oa)
-        created_count = len(created_addrs)
+                    all_object_addrs.add(oa)
     return {
         "profile": profile if not isinstance(profile, Exception) else {"address": address, "urn": address},
-        "counts": {"owned": owned_count, "created": created_count},
+        "counts": {"total": len(all_object_addrs)},
         "posts": posts if not isinstance(posts, Exception) else {"posts": [], "has_more": False, "total": 0},
     }
 
