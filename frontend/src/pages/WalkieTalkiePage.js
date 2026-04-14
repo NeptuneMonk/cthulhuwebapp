@@ -1188,10 +1188,10 @@ export default function WalkieTalkiePage({ network = 'btc-testnet' }) {
       addLog({ type: 'tx', text: `IPFS: ${cid.slice(0, 14)}...` });
       setStatus('BROADCASTING...');
       const { addresses } = buildWalkieTransmission(wif, cid, 'audio.webm', network);
-      await buildAndBroadcast(wif, addresses, network, [], 0, channel);
+      const result = await buildAndBroadcast(wif, addresses, network, [], 0, channel);
       sfxRef.current.playClick();
       addLog({ type: 'tx', text: `TRANSMITTED ON CH ${channel}` });
-      addTransaction(userAddress, { txid: 'walkie-' + Date.now(), type: 'WALKIE', network, addresses, label: `Walkie broadcast on CH ${channel}` });
+      addTransaction(userAddress, { txid: result.txid, type: 'WALKIE', network, addresses, label: `Walkie CH ${channel}` });
       setStatus(`CH ${channel} MONITORING`);
     } catch (err) {
       const msg = err.message?.slice(0, 40) || 'UNKNOWN';

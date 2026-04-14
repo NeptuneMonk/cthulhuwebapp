@@ -140,12 +140,20 @@ export const WalletTransactions = ({ network }) => {
   const typeColors = {
     PRO: 'text-purple-400 bg-purple-500/15',
     POST: 'text-blue-400 bg-blue-500/15',
+    REPLY: 'text-blue-400 bg-blue-500/15',
     OBJ: 'text-emerald-400 bg-emerald-500/15',
     GIV: 'text-amber-400 bg-amber-500/15',
     BRN: 'text-red-400 bg-red-500/15',
     BUY: 'text-cyan-400 bg-cyan-500/15',
     LST: 'text-blue-400 bg-blue-500/15',
     SEND: 'text-orange-400 bg-orange-500/15',
+    WALKIE: 'text-green-400 bg-green-500/15',
+    LIKE: 'text-pink-400 bg-pink-500/15',
+    PIN: 'text-yellow-400 bg-yellow-500/15',
+    DELETE: 'text-red-400 bg-red-500/15',
+    TIP: 'text-amber-400 bg-amber-500/15',
+    POLL: 'text-indigo-400 bg-indigo-500/15',
+    VOTE: 'text-indigo-400 bg-indigo-500/15',
   };
 
   const sourceColors = {
