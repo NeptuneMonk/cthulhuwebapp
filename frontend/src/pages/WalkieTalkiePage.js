@@ -1190,16 +1190,6 @@ export default function WalkieTalkiePage({ network = 'btc-testnet' }) {
       await buildAndBroadcast(wif, addresses, network, [], 0, channel);
       sfxRef.current.playClick();
       addLog({ type: 'tx', text: `TRANSMITTED ON CH ${channel}` });
-      // Add to message log
-      setMessageLog(prev => [{
-        id: Date.now(),
-        from: userAddress,
-        fromUrn: user?.urn || 'You',
-        image: user?.image,
-        channel,
-        ipfsRef: `${cid}\\audio.webm`,
-        time: new Date().toLocaleTimeString('en', { hour12: false, hour: '2-digit', minute: '2-digit' }),
-      }, ...prev.slice(0, 50)]);
       setStatus(`CH ${channel} MONITORING`);
     } catch (err) {
       const msg = err.message?.slice(0, 40) || 'UNKNOWN';
