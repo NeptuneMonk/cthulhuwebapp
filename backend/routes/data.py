@@ -28,8 +28,8 @@ import re as _re
 _pinning_in_progress = set()  # Avoid duplicate pin requests
 
 # ─── System Announcements ───
-_ANNOUNCEMENT_TTL_MINUTES = 10
-_ANNOUNCEMENT_MAX_DISPLAY = 2
+_ANNOUNCEMENT_TTL_MINUTES = 60
+_ANNOUNCEMENT_MAX_DISPLAY = 10
 
 async def _get_system_announcements(network: str) -> list:
     """Fetch unexpired system announcements for the global feed.

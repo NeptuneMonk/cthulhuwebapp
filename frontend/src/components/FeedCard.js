@@ -384,6 +384,42 @@ export const FeedCard = React.forwardRef(({ item, network, currentUserAddress, c
               <FiHash size={12} /> Room post
             </button>
           )}
+          {/* Reply context — shows what this post is replying to */}
+          {message.is_reply && !isRoomPost && (message.recipient_urn || message.to_address) && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                // Try to scroll to the parent post in the current feed
+                const parentCard = document.querySelector(`[data-txid="${message.to_address}"]`);
+                if (!parentCard) {
+                  // Try finding a card from this recipient in the feed
+                  const cards = document.querySelectorAll('[data-txid]');
+                  for (const card of cards) {
+                    const addr = card.closest('[data-testid]')?.querySelector('[data-testid="feed-card-sender"]')?.textContent;
+                    if (addr === (message.recipient_urn || message.to_address)) {
+                      card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                      card.style.transition = 'box-shadow 0.3s';
+                      card.style.boxShadow = '0 0 0 2px rgba(45, 212, 191, 0.5)';
+                      setTimeout(() => { card.style.boxShadow = ''; }, 2000);
+                      return;
+                    }
+                  }
+                  // Parent not in feed — navigate to their profile
+                  navigate(`/profile/${message.to_address}?network=${network}`);
+                  return;
+                }
+                parentCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                parentCard.style.transition = 'box-shadow 0.3s';
+                parentCard.style.boxShadow = '0 0 0 2px rgba(45, 212, 191, 0.5)';
+                setTimeout(() => { parentCard.style.boxShadow = ''; }, 2000);
+              }}
+              className="flex items-center gap-1 mb-2 text-teal-500/70 text-[11px] font-medium hover:text-teal-400 transition-colors"
+              data-testid="reply-context"
+            >
+              <FiCornerUpLeft size={11} />
+              <span>replied to <span className="font-semibold">@{message.recipient_urn || message.to_address?.slice(0, 12) + '...'}</span></span>
+            </button>
+          )}
           {/* Header: avatar + name + status */}
           <div className={`flex items-start gap-3 ${isOwn ? 'flex-row-reverse' : ''}`}>
             <button
