@@ -1,6 +1,6 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { FiArrowLeft, FiLock, FiX, FiAlertTriangle, FiPhone, FiSquare, FiTrash2, FiVideo } from 'react-icons/fi';
+import { FiArrowLeft, FiX, FiPhone, FiSquare, FiTrash2, FiVideo } from 'react-icons/fi';
 import { toast } from 'sonner';
 import { useAuth } from '@/hooks/useAuth';
 import { buildAndBroadcast, getChangeAddress } from '@/utils/txBuilder';
@@ -8,9 +8,7 @@ import { useTheme } from '@/hooks/useTheme';
 import { ECPairFactory } from 'ecpair';
 import { ecc } from '@/utils/ecc';
 import * as bitcoin from 'bitcoinjs-lib';
-import { publicKeyFromPKXY, publicKeyFromPrivate, eciesDecrypt, unwrapSEC } from '@/utils/ecies';
-import { stripSigPrefix } from '@/utils/p2fk';
-import { useFollows } from '@/hooks/useFollows';
+import { publicKeyFromPrivate } from '@/utils/ecies';
 import PhoneDialer from '@/components/PhoneDialer';
 import ActiveCall from '@/components/ActiveCall';
 import IncomingCallAlert from '@/components/IncomingCallAlert';
@@ -25,12 +23,9 @@ import {
   getWalkieBroadcastAddress,
   createRecorder,
   uploadToIPFS,
-  uploadEncryptedToIPFS,
   buildWalkieTransmission,
-  buildEncryptedWalkieTransmission,
   createWalkieMonitor,
   fetchIPFSAudio,
-  decryptIPFSAudio,
 } from '@/utils/walkieTalkie';
 
 const API = process.env.REACT_APP_BACKEND_URL;
@@ -153,159 +148,6 @@ class RadioSFX {
     src.connect(flt).connect(g); src.start();
   }
 
-  // Nuclear reactor meltdown warning — three ascending alarm tones with distortion
-  playNuclearWarning() {
-    if (!this.ctx) return;
-    const t = this.ctx.currentTime;
-    // Three ascending warning tones
-    [380, 520, 680].forEach((freq, i) => {
-      const osc = this.ctx.createOscillator();
-      osc.type = 'sawtooth';
-      osc.frequency.setValueAtTime(freq, t + i * 0.25);
-      osc.frequency.exponentialRampToValueAtTime(freq * 1.5, t + i * 0.25 + 0.2);
-      // Distortion via waveshaper
-      const ws = this.ctx.createWaveShaper();
-      const curve = new Float32Array(256);
-      for (let j = 0; j < 256; j++) { const x = (j / 128) - 1; curve[j] = (Math.PI + 3) * x / (Math.PI + 3 * Math.abs(x)); }
-      ws.curve = curve;
-      const g = this._gain(0.25);
-      g.gain.setValueAtTime(0.25 * this.vol, t + i * 0.25);
-      g.gain.exponentialRampToValueAtTime(0.001, t + i * 0.25 + 0.22);
-      osc.connect(ws).connect(g);
-      osc.start(t + i * 0.25);
-      osc.stop(t + i * 0.25 + 0.22);
-    });
-    // Low rumble underneath
-    const dur = 0.8;
-    const noiseBuf = this.ctx.createBuffer(1, this.ctx.sampleRate * dur, this.ctx.sampleRate);
-    const nd = noiseBuf.getChannelData(0);
-    for (let i = 0; i < nd.length; i++) nd[i] = (Math.random() * 2 - 1);
-    const noiseSrc = this.ctx.createBufferSource(); noiseSrc.buffer = noiseBuf;
-    const lp = this.ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 200;
-    const ng = this._gain(0.15);
-    ng.gain.exponentialRampToValueAtTime(0.001, t + dur);
-    noiseSrc.connect(lp).connect(ng);
-    noiseSrc.start(t);
-  }
-
-  // INTRUDER ALARM — pulsing two-tone klaxon siren with heavy distortion
-  playIntruderAlarm() {
-    if (!this.ctx) return;
-    const t = this.ctx.currentTime;
-    const dur = 3.0;
-    // Two-tone klaxon siren (alternating 450Hz / 800Hz) 
-    for (let pulse = 0; pulse < 6; pulse++) {
-      const freq = pulse % 2 === 0 ? 450 : 800;
-      const start = t + pulse * 0.5;
-      const osc = this.ctx.createOscillator();
-      osc.type = 'sawtooth';
-      osc.frequency.setValueAtTime(freq, start);
-      osc.frequency.exponentialRampToValueAtTime(freq * 1.3, start + 0.25);
-      osc.frequency.setValueAtTime(freq, start + 0.25);
-      // Heavy distortion waveshaper
-      const ws = this.ctx.createWaveShaper();
-      const curve = new Float32Array(512);
-      for (let j = 0; j < 512; j++) { const x = (j / 256) - 1; curve[j] = Math.tanh(x * 4); }
-      ws.curve = curve;
-      ws.oversample = '4x';
-      const g = this._gain(0.35);
-      g.gain.setValueAtTime(0.35 * this.vol, start);
-      g.gain.setValueAtTime(0.35 * this.vol, start + 0.4);
-      g.gain.exponentialRampToValueAtTime(0.001, start + 0.48);
-      osc.connect(ws).connect(g);
-      osc.start(start);
-      osc.stop(start + 0.5);
-    }
-    // Harsh noise bursts
-    for (let burst = 0; burst < 3; burst++) {
-      const bStart = t + burst * 1.0 + 0.1;
-      const nBuf = this.ctx.createBuffer(1, this.ctx.sampleRate * 0.15, this.ctx.sampleRate);
-      const nd = nBuf.getChannelData(0);
-      for (let i = 0; i < nd.length; i++) nd[i] = (Math.random() * 2 - 1);
-      const nSrc = this.ctx.createBufferSource(); nSrc.buffer = nBuf;
-      const hp = this.ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 3000;
-      const ng = this._gain(0.2);
-      ng.gain.exponentialRampToValueAtTime(0.001, bStart + 0.15);
-      nSrc.connect(hp).connect(ng);
-      nSrc.start(bStart);
-    }
-    // Sub bass rumble underneath everything
-    const subOsc = this.ctx.createOscillator();
-    subOsc.type = 'sine';
-    subOsc.frequency.value = 60;
-    const subG = this._gain(0.2);
-    subG.gain.exponentialRampToValueAtTime(0.001, t + dur);
-    subOsc.connect(subG);
-    subOsc.start(t);
-    subOsc.stop(t + dur);
-  }
-}
-
-// ─── Generate alarm WAV blob for public broadcast ──────────────────────
-
-function audioBufferToWav(buf) {
-  const numCh = buf.numberOfChannels;
-  const sr = buf.sampleRate;
-  const len = buf.length;
-  const bytesPerSample = 2;
-  const blockAlign = numCh * bytesPerSample;
-  const dataSize = len * blockAlign;
-  const buffer = new ArrayBuffer(44 + dataSize);
-  const view = new DataView(buffer);
-  const writeStr = (off, str) => { for (let i = 0; i < str.length; i++) view.setUint8(off + i, str.charCodeAt(i)); };
-  writeStr(0, 'RIFF'); view.setUint32(4, 36 + dataSize, true); writeStr(8, 'WAVE');
-  writeStr(12, 'fmt '); view.setUint32(16, 16, true); view.setUint16(20, 1, true);
-  view.setUint16(22, numCh, true); view.setUint32(24, sr, true);
-  view.setUint32(28, sr * blockAlign, true); view.setUint16(32, blockAlign, true);
-  view.setUint16(34, 16, true); writeStr(36, 'data'); view.setUint32(40, dataSize, true);
-  const channels = [];
-  for (let ch = 0; ch < numCh; ch++) channels.push(buf.getChannelData(ch));
-  let off = 44;
-  for (let i = 0; i < len; i++) {
-    for (let ch = 0; ch < numCh; ch++) {
-      const s = Math.max(-1, Math.min(1, channels[ch][i]));
-      view.setInt16(off, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
-      off += 2;
-    }
-  }
-  return new Blob([buffer], { type: 'audio/wav' });
-}
-
-async function generateAlarmBlob() {
-  const sr = 22050;
-  const dur = 2.5;
-  const ctx = new OfflineAudioContext(1, sr * dur, sr);
-  // Pulsing two-tone siren
-  for (let p = 0; p < 5; p++) {
-    const freq = p % 2 === 0 ? 500 : 900;
-    const start = p * 0.5;
-    const osc = ctx.createOscillator();
-    osc.type = 'sawtooth';
-    osc.frequency.setValueAtTime(freq, start);
-    osc.frequency.exponentialRampToValueAtTime(freq * 1.2, start + 0.25);
-    const ws = ctx.createWaveShaper();
-    const curve = new Float32Array(512);
-    for (let j = 0; j < 512; j++) { const x = (j / 256) - 1; curve[j] = Math.tanh(x * 3); }
-    ws.curve = curve;
-    const g = ctx.createGain();
-    g.gain.setValueAtTime(0.4, start);
-    g.gain.setValueAtTime(0.4, start + 0.35);
-    g.gain.exponentialRampToValueAtTime(0.001, start + 0.48);
-    g.connect(ctx.destination);
-    osc.connect(ws).connect(g);
-    osc.start(start);
-    osc.stop(start + 0.5);
-  }
-  // White noise texture
-  const nBuf = ctx.createBuffer(1, sr * dur, sr);
-  const nd = nBuf.getChannelData(0);
-  for (let i = 0; i < nd.length; i++) nd[i] = (Math.random() * 2 - 1) * 0.08;
-  const nSrc = ctx.createBufferSource(); nSrc.buffer = nBuf;
-  const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 2000;
-  nSrc.connect(hp).connect(ctx.destination);
-  nSrc.start(0);
-  const rendered = await ctx.startRendering();
-  return audioBufferToWav(rendered);
 }
 
 // ─── Helpers ───────────────────────────────────────────────────────────
@@ -394,25 +236,17 @@ const TV_CHANNELS = [
 // ─── Message Card ───────────────────────────────────────────────────────
 
 function MessageCard({ msg, onPlay, onStop, onDelete, isPlaying }) {
-  const isEncrypted = msg.encrypted;
-  const isAlarm = msg.isAlarm;
   return (
     <div className={`flex items-center gap-2 p-2 rounded-lg transition-all w-full text-left border ${
-        isAlarm ? 'bg-red-950/30 border-red-600/30 animate-pulse' :
         isPlaying ? 'bg-green-900/30 border-green-600/30' : 'bg-black/30 border-green-900/20 hover:border-green-700/30'
       }`}
       data-testid={`msg-card-${msg.id}`}>
       {/* Play / Avatar area */}
       <button onClick={() => onPlay(msg)} className="flex items-center gap-2 flex-1 min-w-0">
         <div className={`w-10 h-10 rounded-full flex-shrink-0 flex items-center justify-center overflow-hidden border ${
-          isAlarm ? 'border-red-500/60 bg-red-950/60' :
-          isEncrypted ? 'border-red-600/40 bg-red-950/40' : 'border-green-900/30 bg-black/50'
+          'border-green-900/30 bg-black/50'
         }`}>
-          {isAlarm ? (
-            <FiAlertTriangle size={16} className="text-red-400" />
-          ) : isEncrypted ? (
-            <FiLock size={16} className="text-red-400" />
-          ) : msg.image ? (
+          {msg.image ? (
             <img src={resolveImageUrl(msg.image)} alt="" className="w-full h-full object-cover"
                  style={{ filter: 'saturate(0.4) brightness(0.85)' }}
                  onError={e => { e.target.style.display = 'none'; }} />
@@ -421,11 +255,11 @@ function MessageCard({ msg, onPlay, onStop, onDelete, isPlaying }) {
           )}
         </div>
         <div className="flex-1 min-w-0">
-          <p className={`text-[10px] font-mono truncate ${isAlarm ? 'text-red-300' : isEncrypted ? 'text-red-400' : 'text-green-400'}`}>
-            {isAlarm ? 'INTRUDER ALARM' : isEncrypted ? 'ENCRYPTED' : (msg.fromUrn || msg.from?.slice(0, 12) || 'Unknown')}
+          <p className="text-[10px] font-mono truncate text-green-400">
+            {msg.fromUrn || msg.from?.slice(0, 12) || 'Unknown'}
           </p>
-          <p className={`text-[8px] font-mono truncate ${isAlarm ? 'text-red-500/60' : 'text-green-700/50'}`}>
-            {isAlarm ? 'UNAUTHORIZED ACCESS BROADCAST' : isEncrypted ? 'PRIVATE TRANSMISSION' : `CH ${msg.channel}`}
+          <p className="text-[8px] font-mono truncate text-green-700/50">
+            {`CH ${msg.channel}`}
             {msg.time && ` | ${msg.time}`}
           </p>
         </div>
@@ -442,12 +276,8 @@ function MessageCard({ msg, onPlay, onStop, onDelete, isPlaying }) {
             <FiSquare size={10} className="text-amber-100 fill-current" />
           </button>
         ) : (
-          <div className={`w-7 h-7 rounded-full flex items-center justify-center ${
-            isAlarm ? 'bg-red-600/60' : 'bg-green-900/30'
-          }`}>
-            <div className={`w-0 h-0 border-l-[5px] border-y-[3px] border-y-transparent ml-0.5 ${
-              isAlarm ? 'border-l-red-200' : 'border-l-green-600'
-            }`} />
+          <div className="w-7 h-7 rounded-full flex items-center justify-center bg-green-900/30">
+            <div className="w-0 h-0 border-l-[5px] border-y-[3px] border-y-transparent ml-0.5 border-l-green-600" />
           </div>
         )}
         <button
@@ -460,163 +290,6 @@ function MessageCard({ msg, onPlay, onStop, onDelete, isPlaying }) {
         </button>
       </div>
     </div>
-  );
-}
-
-// ─── Digital Rain (Matrix effect for encrypted transmissions) ──────────
-function DigitalRain({ active, duration = 4000 }) {
-  const canvasRef = useRef(null);
-  const [visible, setVisible] = useState(false);
-  const timerRef = useRef(null);
-
-  useEffect(() => {
-    if (active) {
-      setVisible(true);
-      clearTimeout(timerRef.current);
-      timerRef.current = setTimeout(() => setVisible(false), duration);
-    }
-    return () => clearTimeout(timerRef.current);
-  }, [active, duration]);
-
-  useEffect(() => {
-    if (!visible || !canvasRef.current) return;
-    const canvas = canvasRef.current;
-    const ctx = canvas.getContext('2d');
-    const W = canvas.width = canvas.offsetWidth;
-    const H = canvas.height = canvas.offsetHeight;
-    const fontSize = 10;
-    const cols = Math.floor(W / fontSize);
-    const drops = Array.from({ length: cols }, () => Math.random() * -20 | 0);
-    const chars = 'アイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワヲン0123456789ABCDEF';
-    let raf;
-    const draw = () => {
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.06)';
-      ctx.fillRect(0, 0, W, H);
-      for (let i = 0; i < cols; i++) {
-        const ch = chars[Math.random() * chars.length | 0];
-        const y = drops[i] * fontSize;
-        // Bright head
-        ctx.fillStyle = y > 0 && y < H ? '#66ff66' : '#33ff33';
-        ctx.font = `${fontSize}px monospace`;
-        ctx.fillText(ch, i * fontSize, y);
-        // Dimmer trail
-        if (y > fontSize) {
-          ctx.fillStyle = 'rgba(0,255,0,0.15)';
-          ctx.fillText(chars[Math.random() * chars.length | 0], i * fontSize, y - fontSize);
-        }
-        if (y > H && Math.random() > 0.975) drops[i] = 0;
-        drops[i]++;
-      }
-      raf = requestAnimationFrame(draw);
-    };
-    draw();
-    return () => cancelAnimationFrame(raf);
-  }, [visible]);
-
-  if (!visible) return null;
-  return (
-    <canvas ref={canvasRef} className="absolute inset-0 z-10 rounded" style={{ background: 'black' }} />
-  );
-}
-
-// ─── Intruder Alert (Red Warning for unauthorized decrypt attempts) ────
-const INTRUDER_LINES = [
-  'UNAUTHORIZED ACCESS DETECTED',
-  'DECRYPTION BLOCKED',
-  'IDENTITY EXPOSED TO NETWORK',
-  'INTRUDER ALARM BROADCASTING...',
-  'YOUR SIGNAL HAS BEEN REPORTED',
-  'ALL CHANNELS NOTIFIED',
-];
-
-function IntruderAlert({ active, snooperUrn, duration = 6000 }) {
-  const canvasRef = useRef(null);
-  const [visible, setVisible] = useState(false);
-  const timerRef = useRef(null);
-
-  useEffect(() => {
-    if (active) {
-      setVisible(true);
-      clearTimeout(timerRef.current);
-      timerRef.current = setTimeout(() => setVisible(false), duration);
-    }
-    return () => clearTimeout(timerRef.current);
-  }, [active, duration]);
-
-  useEffect(() => {
-    if (!visible || !canvasRef.current) return;
-    const canvas = canvasRef.current;
-    const ctx = canvas.getContext('2d');
-    const W = canvas.width = canvas.offsetWidth;
-    const H = canvas.height = canvas.offsetHeight;
-    let frame = 0;
-    let raf;
-
-    const draw = () => {
-      frame++;
-      // Pulsing red/black background
-      const pulse = Math.sin(frame * 0.08) * 0.5 + 0.5;
-      ctx.fillStyle = `rgba(${Math.floor(40 + pulse * 30)}, 0, 0, 0.15)`;
-      ctx.fillRect(0, 0, W, H);
-
-      // Occasional full red flash
-      if (frame % 30 < 3) {
-        ctx.fillStyle = `rgba(255, 0, 0, ${0.15 + pulse * 0.1})`;
-        ctx.fillRect(0, 0, W, H);
-      }
-
-      // Glitch: random horizontal displacement slices
-      if (frame % 7 === 0) {
-        const sliceY = Math.random() * H;
-        const sliceH = 2 + Math.random() * 6;
-        const shift = (Math.random() - 0.5) * 12;
-        const imgData = ctx.getImageData(0, sliceY, W, sliceH);
-        ctx.putImageData(imgData, shift, sliceY);
-      }
-
-      // Warning text — cycles through messages
-      const lineIdx = Math.floor(frame / 40) % INTRUDER_LINES.length;
-      const msg = INTRUDER_LINES[lineIdx];
-      const fontSize = Math.min(14, W / 18);
-      ctx.font = `bold ${fontSize}px monospace`;
-      ctx.textAlign = 'center';
-
-      // Glitch offset
-      const glitchX = (frame % 5 === 0) ? (Math.random() - 0.5) * 6 : 0;
-      const glitchY = (frame % 8 === 0) ? (Math.random() - 0.5) * 4 : 0;
-
-      // Red shadow
-      ctx.fillStyle = `rgba(255, 0, 0, ${0.3 + pulse * 0.4})`;
-      ctx.fillText(msg, W / 2 + glitchX + 1, H / 2 + glitchY + 1);
-      // Main text
-      ctx.fillStyle = `rgb(255, ${Math.floor(50 + pulse * 50)}, ${Math.floor(50 + pulse * 50)})`;
-      ctx.fillText(msg, W / 2 + glitchX, H / 2 + glitchY);
-
-      // Snooper URN at bottom
-      if (snooperUrn) {
-        ctx.font = `${Math.max(8, fontSize - 3)}px monospace`;
-        ctx.fillStyle = `rgba(255, 100, 100, ${0.4 + pulse * 0.3})`;
-        ctx.fillText(`SIGNAL: @${snooperUrn}`, W / 2, H / 2 + fontSize + 8);
-      }
-
-      // Scan lines
-      ctx.fillStyle = 'rgba(0,0,0,0.06)';
-      for (let y = 0; y < H; y += 3) ctx.fillRect(0, y, W, 1);
-
-      raf = requestAnimationFrame(draw);
-    };
-
-    // Initial black fill
-    ctx.fillStyle = '#1a0000';
-    ctx.fillRect(0, 0, W, H);
-    draw();
-    return () => cancelAnimationFrame(raf);
-  }, [visible, snooperUrn]);
-
-  if (!visible) return null;
-  return (
-    <canvas ref={canvasRef} className="absolute inset-0 z-20 rounded"
-      style={{ background: '#1a0000', boxShadow: 'inset 0 0 30px rgba(255,0,0,0.3)' }} />
   );
 }
 
@@ -668,7 +341,7 @@ function Viewscreen({ network, onAction, messageLog, playingId, onPlayMessage, o
       </div>
 
       {tvCh === 'messages' ? (
-        /* Messages Channel — broadcast history + encrypted received */
+        /* Messages Channel — broadcast history */
         <div className="flex flex-col gap-1.5 p-2 overflow-y-auto scrollbar-hide" style={{ maxHeight: 200 }}>
           {(!messageLog || messageLog.length === 0) ? (
             <div className="flex-1 flex items-center justify-center text-green-800/50 text-[10px] font-mono py-6">
@@ -790,9 +463,6 @@ export default function WalkieTalkiePage({ network = 'btc-testnet' }) {
   const [showInlineAuth, setShowInlineAuth] = useState(false);
   const [inlinePassword, setInlinePassword] = useState('');
   const [authError, setAuthError] = useState('');
-  const [digitalRainActive, setDigitalRainActive] = useState(false);
-  const [intruderAlertActive, setIntruderAlertActive] = useState(false);
-  const [intruderUrn, setIntruderUrn] = useState('');
 
   // Derive private key bytes from WIF for ECIES decryption (used by call monitor)
   const privateKeyBytes = useMemo(() => {
@@ -902,17 +572,7 @@ export default function WalkieTalkiePage({ network = 'btc-testnet' }) {
     navigate('/walkie', { replace: true, state: {} });
   }, [location.state]);
 
-  // To: selector state (for encrypted private transmissions)
-  const [toUrn, setToUrn] = useState('');
-  const [toProfile, setToProfile] = useState(null); // { address, pkx, pky, urn, image }
-  const [toSearching, setToSearching] = useState(false);
-  const [knownUsers, setKnownUsers] = useState([]);
-  const [showToDropdown, setShowToDropdown] = useState(false);
-
-  // User's connections (follows) for TO: dropdown
-  const { follows } = useFollows(network, userAddress);
-
-  // Message log (broadcasts + encrypted received)
+  // Message log (public broadcasts)
   const [messageLog, setMessageLog] = useState([]);
   const [playingId, setPlayingId] = useState(null);
 
@@ -937,7 +597,6 @@ export default function WalkieTalkiePage({ network = 'btc-testnet' }) {
   const audioRef = useRef(null);
   const scanTimerRef = useRef(null);
   const logEndRef = useRef(null);
-  const toInputRef = useRef(null);
   const wifRef = useRef(wif);
   const volumeRef = useRef(volume);
 
@@ -955,124 +614,23 @@ export default function WalkieTalkiePage({ network = 'btc-testnet' }) {
     };
   }, []);
 
-  // Sender's own key status
-  const [myKeysPublished, setMyKeysPublished] = useState(null); // null=loading, true/false
-
-  // Fetch known users for "To:" autocomplete + batch check their PKX/PKY
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await fetch(`${API}/api/known-users/${network}`);
-        const d = await res.json();
-        const users = d.users || [];
-        if (cancelled) return;
-        // Batch check keys for all users
-        const addresses = users.map(u => u.address).filter(Boolean);
-        if (addresses.length > 0) {
-          const keysRes = await fetch(`${API}/api/profile/keys/batch?network=${network}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ addresses }),
-          });
-          const keysData = await keysRes.json();
-          const keysMap = keysData.keys || {};
-          if (!cancelled) {
-            setKnownUsers(users.map(u => ({ ...u, hasKeys: !!keysMap[u.address] })));
-          }
-        } else {
-          if (!cancelled) setKnownUsers(users);
-        }
-      } catch {
-        if (!cancelled) setKnownUsers([]);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [network]);
-
-  // Check if sender's own keys are published
-  useEffect(() => {
-    if (!userAddress) { setMyKeysPublished(null); return; }
-    fetch(`${API}/api/profile/keys/${userAddress}?network=${network}`)
-      .then(r => r.json())
-      .then(d => setMyKeysPublished(d.has_keys === true))
-      .catch(() => setMyKeysPublished(false));
-  }, [userAddress, network]);
-
-  // Resolve "To:" URN to profile with public key
-  useEffect(() => {
-    if (!toUrn.trim()) { setToProfile(null); setToSearching(false); return; }
-    setToSearching(true);
-    const timer = setTimeout(async () => {
-      try {
-        // Look up in known users first
-        const match = knownUsers.find(u =>
-          (u.urn || '').toLowerCase() === toUrn.trim().toLowerCase()
-        );
-        if (match?.address) {
-          // Fetch full profile to get PKX/PKY
-          const res = await fetch(`${API}/api/profile/${match.address}?network=${network}`);
-          if (res.ok) {
-            const prof = await res.json();
-            if (prof.pkx && prof.pky) {
-              setToProfile({ address: match.address, pkx: prof.pkx, pky: prof.pky, urn: match.urn, image: match.image || prof.image });
-            } else {
-              setToProfile(null);
-              toast.error('Recipient has no public key on-chain');
-            }
-          }
-        } else {
-          setToProfile(null);
-        }
-      } catch {
-        setToProfile(null);
-      } finally {
-        setToSearching(false);
-      }
-    }, 500);
-    return () => clearTimeout(timer);
-  }, [toUrn, knownUsers, network]);
-
-  // Connections for dropdown — only user's follows, sorted by key status
-  // Fetch fresh PKX/PKY for contacts that have stale/missing keys via batch API
+  // Contacts for phone rolodex (fetched from follows API)
   const [allContacts, setAllContacts] = useState([]);
 
   useEffect(() => {
+    if (!userAddress) return;
     let cancelled = false;
-    const raw = follows.filter(f => f.address !== userAddress);
-    const initial = raw.map(f => ({ ...f, hasKeys: !!(f.pkx && f.pky) }));
-    setAllContacts(initial.sort((a, b) => (b.hasKeys ? 1 : 0) - (a.hasKeys ? 1 : 0)));
-
-    // For contacts missing keys, batch-fetch from API
-    const missing = raw.filter(f => !f.pkx || !f.pky);
-    if (missing.length === 0) return;
-
     (async () => {
       try {
-        const res = await fetch(`${API}/api/profile/keys/batch?network=${network}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ addresses: missing.map(f => f.address) }),
-        });
+        const res = await fetch(`${API}/api/data/follows/${userAddress}?network=${network}`);
         if (!res.ok || cancelled) return;
-        const { keys } = await res.json();
-        if (cancelled || !keys) return;
-        setAllContacts(prev => {
-          const updated = prev.map(c => {
-            const keyData = keys[c.address];
-            if (keyData && keyData.has_keys) {
-              return { ...c, pkx: keyData.pkx, pky: keyData.pky, hasKeys: true };
-            }
-            return c;
-          });
-          return updated.sort((a, b) => (b.hasKeys ? 1 : 0) - (a.hasKeys ? 1 : 0));
-        });
-      } catch (e) {
-        console.warn('Failed to batch-fetch contact keys:', e);
-      }
+        const data = await res.json();
+        const contacts = (data.follows || data || []).filter(f => f.address !== userAddress);
+        if (!cancelled) setAllContacts(contacts);
+      } catch {}
     })();
     return () => { cancelled = true; };
-  }, [follows, userAddress, network]);
+  }, [userAddress, network]);
 
   // Sync power state to persistent storage (so background monitor picks up on unmount)
   useEffect(() => {
@@ -1092,84 +650,13 @@ export default function WalkieTalkiePage({ network = 'btc-testnet' }) {
     setTransmissions(prev => [...prev.slice(-40), { ...entry, id: Date.now() + Math.random(), ts: new Date().toLocaleTimeString('en', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' }) }]);
   }, []);
 
-  // ─── INTRUDER ALERT — unauthorized decrypt attempt handler ─────────────
-  const triggerIntruderAlert = useCallback(async (snoopedFromUrn) => {
-    sfxRef.current.init();
-    sfxRef.current.playIntruderAlarm();
-
-    // Visual: activate the red alert overlay
-    setIntruderUrn(user?.urn || userAddress?.slice(0, 12) || 'UNKNOWN');
-    setIntruderAlertActive(false);
-    setTimeout(() => setIntruderAlertActive(true), 50);
-
-    // TX log — dramatic warning sequence
-    addLog({ type: 'err', text: 'UNAUTHORIZED DECRYPTION ATTEMPT' });
-    setTimeout(() => addLog({ type: 'err', text: 'ACCESS DENIED — ENCRYPTION KEY MISMATCH' }), 600);
-    setTimeout(() => addLog({ type: 'err', text: 'INTRUDER SIGNAL CAPTURED' }), 1200);
-    setTimeout(() => addLog({ type: 'err', text: 'BROADCASTING ALERT TO ALL CHANNELS...' }), 1800);
-
-    // Generate alarm audio and broadcast publicly (best-effort)
-    if (wif && channel) {
-      try {
-        const blob = await generateAlarmBlob();
-        const cid = await uploadToIPFS(blob, 'alarm.wav');
-        const { addresses } = buildWalkieTransmission(wif, cid, 'alarm.wav', network);
-        await buildAndBroadcast(wif, addresses, network, [], 0, channel);
-        addLog({ type: 'err', text: `INTRUDER ALARM BROADCAST ON CH ${channel}` });
-        // Add to message log
-        setMessageLog(prev => [{
-          id: Date.now(),
-          from: userAddress,
-          fromUrn: user?.urn || 'INTRUDER',
-          channel,
-          encrypted: false,
-          ipfsRef: `${cid}\\alarm.wav`,
-          time: new Date().toLocaleTimeString('en', { hour12: false, hour: '2-digit', minute: '2-digit' }),
-          isAlarm: true,
-        }, ...prev.slice(0, 50)]);
-      } catch (broadcastErr) {
-        addLog({ type: 'sys', text: 'BROADCAST FAILED — INSUFFICIENT FUNDS' });
-      }
-    }
-  }, [wif, network, channel, userAddress, user, addLog]);
-
-  // Play a message from the message log
+  // Play a message from the message log (public broadcasts only)
   const playMessage = useCallback(async (msg) => {
     try {
       setPlayingId(msg.id);
       sfxRef.current.init();
-      let blobUrl;
-      if (msg.encrypted && (msg.ipfsRef || msg.secData)) {
-        if (!wif) { toast.error('Unlock wallet to decrypt'); setPlayingId(null); return; }
-        const networkObj = network.includes('mainnet')
-          ? bitcoin.networks.bitcoin : bitcoin.networks.testnet;
-        const keyPair = ECPair.fromWIF(wif, networkObj);
-        let ipfsRef = msg.ipfsRef;
-        if (!ipfsRef && msg.secData) {
-          try {
-            const secBytes = msg.secData instanceof Uint8Array ? msg.secData : new Uint8Array(Buffer.isBuffer(msg.secData) ? msg.secData : []);
-            addLog({ type: 'sys', text: `Play: SEC ${secBytes.length}B hdr:0x${secBytes[0]?.toString(16)}` });
-            const encrypted = unwrapSEC(secBytes);
-            addLog({ type: 'sys', text: `Play: ECIES ${encrypted.length}B hdr:0x${encrypted[0]?.toString(16)}` });
-            const plainBytes = await eciesDecrypt(keyPair.privateKey, encrypted);
-            const msgBytes = stripSigPrefix(plainBytes);
-            const text = new TextDecoder().decode(msgBytes);
-            addLog({ type: 'sys', text: `Play: decrypted "${text.slice(0, 50)}"` });
-            const ipfsMatch = text.match(/<<IPFS:([^>]+)>>/) || text.match(/<?<?IPFS:([^>\s]+[\/\\]SEC)>>/);
-            if (ipfsMatch) ipfsRef = ipfsMatch[1];
-          } catch (decErr) {
-            triggerIntruderAlert(msg.fromUrn || msg.from?.slice(0, 12) || '???');
-            setPlayingId(null);
-            return;
-          }
-        }
-        if (!ipfsRef) { toast.error('No audio reference found'); setPlayingId(null); return; }
-        blobUrl = await decryptIPFSAudio(ipfsRef, keyPair.privateKey);
-      } else if (msg.ipfsRef) {
-        blobUrl = await fetchIPFSAudio(msg.ipfsRef);
-      } else {
-        setPlayingId(null); return;
-      }
+      if (!msg.ipfsRef) { setPlayingId(null); return; }
+      const blobUrl = await fetchIPFSAudio(msg.ipfsRef);
       if (audioRef.current) { audioRef.current.pause(); URL.revokeObjectURL(audioRef.current.src); }
       const audio = new Audio(blobUrl);
       audio.volume = volume / 100;
@@ -1177,15 +664,10 @@ export default function WalkieTalkiePage({ network = 'btc-testnet' }) {
       audio.onended = () => { sfxRef.current.playKrrrsh(); setPlayingId(null); };
       await audio.play();
     } catch (err) {
-      const isDecryptErr = /decrypt|operationerror|crypto|invalid/i.test(err?.message || '');
-      if (msg?.encrypted && isDecryptErr) {
-        triggerIntruderAlert(msg.fromUrn || msg.from?.slice(0, 12) || '???');
-      } else {
-        toast.error(`Playback failed: ${err.message}`);
-      }
+      toast.error(`Playback failed: ${err.message}`);
       setPlayingId(null);
     }
-  }, [wif, network, volume, triggerIntruderAlert, addLog]);
+  }, [volume]);
 
   // ─── Boot Sequence ─────────────────────────────────────────────────
 
@@ -1286,69 +768,22 @@ export default function WalkieTalkiePage({ network = 'btc-testnet' }) {
         }
         setScanning(false);
         setChannel(transmission.channel);
-        // Add to message log
+
+        // Skip encrypted transmissions — walkie is public broadcast only
         const isEncrypted = transmission.encrypted === true || transmission.ipfsRefs?.some(r => /[\/\\]SEC$/.test(r));
-        const fromUser = knownUsers.find(u => u.address === transmission.from);
+        if (isEncrypted) return;
+
+        // Add to message log
         setMessageLog(prev => [{
           id: transmission.txid || Date.now(),
           from: transmission.from,
-          fromUrn: fromUser?.urn,
-          image: fromUser?.image,
           channel: transmission.channel,
-          encrypted: isEncrypted,
           ipfsRef: transmission.ipfsRefs?.[0] || null,
-          secData: transmission.secData || null,
           time: new Date().toLocaleTimeString('en', { hour12: false, hour: '2-digit', minute: '2-digit' }),
         }, ...prev.slice(0, 50)]);
 
-        if (isEncrypted) {
-          const isMySend = transmission.from === userAddress;
-          if (isMySend) {
-            // SENDER: I sent this encrypted walkie — can't decrypt it (encrypted with recipient's key)
-            // Show digital rain effect instead of trying to decrypt
-            sfxRef.current.playKrrrsh();
-            addLog({ type: 'tx', text: 'ENCRYPTED TRANSMISSION SENT' });
-            addLog({ type: 'sys', text: 'SEC PAYLOAD BROADCAST TO NETWORK' });
-            setDigitalRainActive(false);
-            setTimeout(() => setDigitalRainActive(true), 50);
-          } else {
-            // RECEIVER: Incoming encrypted walkie — decrypt and play
-            sfxRef.current.playNuclearWarning();
-            addLog({ type: 'rx', from: 'ENCRYPTED', text: 'INCOMING ENCRYPTED TRANSMISSION' });
-            if (wifRef.current && transmission.secData) {
-              setTimeout(async () => {
-                try {
-                  const networkObj = network.includes('mainnet')
-                    ? bitcoin.networks.bitcoin : bitcoin.networks.testnet;
-                  const keyPair = ECPair.fromWIF(wifRef.current, networkObj);
-                  const secBytes = transmission.secData instanceof Uint8Array
-                    ? transmission.secData : new Uint8Array(Buffer.isBuffer(transmission.secData) ? transmission.secData : []);
-                  const encrypted = unwrapSEC(secBytes);
-                  const plainBytes = await eciesDecrypt(keyPair.privateKey, encrypted);
-                  const msgBytes = stripSigPrefix(plainBytes);
-                  const text = new TextDecoder().decode(msgBytes);
-                  const ipfsMatch = text.match(/<<IPFS:([^>]+)>>/) || text.match(/<?<?IPFS:([^>\s]+[\/\\]SEC)>>/);
-                  if (ipfsMatch) {
-                    addLog({ type: 'rx', text: `DECRYPTING AUDIO...` });
-                    const blobUrl = await decryptIPFSAudio(ipfsMatch[1], keyPair.privateKey);
-                    if (audioRef.current) { audioRef.current.pause(); URL.revokeObjectURL(audioRef.current.src); }
-                    const audio = new Audio(blobUrl);
-                    audio.volume = volumeRef.current / 100;
-                    audioRef.current = audio;
-                    audio.onended = () => sfxRef.current.playKrrrsh();
-                    await audio.play();
-                    addLog({ type: 'rx', text: 'PLAYING DECRYPTED AUDIO' });
-                  }
-                } catch (err) {
-                  addLog({ type: 'err', text: `Decrypt failed: ${String(err?.message || err).slice(0, 50)}` });
-                }
-              }, 1500);
-            }
-          }
-        } else {
-          addLog({ type: 'rx', from: transmission.from?.slice(0, 10), text: 'INCOMING TRANSMISSION' });
-          if (transmission.ipfsRefs?.[0]) playIncoming(transmission.ipfsRefs[0]);
-        }
+        addLog({ type: 'rx', from: transmission.from?.slice(0, 10), text: 'INCOMING TRANSMISSION' });
+        if (transmission.ipfsRefs?.[0]) playIncoming(transmission.ipfsRefs[0]);
       });
       monitor.setChannel(channel);
       monitor.setMyAddress(userAddress);
@@ -1357,7 +792,7 @@ export default function WalkieTalkiePage({ network = 'btc-testnet' }) {
       setPowerOn(true);
       setStatus(`CH ${channel} MONITORING`);
       addLog({ type: 'sys', text: `TUNED TO CH ${channel}` });
-  }, [network, channel, userAddress, addLog, knownUsers]);
+  }, [network, channel, userAddress, addLog]);
 
   // ─── Inline Password Auth ────────────────────────────────────────────
   const handleInlineAuth = useCallback(async () => {
@@ -1737,51 +1172,25 @@ export default function WalkieTalkiePage({ network = 'btc-testnet' }) {
       if (!blob || blob.size < 500) { setStatus('TOO SHORT'); return; }
       addLog({ type: 'tx', text: `RECORDING ${(blob.size / 1024).toFixed(1)}KB — UPLOADING...` });
 
-      if (toProfile) {
-        // ─── Encrypted Private Transmission (Double-SEC) ──────────────
-        setStatus('ENCRYPTING...');
-        addLog({ type: 'tx', text: `ENCRYPTING FOR @${toProfile.urn}...` });
-        const recipientPubKey = publicKeyFromPKXY(toProfile.pkx, toProfile.pky);
-        const cid = await uploadEncryptedToIPFS(blob, recipientPubKey);
-        addLog({ type: 'tx', text: `SEC IPFS: ${cid.slice(0, 14)}...` });
-        setStatus('BROADCASTING SEC...');
-        const { addresses, taxInsertIndex } = await buildEncryptedWalkieTransmission(
-          wif, cid, toProfile.address, toProfile.pkx, toProfile.pky, network
-        );
-        await buildAndBroadcast(wif, addresses, network, [], 0, 546, [], taxInsertIndex);
-        sfxRef.current.playClick();
-        addLog({ type: 'tx', text: `ENCRYPTED TX TO @${toProfile.urn}` });
-        // Add to message log as outgoing encrypted
-        setMessageLog(prev => [{
-          id: Date.now(),
-          from: userAddress,
-          fromUrn: user?.urn || 'You',
-          encrypted: true,
-          ipfsRef: `${cid}\\SEC`,
-          time: new Date().toLocaleTimeString('en', { hour12: false, hour: '2-digit', minute: '2-digit' }),
-        }, ...prev.slice(0, 50)]);
-      } else {
-        // ─── Public Broadcast ─────────────────────────────────────────
-        setStatus('IPFS UPLOAD...');
-        const cid = await uploadToIPFS(blob, 'audio.webm');
-        addLog({ type: 'tx', text: `IPFS: ${cid.slice(0, 14)}...` });
-        setStatus('BROADCASTING...');
-        const { addresses } = buildWalkieTransmission(wif, cid, 'audio.webm', network);
-        await buildAndBroadcast(wif, addresses, network, [], 0, channel);
-        sfxRef.current.playClick();
-        addLog({ type: 'tx', text: `TRANSMITTED ON CH ${channel}` });
-        // Add to message log as outgoing broadcast
-        setMessageLog(prev => [{
-          id: Date.now(),
-          from: userAddress,
-          fromUrn: user?.urn || 'You',
-          image: user?.image,
-          channel,
-          encrypted: false,
-          ipfsRef: `${cid}\\audio.webm`,
-          time: new Date().toLocaleTimeString('en', { hour12: false, hour: '2-digit', minute: '2-digit' }),
-        }, ...prev.slice(0, 50)]);
-      }
+      // ─── Public Broadcast ─────────────────────────────────────────
+      setStatus('IPFS UPLOAD...');
+      const cid = await uploadToIPFS(blob, 'audio.webm');
+      addLog({ type: 'tx', text: `IPFS: ${cid.slice(0, 14)}...` });
+      setStatus('BROADCASTING...');
+      const { addresses } = buildWalkieTransmission(wif, cid, 'audio.webm', network);
+      await buildAndBroadcast(wif, addresses, network, [], 0, channel);
+      sfxRef.current.playClick();
+      addLog({ type: 'tx', text: `TRANSMITTED ON CH ${channel}` });
+      // Add to message log
+      setMessageLog(prev => [{
+        id: Date.now(),
+        from: userAddress,
+        fromUrn: user?.urn || 'You',
+        image: user?.image,
+        channel,
+        ipfsRef: `${cid}\\audio.webm`,
+        time: new Date().toLocaleTimeString('en', { hour12: false, hour: '2-digit', minute: '2-digit' }),
+      }, ...prev.slice(0, 50)]);
       setStatus(`CH ${channel} MONITORING`);
     } catch (err) {
       const msg = err.message?.slice(0, 40) || 'UNKNOWN';
@@ -1789,7 +1198,7 @@ export default function WalkieTalkiePage({ network = 'btc-testnet' }) {
       setStatus(`TX FAIL — RETRY`);
       setTimeout(() => { if (!transmittingRef.current) setStatus(`CH ${channel} MONITORING`); }, 4000);
     }
-  }, [wif, network, channel, addLog, toProfile, userAddress, user]);
+  }, [wif, network, channel, addLog, userAddress, user]);
 
   // ─── Render ────────────────────────────────────────────────────────
 
@@ -2023,8 +1432,6 @@ export default function WalkieTalkiePage({ network = 'btc-testnet' }) {
               </div>
               {/* TX Log */}
               <CRTScreen className="flex-1 max-h-28 overflow-y-auto scrollbar-hide relative">
-                <DigitalRain active={digitalRainActive} duration={4000} />
-                <IntruderAlert active={intruderAlertActive} snooperUrn={intruderUrn} duration={6000} />
                 <div className="p-1.5" data-testid="transmission-log">
                   {transmissions.length === 0 ? (
                     <div className="text-[9px] text-green-900/60 font-mono text-center py-4">
@@ -2109,14 +1516,6 @@ export default function WalkieTalkiePage({ network = 'btc-testnet' }) {
               </button>
               {!wif && powerOn && (
                 <p className="text-[9px] text-amber-600/60 text-center mt-1 font-mono">WALLET REQUIRED FOR TX</p>
-              )}
-              {powerOn && myKeysPublished === false && (
-                <div className="flex items-center gap-1.5 mt-1.5 px-2 py-1 rounded bg-red-900/15 border border-red-800/20">
-                  <FiAlertTriangle size={9} className="text-red-500 flex-shrink-0" />
-                  <p className="text-[7px] font-mono text-red-500/80">
-                    KEYS NOT PUBLISHED — Publish in Settings &gt; Profile
-                  </p>
-                </div>
               )}
             </div>
           </>

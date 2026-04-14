@@ -137,6 +137,12 @@ Build a modern, responsive frontend for a blockchain-based decentralized social 
 - None active
 
 ## Recently Completed
+- **Walkie-Talkie Simplification (Apr 14, 2026)**
+  - Removed all encrypted walkie (SEC) features: "To:" field, encrypted TX path, secData in message log, intruder alarms, digital rain effects, nuclear warning SFX
+  - Walkie-talkie is now strictly global broadcast (matching SUP desktop behavior): record → IPFS → P2FK to WALKIE address → mempool monitoring
+  - WebRTC phone/video calling retained as-is on the walkie page
+  - Fixed DataCloneError in App.js: sanitized `incomingCall` object before passing through `navigate()` state (the "object cannot be cloned" bug)
+  - Simplified contacts: fetched from follows API instead of removed `useFollows` + batch key check
 - **Desktop Code Cleanup (Apr 14, 2026)**
   - Removed all desktop-app-only code (RPC, Tauri, PyInstaller, local chain scanner, desktop UI components)
   - Kept: DownloadPage.js + releases.py (web app serves desktop downloads), DesktopHeader.js (web responsive header), all IPFS/mesh/WebRTC web code

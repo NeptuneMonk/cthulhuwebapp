@@ -928,7 +928,16 @@ const Layout = ({ children, network, setNetwork, follows, toggleFollow, claimed,
             }}
             callType={walkie.incomingCall.video ? 'video' : 'audio'}
             onAccept={() => {
-              navigate('/walkie', { state: { autoAcceptCall: walkie.incomingCall } });
+              // Sanitize to plain serializable values for history.pushState (prevents DataCloneError)
+              const call = walkie.incomingCall;
+              navigate('/walkie', { state: { autoAcceptCall: {
+                from: call.from || '',
+                urn: call.urn || '',
+                image: call.image || '',
+                video: !!call.video,
+                sdp: typeof call.sdp === 'string' ? call.sdp : '',
+                viaMesh: !!call.viaMesh,
+              }}});
               walkie.dismissCall();
             }}
             onDecline={() => { walkie.dismissCall(); }}
