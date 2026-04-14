@@ -598,6 +598,7 @@ export default function WalkieTalkiePage({ network = 'btc-testnet' }) {
   const audioRef = useRef(null);
   const scanTimerRef = useRef(null);
   const logEndRef = useRef(null);
+  const playIncomingRef = useRef(null);
   const wifRef = useRef(wif);
   const volumeRef = useRef(volume);
 
@@ -784,7 +785,7 @@ export default function WalkieTalkiePage({ network = 'btc-testnet' }) {
         }, ...prev.slice(0, 50)]);
 
         addLog({ type: 'rx', from: transmission.from?.slice(0, 10), text: 'INCOMING TRANSMISSION' });
-        if (transmission.ipfsRefs?.[0]) playIncoming(transmission.ipfsRefs[0]);
+        if (transmission.ipfsRefs?.[0]) playIncomingRef.current?.(transmission.ipfsRefs[0]);
       });
       monitor.setChannel(channel);
       monitor.setMyAddress(userAddress);
@@ -894,6 +895,9 @@ export default function WalkieTalkiePage({ network = 'btc-testnet' }) {
       addLog({ type: 'err', text: `PLAYBACK FAILED: ${err.message}` });
     }
   }, [volume, addLog, toggleScan]);
+
+  // Keep ref in sync so the monitor callback always has the latest playIncoming
+  useEffect(() => { playIncomingRef.current = playIncoming; }, [playIncoming]);
 
   useEffect(() => { if (audioRef.current) audioRef.current.volume = volume / 100; }, [volume]);
 
