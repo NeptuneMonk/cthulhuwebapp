@@ -20,6 +20,13 @@ export function getTransactions(address) {
   }
 }
 
+const MAX_LABEL = 18;
+
+function truncLabel(label) {
+  if (!label || label.length <= MAX_LABEL) return label || '';
+  return label.slice(0, MAX_LABEL) + '...';
+}
+
 /**
  * Log a new transaction.
  * @param {string} address - The sender/wallet address (used as the storage key)
@@ -33,7 +40,7 @@ export function addTransaction(address, tx) {
     type: tx.type || 'UNKNOWN',
     network: tx.network || 'btc-testnet',
     addresses: tx.addresses || [],
-    label: tx.label || '',
+    label: truncLabel(tx.label),
     timestamp: Date.now(),
   };
   // Deduplicate by txid, prepend new entry, cap at MAX_ENTRIES
