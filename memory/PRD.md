@@ -137,7 +137,11 @@ Build a modern, responsive frontend for a blockchain-based decentralized social 
 - None active
 
 ## Recently Completed
-- **IPFS Auto-Pinning for Discovered CIDs (DONE Apr 2026)**
+- **Desktop Code Cleanup (Apr 14, 2026)**
+  - Removed all desktop-app-only code (RPC, Tauri, PyInstaller, local chain scanner, desktop UI components)
+  - Kept: DownloadPage.js + releases.py (web app serves desktop downloads), DesktopHeader.js (web responsive header), all IPFS/mesh/WebRTC web code
+  - Files removed: DesktopApp.js, desktop-index.js, components/desktop/*, NodeContext.js, desktopMeshNode.js, craco.desktop.config.js, routes/node.py, routes/node_scan.py, routes/p2fk_local.py, rpc/*, cthulhu-api.spec, src-tauri/*, desktop/*, build scripts, desktop docs
+- **IPFS Auto-Pinning for Discovered CIDs (Apr 8, 2026)**
   - Hooked into `p2fk_get()` to extract `IPFS:CID` strings from all fresh data flowing from p2fk.io or local decoder
   - New CIDs are automatically pinned to the local Kubo daemon in the background (fire-and-forget)
   - Dedup set prevents redundant pin requests

@@ -36,7 +36,6 @@ from routes.ogpreview import router as ogpreview_router
 from routes.rooms import router as rooms_router
 from routes.treasury import router as treasury_router
 from routes.polls import router as polls_router
-from routes.p2fk_local import router as p2fk_local_router
 from routes.discover import router as discover_router
 from routes.emoji import router as emoji_router
 from routes.admin import router as admin_router
@@ -52,8 +51,6 @@ from routes.admin_wallet import router as admin_wallet_router
 from routes.auto_checkpoint import router as auto_checkpoint_router, start_auto_checkpoint
 from routes.releases import router as releases_router, public_router as releases_public_router
 from routes.snapshot import router as snapshot_router, start_auto_delta_on_boot, scan_cached_roots_for_burns
-from routes.node import router as node_router
-from routes.node_scan import router as node_scan_router
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -86,7 +83,6 @@ app.include_router(emoji_router)
 app.include_router(admin_router)
 app.include_router(calls_router)
 app.include_router(user_state_router)
-app.include_router(p2fk_local_router)
 app.include_router(favorites_router)
 app.include_router(vault_router)
 app.include_router(room_topics_router)
@@ -98,8 +94,6 @@ app.include_router(auto_checkpoint_router)
 app.include_router(releases_router)
 app.include_router(releases_public_router)
 app.include_router(snapshot_router)
-app.include_router(node_router)
-app.include_router(node_scan_router)
 
 
 # ─── Download endpoint for desktop packages ───
