@@ -218,11 +218,10 @@ async def health_check():
 
 
 async def _refresh_feed_cache(network: str, is_mainnet: bool, cache_key: str):
-    """Incremental feed refresh — only fetches from addresses with recently
-    discovered activity (from vacuum). Preserves existing cached messages.
-    Falls back to a batched full rebuild if no existing cache."""
+    """Incremental feed refresh — fetches from recently active addresses only.
+    P2FK.io handles its own global cache; we just proxy and merge.
+    Only hits addresses with recent vacuum activity, not all 3000+."""
     if _feed_refreshing.get(network):
-        logger.info(f"Feed refresh already in progress for {network}, skipping")
         return
     _feed_refreshing[network] = True
     try:
@@ -233,65 +232,63 @@ async def _refresh_feed_cache(network: str, is_mainnet: bool, cache_key: str):
         existing_messages = cached.get('messages', []) if cached else []
         existing_txids = {m.get('transaction_id', '') for m in existing_messages if m.get('transaction_id')}
 
-        # Get ALL known addresses but batch them to avoid rate-limit storms
-        addresses = await get_known_addresses(network)
-        BATCH_SIZE = 30  # Process 30 at a time to avoid overwhelming explorers
-        BATCH_DELAY = 2  # Seconds between batches
+        # Only fetch from recently active addresses (last ~50 unique senders + known active)
+        # This keeps refresh fast (~2-5 seconds instead of ~10 minutes)
+        recent_senders = set()
+        for msg in existing_messages[:200]:  # Check recent messages for active senders
+            addr = msg.get('from_address', '')
+            if addr:
+                recent_senders.add(addr)
 
+        # Also add addresses from known users (they post most often)
+        all_known = await get_known_addresses(network)
+        # Prioritize: recent senders first, then a sample of known addresses
+        priority_addrs = list(recent_senders)
+        remaining = [a for a in all_known if a not in recent_senders]
+        # Add a rotating sample of remaining addresses (catches new users)
+        import time as _time
+        sample_size = min(50, len(remaining))
+        offset = int(_time.time() / 60) % max(1, len(remaining) - sample_size)
+        priority_addrs.extend(remaining[offset:offset + sample_size])
+
+        # Fetch in parallel (small set, no need for batching)
         async def fetch_addr_msgs(addr):
             return addr, await fetch_public_messages(addr, is_mainnet)
 
+        results = await asyncio.gather(
+            *[fetch_addr_msgs(addr) for addr in priority_addrs],
+            return_exceptions=True
+        )
+
         new_raw = []
         unique_senders = set()
-        total_fetched = 0
-        batch_num = 0
-
-        for batch_start in range(0, len(addresses), BATCH_SIZE):
-            batch = addresses[batch_start:batch_start + BATCH_SIZE]
-            batch_num += 1
-            results = await asyncio.gather(
-                *[fetch_addr_msgs(addr) for addr in batch],
-                return_exceptions=True
-            )
-
-            batch_msgs = 0
-            for result in results:
-                if isinstance(result, Exception):
+        for result in results:
+            if isinstance(result, Exception):
+                continue
+            address, msgs = result
+            for msg in msgs:
+                txid = msg.get('TransactionId', '')
+                if txid and txid in existing_txids:
                     continue
-                address, msgs = result
-                total_fetched += len(msgs)
-                for msg in msgs:
-                    txid = msg.get('TransactionId', '')
-                    if txid and txid in existing_txids:
-                        continue  # Already in cache
-                    if txid:
-                        existing_txids.add(txid)
-                    from_addr = msg.get('FromAddress', address)
-                    unique_senders.add(from_addr)
-                    new_raw.append((from_addr, msg))
-                    batch_msgs += 1
+                if txid:
+                    existing_txids.add(txid)
+                if _is_system_or_encrypted_msg(msg):
+                    continue
+                from_addr = msg.get('FromAddress', address)
+                unique_senders.add(from_addr)
+                new_raw.append((from_addr, msg))
 
-            if batch_num <= 3 or batch_msgs > 0:
-                logger.info(f"Feed batch {batch_num}: {batch_msgs} new msgs from {len(batch)} addrs (total fetched: {total_fetched})")
-
-            if batch_start + BATCH_SIZE < len(addresses):
-                await asyncio.sleep(BATCH_DELAY)
-
-        # Fetch profiles for new senders only
+        # Fetch profiles for new senders
         async def fetch_profile_safe(addr):
             try:
                 return addr, await get_cached_profile(addr, is_mainnet)
             except Exception:
                 return addr, None
 
-        # Fetch profiles for new senders — batched to avoid rate-limit storms
         profiles = {}
-        sender_list = list(unique_senders)
-        PROFILE_BATCH = 50
-        for pb_start in range(0, len(sender_list), PROFILE_BATCH):
-            pb = sender_list[pb_start:pb_start + PROFILE_BATCH]
+        if unique_senders:
             profile_results = await asyncio.gather(
-                *[fetch_profile_safe(addr) for addr in pb],
+                *[fetch_profile_safe(addr) for addr in unique_senders],
                 return_exceptions=True
             )
             for pr in profile_results:
@@ -299,15 +296,10 @@ async def _refresh_feed_cache(network: str, is_mainnet: bool, cache_key: str):
                     continue
                 addr, profile = pr
                 profiles[addr] = profile
-            if pb_start + PROFILE_BATCH < len(sender_list):
-                await asyncio.sleep(1)
 
         # Format new messages
         new_messages = []
         for from_addr, msg in new_raw:
-            if _is_system_or_encrypted_msg(msg):
-                continue
-
             profile = profiles.get(from_addr)
             formatted = await format_message(msg, profile, network, is_mainnet)
             new_messages.append(formatted)
@@ -317,23 +309,19 @@ async def _refresh_feed_cache(network: str, is_mainnet: bool, cache_key: str):
                     profile.get('Image'), profile.get('DisplayName')
                 )
 
-        # Merge: existing + new, deduplicated
+        # Merge: existing + new, deduplicated, sorted
         all_messages = existing_messages + new_messages
-        all_messages.sort(key=lambda x: x.get('created_at', ''), reverse=True)
-        await _apply_first_seen(all_messages)
 
         def feed_sort_key(msg):
             created = msg.get('created_at', '')
             first = msg.get('first_seen', '')
             if first and created:
                 try:
-                    from datetime import datetime, timezone, timedelta
+                    from datetime import timedelta
                     fs = datetime.fromisoformat(first.replace('Z', '+00:00'))
                     bd = datetime.fromisoformat(created.replace('Z', '+00:00'))
-                    if fs.tzinfo is None:
-                        fs = fs.replace(tzinfo=timezone.utc)
-                    if bd.tzinfo is None:
-                        bd = bd.replace(tzinfo=timezone.utc)
+                    if fs.tzinfo is None: fs = fs.replace(tzinfo=timezone.utc)
+                    if bd.tzinfo is None: bd = bd.replace(tzinfo=timezone.utc)
                     now = datetime.now(timezone.utc)
                     if (now - fs) < timedelta(hours=24) and fs > bd:
                         return first
@@ -341,16 +329,18 @@ async def _refresh_feed_cache(network: str, is_mainnet: bool, cache_key: str):
                     pass
             return created
         all_messages.sort(key=feed_sort_key, reverse=True)
+
         await conversation_cache_col.update_one(
             {'cache_key': cache_key},
             {'$set': {'cache_key': cache_key, 'messages': all_messages,
                       'timestamp': datetime.now(timezone.utc).isoformat()}},
             upsert=True
         )
-        logger.info(f"Feed cache refreshed for {network}: {len(all_messages)} messages ({len(new_messages)} new, {len(existing_messages)} existing)")
-        asyncio.create_task(_proactive_pin_feed_cids(all_messages))
+        logger.info(f"Feed refresh for {network}: {len(all_messages)} total ({len(new_messages)} new from {len(priority_addrs)} addrs)")
+        if new_messages:
+            asyncio.create_task(_proactive_pin_feed_cids(new_messages))
     except Exception as e:
-        logger.warning(f"Background feed refresh failed for {network}: {e}")
+        logger.warning(f"Feed refresh failed for {network}: {e}")
     finally:
         _feed_refreshing[network] = False
 
@@ -390,9 +380,11 @@ def _is_system_or_encrypted_msg(msg: dict) -> bool:
 
 
 async def _build_feed_from_scratch(network: str, is_mainnet: bool) -> list:
+    """Initial feed build — fetches from all known addresses.
+    Only runs once when cache is empty. After that, incremental refresh takes over."""
     addresses = await get_known_addresses(network)
-    BATCH_SIZE = 30
-    BATCH_DELAY = 2
+    BATCH_SIZE = 100
+    BATCH_DELAY = 0.3
 
     async def fetch_addr_msgs(addr):
         return addr, await fetch_public_messages(addr, is_mainnet)
