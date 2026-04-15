@@ -1408,7 +1408,9 @@ export default function SingleObjectPage({ network, lookupByAddress }) {
         norm.listings = [];
       }
       norm.is_listed = norm.listings.length > 0;
-      norm.min_price = norm.is_listed ? Math.min(...norm.listings.map(l => l.price ?? 0)) : 0;
+      // Sort listings by price ascending — cheapest first (Buy Now uses [0])
+      norm.listings.sort((a, b) => (a.price ?? 0) - (b.price ?? 0));
+      norm.min_price = norm.is_listed ? (norm.listings[0].price ?? 0) : 0;
       norm.offers = prefetched.offers || prefetched.Offers || [];
       if (!Array.isArray(norm.offers) && typeof norm.offers === 'object') {
         norm.offers = Object.entries(norm.offers).map(([addr, o]) => ({
