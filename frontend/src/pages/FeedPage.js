@@ -297,6 +297,10 @@ export default function FeedPage({ network, follows = [] }) {
                   mempool_time: p.mempool_time,
                   confirmed_time: p.confirmed_time,
                   status: p.status,
+                  is_reply: p.is_reply || false,
+                  recipient_urn: p.recipient_urn || null,
+                  to_address: p.recipient_address || null,
+                  parent_txid: p.parent_txid || null,
                 }}
                 network={network}
                 currentUserAddress={user?.address}

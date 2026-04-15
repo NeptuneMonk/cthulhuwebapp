@@ -202,6 +202,10 @@ export const ComposeModal = ({ onClose, network, replyTo }) => {
           txid: result.txid, network: network || 'btc-testnet',
           content: postContent, from_address: activeAddress,
           sender_urn: displayName, sender_image: profile?.image || null,
+          is_reply: !!replyTo,
+          recipient_urn: replyTo?.urn || null,
+          recipient_address: replyTo?.address || null,
+          parent_txid: replyTo?.txid?.slice(0, 16) || null,
         });
         addPendingTx(result.txid, 'POST', postContent.substring(0, 60));
         refreshBalance();
