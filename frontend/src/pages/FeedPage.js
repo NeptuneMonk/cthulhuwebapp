@@ -29,8 +29,7 @@ export default function FeedPage({ network, follows = [] }) {
   // Rolling buffer: keep ~60 messages, render ~20 visible
   const [feed, setFeed] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [hasMore, setHasMore] = useState(true);      // can load older
-  const [hasNewer, setHasNewer] = useState(false);    // can load newer (scrolled into history)
+  const [hasMore, setHasMore] = useState(true);
   const [initialLoad, setInitialLoad] = useState(true);
   const [replyTo, setReplyTo] = useState(null);
   const [myProfileImage, setMyProfileImage] = useState(null);
@@ -66,19 +65,15 @@ export default function FeedPage({ network, follows = [] }) {
   const skipRef = useRef(0);
   const loadingRef = useRef(false);
   const hasMoreRef = useRef(true);
-  const bottomRef = useRef(null);
-  const hasScrolledRef = useRef(false);
   const scrollContainerRef = useRef(null);
-  const [showBackToBottom, setShowBackToBottom] = useState(false);
+  const [showBackToTop, setShowBackToTop] = useState(false);
 
   // Track scroll position
   useEffect(() => {
     const container = scrollContainerRef.current;
     if (!container) return;
     const handleScroll = () => {
-      const { scrollTop, scrollHeight, clientHeight } = container;
-      const distFromBottom = scrollHeight - clientHeight - scrollTop;
-      setShowBackToBottom(distFromBottom > 400);
+      setShowBackToTop(container.scrollTop > 400);
     };
     container.addEventListener('scroll', handleScroll, { passive: true });
     return () => container.removeEventListener('scroll', handleScroll);
@@ -135,20 +130,10 @@ export default function FeedPage({ network, follows = [] }) {
   useEffect(() => {
     setFeed([]); skipRef.current = 0;
     setHasMore(true); hasMoreRef.current = true;
-    setHasNewer(false);
     setInitialLoad(true);
     fetchPageRef.current(0, true);
     refreshPending();
-    hasScrolledRef.current = false;
   }, [network, feedMode]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Auto-scroll to bottom on initial load
-  useEffect(() => {
-    if (!initialLoad && feed.length > 0 && !hasScrolledRef.current) {
-      hasScrolledRef.current = true;
-      setTimeout(() => bottomRef.current?.scrollIntoView(), 100);
-    }
-  }, [initialLoad, feed.length]);
 
   // Poll for confirmations every 30s
   useEffect(() => {
@@ -188,23 +173,21 @@ export default function FeedPage({ network, follows = [] }) {
     observerRef.current.observe(node);
   }, []);
 
-  const scrollToBottom = useCallback(() => {
-    // Jump back to latest — full reset
+  const scrollToTop = useCallback(() => {
     setFeed([]);
     skipRef.current = 0;
     setHasMore(true); hasMoreRef.current = true;
-    setHasNewer(false);
-    setShowBackToBottom(false);
+    setShowBackToTop(false);
     fetchPageRef.current(0, true);
-    setTimeout(() => {
-      const container = scrollContainerRef.current;
-      if (container) container.scrollTop = container.scrollHeight;
-    }, 500);
+    const container = scrollContainerRef.current;
+    if (container) container.scrollTop = 0;
   }, []);
 
   const handlePostSuccess = () => {
     refreshPending();
-    setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 300);
+    // Scroll to top to see the new pending post
+    const container = scrollContainerRef.current;
+    if (container) container.scrollTop = 0;
   };
 
   // Merge pending posts at top, excluding any already in the feed
@@ -267,11 +250,8 @@ export default function FeedPage({ network, follows = [] }) {
             )}
           </div>
         ) : (
-          <div className="max-w-3xl mx-auto flex flex-col-reverse gap-3 py-4">
-            {/* DOM first = visual BOTTOM (newest content) */}
-            <div ref={bottomRef} className="h-0" />
-
-            {/* Pending posts (newest, at visual bottom) */}
+          <div className="max-w-3xl mx-auto flex flex-col gap-3 py-4">
+            {/* Pending posts (newest, at top) */}
             {visiblePending.map(p => (
               <FeedCard
                 key={`pending-${p.txid}`}
@@ -304,7 +284,7 @@ export default function FeedPage({ network, follows = [] }) {
             {/* New TX banner */}
             {newTxCount > 0 && (
               <button
-                onClick={() => { clearNewTxCount(); scrollToBottom(); }}
+                onClick={() => { clearNewTxCount(); scrollToTop(); }}
                 className="w-full py-2 rounded-lg border text-xs font-medium hover:opacity-80 transition-colors"
                 style={{ backgroundColor: 'rgba(var(--c-accent-rgb), 0.15)', borderColor: 'rgba(var(--c-accent-rgb), 0.2)', color: 'var(--c-accent)' }}
                 data-testid="feed-new-activity-banner"
@@ -335,7 +315,7 @@ export default function FeedPage({ network, follows = [] }) {
               />
             ))}
 
-            {/* DOM last = visual TOP (load more / end) */}
+            {/* Load more / end — at bottom, scroll down for older */}
             {loading && !initialLoad && (
               <div className="text-center py-6 text-gray-500" data-testid="feed-loading-more">
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 mx-auto mb-2" style={{ borderColor: 'var(--c-accent)' }} />
@@ -381,14 +361,14 @@ export default function FeedPage({ network, follows = [] }) {
         />
       )}
 
-      {showBackToBottom && (
+      {showBackToTop && (
         <button
-          onClick={scrollToBottom}
+          onClick={scrollToTop}
           className="fixed bottom-20 left-1/2 -translate-x-1/2 z-40 flex items-center gap-2 px-4 py-2.5 bg-gray-900/95 hover:bg-gray-800 rounded-full shadow-lg shadow-black/50 border border-gray-700/50 transition-all backdrop-blur-sm"
           style={{ color: 'var(--c-accent)' }}
           data-testid="back-to-latest-btn"
         >
-          <FiArrowDown size={16} />
+          <FiArrowDown size={16} className="rotate-180" />
           <span className="text-sm font-medium">Back to Latest</span>
         </button>
       )}
