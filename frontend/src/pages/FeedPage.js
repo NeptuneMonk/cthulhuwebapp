@@ -20,6 +20,32 @@ import { FiAtSign, FiArrowDown, FiUsers, FiGlobe } from 'react-icons/fi';
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const PAGE_SIZE = 20;
 const FEED_MODE_KEY = 'cthulhu_feed_mode';
+const PAGE_CACHE_TTL = 15_000; // 15 second TTL
+
+// In-memory page cache: feedKey:pageNum → { data, ts }
+const _pageCache = {};
+
+function getCacheKey(feedMode, network, skip) {
+  return `${feedMode}:${network}:${skip}`;
+}
+
+function getCachedPage(key) {
+  const entry = _pageCache[key];
+  if (!entry) return null;
+  if (Date.now() - entry.ts > PAGE_CACHE_TTL) { delete _pageCache[key]; return null; }
+  return entry.data;
+}
+
+function setCachedPage(key, data) {
+  _pageCache[key] = { data, ts: Date.now() };
+}
+
+function invalidateCache(feedMode, network) {
+  const prefix = `${feedMode}:${network}:`;
+  for (const k of Object.keys(_pageCache)) {
+    if (k.startsWith(prefix)) delete _pageCache[k];
+  }
+}
 
 function getFeedMode() {
   try { return localStorage.getItem(FEED_MODE_KEY) || 'global'; } catch { return 'global'; }
@@ -87,6 +113,24 @@ export default function FeedPage({ network, follows = [] }) {
   // Fetch a page of feed data (always fresh, no message caching)
   const fetchPage = useCallback(async (skip, isReset = false) => {
     if (loadingRef.current) return;
+    const cacheKey = getCacheKey(feedMode, network, skip);
+
+    // Serve from cache if available (prevents redundant fetches on scroll-back)
+    const cached = getCachedPage(cacheKey);
+    if (cached && !isReset) {
+      setFeed(prev => {
+        const combined = [...prev, ...cached];
+        const seen = new Set();
+        return combined.filter(p => {
+          if (seen.has(p.transaction_id)) return false;
+          seen.add(p.transaction_id);
+          return true;
+        });
+      });
+      skipRef.current = skip + PAGE_SIZE;
+      return;
+    }
+
     loadingRef.current = true; setLoading(true);
     try {
       const params = { skip, limit: PAGE_SIZE };
@@ -102,9 +146,11 @@ export default function FeedPage({ network, follows = [] }) {
       if (!res) throw new Error('All sources failed');
       const newPosts = res.feed || [];
 
+      // Cache this page
+      setCachedPage(cacheKey, newPosts);
+
       setFeed(prev => {
         if (isReset) return newPosts;
-        // Append older posts, dedup by transaction_id
         const combined = [...prev, ...newPosts];
         const seen = new Set();
         return combined.filter(p => {
@@ -128,6 +174,7 @@ export default function FeedPage({ network, follows = [] }) {
 
   // Reset feed on network/mode change
   useEffect(() => {
+    invalidateCache(feedMode, network);
     setFeed([]); skipRef.current = 0;
     setHasMore(true); hasMoreRef.current = true;
     setInitialLoad(true);
@@ -237,8 +284,8 @@ export default function FeedPage({ network, follows = [] }) {
   }, []);
 
   const handlePostSuccess = () => {
+    invalidateCache(feedMode, network);
     refreshPending();
-    // Scroll to top to see the new pending post
     const container = scrollContainerRef.current;
     if (container) container.scrollTop = 0;
   };
