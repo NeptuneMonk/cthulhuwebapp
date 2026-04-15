@@ -43,7 +43,7 @@ const fmtDate = (ts) => {
   return d.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 };
 
-export const FeedCard = React.forwardRef(({ item, network, currentUserAddress, currentUserImage, onForward, onLike, onPin, onDelete, onMonetizedLike, onBlock, actionBusy, isMention, isUnseenMention, feedContext }, ref) => {
+const FeedCardInner = React.forwardRef(({ item, network, currentUserAddress, currentUserImage, onForward, onLike, onPin, onDelete, onMonetizedLike, onBlock, actionBusy, isMention, isUnseenMention, feedContext }, ref) => {
   const navigate = useNavigate();
   const [showReply, setShowReply] = useState(false);
   const [contextMenu, setContextMenu] = useState(null); // { x, y }
@@ -586,3 +586,16 @@ export const FeedCard = React.forwardRef(({ item, network, currentUserAddress, c
     </>
   );
 });
+
+// Memoize: only re-render when item data or action state changes
+export const FeedCard = React.memo(React.forwardRef((props, ref) => (
+  <FeedCardInner {...props} ref={ref} />
+)), (prev, next) => (
+  prev.item?.transaction_id === next.item?.transaction_id &&
+  prev.item?.status === next.item?.status &&
+  prev.item?.is_pending === next.item?.is_pending &&
+  prev.actionBusy === next.actionBusy &&
+  prev.isMention === next.isMention &&
+  prev.isUnseenMention === next.isUnseenMention &&
+  prev.network === next.network
+));

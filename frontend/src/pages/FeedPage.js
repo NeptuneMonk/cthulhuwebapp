@@ -20,7 +20,8 @@ import { FiAtSign, FiArrowDown, FiUsers, FiGlobe } from 'react-icons/fi';
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const PAGE_SIZE = 20;
 const FEED_MODE_KEY = 'cthulhu_feed_mode';
-const PAGE_CACHE_TTL = 15_000; // 15 second TTL
+const PAGE_CACHE_TTL = 15_000;
+const MAX_FEED_WINDOW = 200; // Sliding window: drop oldest beyond this
 
 // In-memory page cache: feedKey:pageNum → { data, ts }
 const _pageCache = {};
@@ -121,11 +122,13 @@ export default function FeedPage({ network, follows = [] }) {
       setFeed(prev => {
         const combined = [...prev, ...cached];
         const seen = new Set();
-        return combined.filter(p => {
+        const deduped = combined.filter(p => {
           if (seen.has(p.transaction_id)) return false;
           seen.add(p.transaction_id);
           return true;
         });
+        // Sliding window: keep newest MAX_FEED_WINDOW posts
+        return deduped.length > MAX_FEED_WINDOW ? deduped.slice(0, MAX_FEED_WINDOW) : deduped;
       });
       skipRef.current = skip + PAGE_SIZE;
       return;
@@ -153,16 +156,28 @@ export default function FeedPage({ network, follows = [] }) {
         if (isReset) return newPosts;
         const combined = [...prev, ...newPosts];
         const seen = new Set();
-        return combined.filter(p => {
+        const deduped = combined.filter(p => {
           if (seen.has(p.transaction_id)) return false;
           seen.add(p.transaction_id);
           return true;
         });
+        return deduped.length > MAX_FEED_WINDOW ? deduped.slice(0, MAX_FEED_WINDOW) : deduped;
       });
 
       setHasMore(res.has_more);
       hasMoreRef.current = res.has_more;
       skipRef.current = skip + PAGE_SIZE;
+
+      // Preload next page in background (if more available)
+      if (res.has_more) {
+        const nextKey = getCacheKey(feedMode, network, skip + PAGE_SIZE);
+        if (!getCachedPage(nextKey)) {
+          const nextParams = { ...params, skip: skip + PAGE_SIZE };
+          meshFirstFetch(`/feed/${network}`, nextParams).then(({ data: nextRes }) => {
+            if (nextRes?.feed) setCachedPage(nextKey, nextRes.feed);
+          }).catch(() => {});
+        }
+      }
     } catch (err) {
       console.error('Feed error:', err);
       setHasMore(false); hasMoreRef.current = false;
@@ -257,14 +272,17 @@ export default function FeedPage({ network, follows = [] }) {
     return () => window.removeEventListener('cthulhu-scroll-to-txid', handler);
   }, []);
 
-  // IntersectionObserver for loading older posts
+  // IntersectionObserver for loading older posts (debounced to prevent overlapping fetches)
   const observerRef = useRef(null);
+  const lastFetchTime = useRef(0);
   const sentinelRef = useCallback((node) => {
     if (observerRef.current) observerRef.current.disconnect();
     if (!node) return;
     observerRef.current = new IntersectionObserver(
       (entries) => {
-        if (entries[0].isIntersecting && !loadingRef.current && hasMoreRef.current) {
+        const now = Date.now();
+        if (entries[0].isIntersecting && !loadingRef.current && hasMoreRef.current && (now - lastFetchTime.current) > 300) {
+          lastFetchTime.current = now;
           fetchPageRef.current(skipRef.current);
         }
       },
