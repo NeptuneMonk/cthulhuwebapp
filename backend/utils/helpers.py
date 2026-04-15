@@ -1036,7 +1036,6 @@ def format_profile(raw, network: str):
 async def format_message(msg, sender_profile, network: str, is_mainnet: bool):
     from_addr = msg.get('FromAddress', '')
     to_addr = msg.get('ToAddress', '')
-    is_reply = bool(from_addr and to_addr and from_addr != to_addr)
     raw_content = msg.get('Message', '')
     content = ' '.join(raw_content) if isinstance(raw_content, list) else str(raw_content)
 
@@ -1062,7 +1061,27 @@ async def format_message(msg, sender_profile, network: str, is_mainnet: bool):
             elif fname not in _PROTOCOL_KEYS:
                 files[fname] = fsize
 
-    result = {
+    # Determine if this is a reply: only if to_addr is a known user profile
+    # (not just a keyword-derived address or channel address)
+    is_reply = False
+    recipient_urn = None
+    recipient_image = None
+    if from_addr and to_addr and from_addr != to_addr:
+        recipient = await get_cached_profile(to_addr, is_mainnet)
+        if recipient and recipient.get('URN'):
+            is_reply = True
+            recipient_urn = recipient.get('URN')
+            recipient_image = recipient.get('Image')
+            await register_known_user(
+                to_addr, network, recipient.get('URN'),
+                recipient.get('Image'), recipient.get('DisplayName')
+            )
+
+    # Also mark as reply if we have a parent_txid (from <<re:>> tag)
+    if parent_txid and not is_reply:
+        is_reply = True
+
+    return {
         'id': msg.get('TransactionId', str(uuid.uuid4())),
         'from_address': from_addr,
         'to_address': to_addr,
@@ -1076,23 +1095,11 @@ async def format_message(msg, sender_profile, network: str, is_mainnet: bool):
         'sender_urn': sender_profile.get('URN') if sender_profile else None,
         'sender_display_name': sender_profile.get('DisplayName') if sender_profile else None,
         'sender_image': sender_profile.get('Image') if sender_profile else None,
-        'recipient_urn': None,
-        'recipient_image': None,
+        'recipient_urn': recipient_urn,
+        'recipient_image': recipient_image,
         'parent_txid': parent_txid,
         'files': files if files else None,
     }
-
-    if is_reply:
-        recipient = await get_cached_profile(to_addr, is_mainnet)
-        if recipient and recipient.get('URN'):
-            result['recipient_urn'] = recipient.get('URN')
-            result['recipient_image'] = recipient.get('Image')
-            await register_known_user(
-                to_addr, network, recipient.get('URN'),
-                recipient.get('Image'), recipient.get('DisplayName')
-            )
-
-    return result
 
 
 def format_object_for_api(obj: dict) -> dict:

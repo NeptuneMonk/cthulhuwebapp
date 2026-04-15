@@ -532,66 +532,99 @@ async def _build_feed_from_scratch(network: str, is_mainnet: bool) -> list:
 
 @router.get("/feed/{network}")
 async def get_feed(network: str, skip: int = 0, limit: int = 20, mode: str = 'global', followed: str = ''):
-    """Feed served from MongoDB cache with 30s background refresh.
-    New posts appear within ~30 seconds of broadcast."""
+    """Feed served directly from p2fk.io's global cache via GetKnownRootsBySearchString.
+    P2FK.io handles aggregation, sorting, and pagination. We just format for display."""
     try:
         is_mainnet = 'mainnet' in network.lower()
-        cache_key = f"feed:{network}"
 
-        cached = await conversation_cache_col.find_one(
-            {'cache_key': cache_key}, {'_id': 0}
-        )
+        # Use p2fk.io's global search — returns all roots sorted by time, paginated
+        mainnet_param = 'true' if is_mainnet else 'false'
+        url = f"https://p2fk.io/GetKnownRootsBySearchString?search=*&skip={skip}&qty={limit}&mainnet={mainnet_param}"
 
-        if cached and cached.get('messages'):
-            cache_age = (datetime.now(timezone.utc) - datetime.fromisoformat(cached['timestamp'])).total_seconds()
-            all_messages = cached['messages']
+        from utils.http_pool import get_client
+        client = get_client()
+        resp = await client.get(url, timeout=15.0)
+        if resp.status_code != 200:
+            return {"feed": [], "network": network, "count": 0, "total": 0, "has_more": False, "mode": mode}
 
-            # Inject ephemeral system announcements into global feed only
-            if mode == 'global':
-                announcements = await _get_system_announcements(network)
-                if announcements:
-                    all_messages = announcements + all_messages
-                    all_messages.sort(
-                        key=lambda m: m.get('block_time') or m.get('created_at') or '',
-                        reverse=True,
-                    )
+        raw_results = resp.json()
+        if not isinstance(raw_results, list):
+            return {"feed": [], "network": network, "count": 0, "total": 0, "has_more": False, "mode": mode}
 
-            # Filter to followed addresses only
-            if mode == 'following' and followed:
-                followed_set = set(a.strip() for a in followed.split(',') if a.strip())
-                if followed_set:
-                    all_messages = [m for m in all_messages if m.get('from_address') in followed_set]
+        # Format each result into our feed message structure
+        all_messages = []
+        unique_senders = set()
+        for item in raw_results:
+            root = item.get('root', item)
+            if not root or not isinstance(root, dict):
+                continue
+            if _is_system_or_encrypted_msg(root):
+                continue
+            from_addr = root.get('SignedBy', '')
+            if from_addr:
+                unique_senders.add(from_addr)
+            # Normalize for format_message
+            root['FromAddress'] = from_addr
+            # First keyword key = the target address (who/what this message is sent to).
+            # For public posts: sender posts to their own keyword address → FromAddr == ToAddr.
+            # For replies: sender posts to recipient's keyword address → FromAddr != ToAddr.
+            keywords = root.get('Keyword', {})
+            if isinstance(keywords, dict) and keywords:
+                root['ToAddress'] = next(iter(keywords))
+            else:
+                root['ToAddress'] = from_addr
+            all_messages.append((from_addr, root))
 
-            total = len(all_messages)
-            page = all_messages[skip:skip + limit]
+        # Batch-fetch profiles for all senders (cached as static assets)
+        profiles = {}
+        if unique_senders:
+            async def fetch_profile_safe(addr):
+                try:
+                    return addr, await get_cached_profile(addr, is_mainnet)
+                except Exception:
+                    return addr, None
 
-            # Trigger background refresh every 30s (was 300s)
-            refreshing = _feed_refreshing.get(network, False)
-            if cache_age > 30 and not refreshing:
-                asyncio.create_task(_refresh_feed_cache(network, is_mainnet, cache_key))
-                refreshing = True
+            profile_results = await asyncio.gather(
+                *[fetch_profile_safe(a) for a in unique_senders],
+                return_exceptions=True
+            )
+            for pr in profile_results:
+                if isinstance(pr, Exception):
+                    continue
+                addr, profile = pr
+                profiles[addr] = profile
 
-            # Proactive IPFS pin
-            asyncio.create_task(_proactive_pin_feed_cids(page))
+        # Format messages
+        formatted = []
+        for from_addr, root in all_messages:
+            profile = profiles.get(from_addr)
+            msg = await format_message(root, profile, network, is_mainnet)
+            formatted.append(msg)
 
-            return {
-                "feed": page, "network": network, "count": len(page),
-                "total": total, "skip": skip, "limit": limit,
-                "has_more": (skip + limit) < total,
-                "cached": True, "cache_age": int(cache_age), "refreshing": refreshing,
-                "mode": mode,
-            }
+        # Filter for following mode
+        if mode == 'following' and followed:
+            followed_set = set(a.strip() for a in followed.split(',') if a.strip())
+            if followed_set:
+                formatted = [m for m in formatted if m.get('from_address') in followed_set]
 
-        # No cache — build in background, return empty
-        if not _feed_refreshing.get(network):
-            asyncio.create_task(_refresh_feed_cache(network, is_mainnet, cache_key))
+        # Inject announcements (global only)
+        if mode == 'global' and skip == 0:
+            announcements = await _get_system_announcements(network)
+            if announcements:
+                formatted = announcements + formatted
+
+        # Proactive IPFS pin
+        asyncio.create_task(_proactive_pin_feed_cids(formatted))
+
+        # p2fk.io returns exactly `qty` items if more exist, fewer if at end
+        has_more = len(raw_results) >= limit
 
         return {
-            "feed": [], "network": network, "count": 0,
-            "total": 0, "skip": skip, "limit": limit,
-            "has_more": False,
-            "cached": False, "cache_age": 0, "refreshing": True,
-            "mode": mode,
+            "feed": formatted, "network": network, "count": len(formatted),
+            "total": skip + len(formatted) + (1 if has_more else 0),
+            "skip": skip, "limit": limit,
+            "has_more": has_more,
+            "cached": False, "mode": mode,
         }
 
     except Exception as e:
