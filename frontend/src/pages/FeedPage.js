@@ -19,7 +19,6 @@ import { FiAtSign, FiArrowDown, FiUsers, FiGlobe } from 'react-icons/fi';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const PAGE_SIZE = 20;
-const BUFFER_SIZE = 60;
 const FEED_MODE_KEY = 'cthulhu_feed_mode';
 
 function getFeedMode() {
@@ -109,25 +108,15 @@ export default function FeedPage({ network, follows = [] }) {
       const newPosts = res.feed || [];
 
       setFeed(prev => {
-        if (isReset) {
-          // Fresh load — just use the new data
-          return newPosts;
-        }
-        // Appending older posts — combine and trim to BUFFER_SIZE
+        if (isReset) return newPosts;
+        // Append older posts, dedup by transaction_id
         const combined = [...prev, ...newPosts];
-        // Dedup by transaction_id
         const seen = new Set();
-        const deduped = combined.filter(p => {
+        return combined.filter(p => {
           if (seen.has(p.transaction_id)) return false;
           seen.add(p.transaction_id);
           return true;
         });
-        // If buffer exceeds limit, trim the oldest (end of array since sorted newest-first)
-        if (deduped.length > BUFFER_SIZE) {
-          setHasNewer(false); // We're at the newest end since we're loading older
-          return deduped.slice(0, BUFFER_SIZE);
-        }
-        return deduped;
       });
 
       setHasMore(res.has_more);
