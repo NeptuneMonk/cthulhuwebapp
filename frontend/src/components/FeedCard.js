@@ -43,7 +43,7 @@ const fmtDate = (ts) => {
   return d.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 };
 
-export const FeedCard = React.forwardRef(({ item, network, currentUserAddress, currentUserImage, onForward, onLike, onPin, onDelete, onMonetizedLike, onBlock, actionBusy, isMention, isUnseenMention }, ref) => {
+export const FeedCard = React.forwardRef(({ item, network, currentUserAddress, currentUserImage, onForward, onLike, onPin, onDelete, onMonetizedLike, onBlock, actionBusy, isMention, isUnseenMention, feedContext }, ref) => {
   const navigate = useNavigate();
   const [showReply, setShowReply] = useState(false);
   const [contextMenu, setContextMenu] = useState(null); // { x, y }
@@ -340,7 +340,7 @@ export const FeedCard = React.forwardRef(({ item, network, currentUserAddress, c
         </div>
         {showReply && (
           <ComposeModal onClose={() => setShowReply(false)} network={network}
-            replyTo={{ txid, urn: senderUrn, address: senderAddress, content: plainContent }} />
+            replyTo={{ txid, urn: senderUrn, address: senderAddress, content: plainContent, feedContext: feedContext || { type: 'global', id: '' } }} />
         )}
       </>
     );
@@ -390,10 +390,14 @@ export const FeedCard = React.forwardRef(({ item, network, currentUserAddress, c
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                const parentPrefix = message.parent_txid;
-                // If we have the parent TXID prefix, find the exact card
-                if (parentPrefix) {
-                  const match = document.querySelector(`[data-txid^="${parentPrefix}"]`);
+                const parentTxid = message.parent_txid;
+                const ctxType = message.reply_context_type || 'global';
+                const ctxId = message.reply_context_id || '';
+
+                // Rule 0: Load the correct feed BEFORE searching for the TXID
+                if (parentTxid) {
+                  // First: check if parent is already in current feed buffer
+                  const match = document.querySelector(`[data-txid="${parentTxid}"]`);
                   if (match) {
                     match.scrollIntoView({ behavior: 'smooth', block: 'center' });
                     match.style.transition = 'box-shadow 0.3s';
@@ -401,23 +405,40 @@ export const FeedCard = React.forwardRef(({ item, network, currentUserAddress, c
                     setTimeout(() => { match.style.boxShadow = ''; }, 2000);
                     return;
                   }
-                }
-                // Fallback: find nearest older post from the recipient address
-                const thisCard = cardRef.current;
-                if (!thisCard) return;
-                const allCards = Array.from(document.querySelectorAll('[data-txid]'));
-                const myIdx = allCards.indexOf(thisCard);
-                for (let i = myIdx + 1; i < allCards.length; i++) {
-                  const card = allCards[i];
-                  if (card.getAttribute('data-from-address') === message.to_address) {
-                    card.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                    card.style.transition = 'box-shadow 0.3s';
-                    card.style.boxShadow = '0 0 0 2px rgba(45, 212, 191, 0.5)';
-                    setTimeout(() => { card.style.boxShadow = ''; }, 2000);
-                    return;
+                  // Not in buffer — navigate to the correct context with txid highlight param
+                  switch (ctxType) {
+                    case 'profile':
+                      navigate(`/profile/${ctxId}?network=${network}&highlight=${parentTxid}`);
+                      return;
+                    case 'tether':
+                    case 'venue':
+                      navigate(`/room/${ctxId}?network=${network}&highlight=${parentTxid}`);
+                      return;
+                    case 'object':
+                      navigate(`/object/${ctxId}?network=${network}&highlight=${parentTxid}`);
+                      return;
+                    default:
+                      // Global/following — stay in feed, show toast
+                      break;
                   }
                 }
-                // Not in buffer — go to profile
+
+                // Fallback: find nearest older post from recipient address
+                const thisCard = cardRef.current;
+                if (thisCard) {
+                  const allCards = Array.from(document.querySelectorAll('[data-txid]'));
+                  const myIdx = allCards.indexOf(thisCard);
+                  for (let i = myIdx + 1; i < allCards.length; i++) {
+                    if (allCards[i].getAttribute('data-from-address') === message.to_address) {
+                      allCards[i].scrollIntoView({ behavior: 'smooth', block: 'center' });
+                      allCards[i].style.transition = 'box-shadow 0.3s';
+                      allCards[i].style.boxShadow = '0 0 0 2px rgba(45, 212, 191, 0.5)';
+                      setTimeout(() => { allCards[i].style.boxShadow = ''; }, 2000);
+                      return;
+                    }
+                  }
+                }
+                // Last resort — go to profile
                 navigate(`/profile/${message.to_address}?network=${network}`);
               }}
               className="flex items-center gap-1 mb-2 text-teal-500/70 text-[11px] font-medium hover:text-teal-400 transition-colors"
@@ -565,7 +586,7 @@ export const FeedCard = React.forwardRef(({ item, network, currentUserAddress, c
         <ComposeModal
           onClose={() => setShowReply(false)}
           network={network}
-          replyTo={{ txid, urn: senderUrn, address: senderAddress, content: plainContent }}
+          replyTo={{ txid, urn: senderUrn, address: senderAddress, content: plainContent, feedContext: feedContext || { type: 'global', id: '' } }}
         />
       )}
     </>

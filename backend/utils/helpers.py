@@ -1039,9 +1039,18 @@ async def format_message(msg, sender_profile, network: str, is_mainnet: bool):
     raw_content = msg.get('Message', '')
     content = ' '.join(raw_content) if isinstance(raw_content, list) else str(raw_content)
 
-    # Extract parent TXID from <<re:TXID_PREFIX>> tag (Cthulhu reply threading)
-    parent_txid_match = re.search(r'<<re:([a-fA-F0-9]{8,64})>>', content)
-    parent_txid = parent_txid_match.group(1) if parent_txid_match else None
+    # Extract reply threading from <<re:FULL_TXID:CONTEXT_TYPE:CONTEXT_ID>> tag
+    re_tag_match = re.search(r'<<re:([a-fA-F0-9]{16,64}):([a-z]+):([^>]*)>>', content)
+    if re_tag_match:
+        parent_txid = re_tag_match.group(1)
+        reply_context_type = re_tag_match.group(2)
+        reply_context_id = re_tag_match.group(3) or ''
+    else:
+        # Fallback: old format <<re:TXID_PREFIX>>
+        old_match = re.search(r'<<re:([a-fA-F0-9]{8,64})>>', content)
+        parent_txid = old_match.group(1) if old_match else None
+        reply_context_type = 'global' if old_match else None
+        reply_context_id = ''
 
     # Strip P2FK protocol noise: salt <<number>>, <<re:...>>, and trailing keyword/address bytes
     content = re.sub(r'<<re:[a-fA-F0-9]+>>', '', content)
@@ -1098,6 +1107,8 @@ async def format_message(msg, sender_profile, network: str, is_mainnet: bool):
         'recipient_urn': recipient_urn,
         'recipient_image': recipient_image,
         'parent_txid': parent_txid,
+        'reply_context_type': reply_context_type,
+        'reply_context_id': reply_context_id,
         'files': files if files else None,
     }
 

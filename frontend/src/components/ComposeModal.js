@@ -80,8 +80,10 @@ export const ComposeModal = ({ onClose, network, replyTo }) => {
       if (text.trim()) contentParts.push(text.trim());
       if (attachedGif) contentParts.push(`<<${attachedGif.ref}>>`);
       // Embed parent TXID for reply threading (SUP ignores <<>> tags, Cthulhu parses them)
-      if (replyTo?.txid) contentParts.push(`<<re:${replyTo.txid.slice(0, 16)}>>`);
-
+      if (replyTo?.txid) {
+        const ctx = replyTo.feedContext || { type: 'global', id: '' };
+        contentParts.push(`<<re:${replyTo.txid}:${ctx.type}:${ctx.id || ''}>>`);
+      }
       if (attachedFiles.length > 0) {
         setSendingStatus('uploading');
         for (let i = 0; i < attachedFiles.length; i++) {
@@ -205,11 +207,15 @@ export const ComposeModal = ({ onClose, network, replyTo }) => {
           is_reply: !!replyTo,
           recipient_urn: replyTo?.urn || null,
           recipient_address: replyTo?.address || null,
-          parent_txid: replyTo?.txid?.slice(0, 16) || null,
+          parent_txid: replyTo?.txid || null,
+          reply_context_type: replyTo?.feedContext?.type || null,
+          reply_context_id: replyTo?.feedContext?.id || null,
         });
         addPendingTx(result.txid, 'POST', postContent.substring(0, 60));
         refreshBalance();
-        setTxResult({ txid: result.txid, addressCount: addresses.length, costSats: addresses.length * 546 + (result.fee || 0) });
+        // Skip the broadcast modal for posts/replies — just close and let it appear in feed
+        onClose();
+        return;
       }
     } catch (err) {
       setError(`Post failed: ${err.message}`);

@@ -183,19 +183,20 @@ export default function FeedPage({ network, follows = [] }) {
     return () => window.removeEventListener('cthulhu-post-deleted', handler);
   }, []);
 
-  // IntersectionObserver for loading older posts (scroll toward top = older)
+  // IntersectionObserver for loading older posts
+  const observerRef = useRef(null);
   const sentinelRef = useCallback((node) => {
+    if (observerRef.current) observerRef.current.disconnect();
     if (!node) return;
-    const obs = new IntersectionObserver(
+    observerRef.current = new IntersectionObserver(
       (entries) => {
         if (entries[0].isIntersecting && !loadingRef.current && hasMoreRef.current) {
           fetchPageRef.current(skipRef.current);
         }
       },
-      { threshold: 0.1, rootMargin: '600px' }
+      { threshold: 0.1, rootMargin: '800px' }
     );
-    obs.observe(node);
-    return () => obs.disconnect();
+    observerRef.current.observe(node);
   }, []);
 
   const scrollToBottom = useCallback(() => {
@@ -301,10 +302,13 @@ export default function FeedPage({ network, follows = [] }) {
                   recipient_urn: p.recipient_urn || null,
                   to_address: p.recipient_address || null,
                   parent_txid: p.parent_txid || null,
+                  reply_context_type: p.reply_context_type || null,
+                  reply_context_id: p.reply_context_id || null,
                 }}
                 network={network}
                 currentUserAddress={user?.address}
                 currentUserImage={myProfileImage}
+                feedContext={{ type: feedMode === 'following' ? 'following' : 'global', id: '' }}
               />
             ))}
 
@@ -330,6 +334,7 @@ export default function FeedPage({ network, follows = [] }) {
                 currentUserAddress={user?.address}
                 currentUserImage={myProfileImage}
                 actionBusy={busyAction}
+                feedContext={{ type: feedMode === 'following' ? 'following' : 'global', id: '' }}
                 onForward={(msg) => setForwardMsg(msg)}
                 onLike={(msg) => performLike(msg.txid)}
                 onPin={(msg) => performPin(msg.txid)}
