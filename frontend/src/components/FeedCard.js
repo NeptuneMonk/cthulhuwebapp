@@ -394,52 +394,46 @@ export const FeedCard = React.forwardRef(({ item, network, currentUserAddress, c
                 const ctxType = message.reply_context_type || 'global';
                 const ctxId = message.reply_context_id || '';
 
-                // Rule 0: Load the correct feed BEFORE searching for the TXID
-                if (parentTxid) {
-                  // First: check if parent is already in current feed buffer
-                  const match = document.querySelector(`[data-txid="${parentTxid}"]`);
-                  if (match) {
-                    match.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                    match.style.transition = 'box-shadow 0.3s';
-                    match.style.boxShadow = '0 0 0 2px rgba(45, 212, 191, 0.5)';
-                    setTimeout(() => { match.style.boxShadow = ''; }, 2000);
-                    return;
-                  }
-                  // Not in buffer — navigate to the correct context with txid highlight param
-                  switch (ctxType) {
-                    case 'profile':
-                      navigate(`/profile/${ctxId}?network=${network}&highlight=${parentTxid}`);
-                      return;
-                    case 'tether':
-                    case 'venue':
-                      navigate(`/room/${ctxId}?network=${network}&highlight=${parentTxid}`);
-                      return;
-                    case 'object':
-                      navigate(`/object/${ctxId}?network=${network}&highlight=${parentTxid}`);
-                      return;
-                    default:
-                      // Global/following — stay in feed, show toast
-                      break;
-                  }
+                // RULE: Salt ALWAYS overrides URN-based navigation.
+                // If salt exists → route via salt. If no salt → this is a mention, go to profile.
+                if (!parentTxid) {
+                  // No salt — legacy mention behavior, go to profile
+                  navigate(`/profile/${message.to_address}?network=${network}`);
+                  return;
                 }
 
-                // Fallback: find nearest older post from recipient address
-                const thisCard = cardRef.current;
-                if (thisCard) {
-                  const allCards = Array.from(document.querySelectorAll('[data-txid]'));
-                  const myIdx = allCards.indexOf(thisCard);
-                  for (let i = myIdx + 1; i < allCards.length; i++) {
-                    if (allCards[i].getAttribute('data-from-address') === message.to_address) {
-                      allCards[i].scrollIntoView({ behavior: 'smooth', block: 'center' });
-                      allCards[i].style.transition = 'box-shadow 0.3s';
-                      allCards[i].style.boxShadow = '0 0 0 2px rgba(45, 212, 191, 0.5)';
-                      setTimeout(() => { allCards[i].style.boxShadow = ''; }, 2000);
-                      return;
-                    }
-                  }
+                // Salt exists — find the exact TXID
+                // Step 1: Check current DOM first
+                const match = document.querySelector(`[data-txid="${parentTxid}"]`);
+                if (match) {
+                  match.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                  match.style.transition = 'box-shadow 0.3s';
+                  match.style.boxShadow = '0 0 0 2px rgba(45, 212, 191, 0.5)';
+                  setTimeout(() => { match.style.boxShadow = ''; }, 2000);
+                  return;
                 }
-                // Last resort — go to profile
-                navigate(`/profile/${message.to_address}?network=${network}`);
+
+                // Step 2: Not in DOM — navigate to the correct context with highlight param
+                switch (ctxType) {
+                  case 'profile':
+                    navigate(`/profile/${ctxId}?network=${network}&highlight=${parentTxid}`);
+                    return;
+                  case 'tether':
+                  case 'venue':
+                    navigate(`/room/${ctxId}?network=${network}&highlight=${parentTxid}`);
+                    return;
+                  case 'object':
+                    navigate(`/object/${ctxId}?network=${network}&highlight=${parentTxid}`);
+                    return;
+                  case 'global':
+                  case 'following':
+                  default:
+                    // Global/following — dispatch event for FeedPage to load until found
+                    window.dispatchEvent(new CustomEvent('cthulhu-scroll-to-txid', {
+                      detail: { txid: parentTxid, contextType: ctxType }
+                    }));
+                    return;
+                }
               }}
               className="flex items-center gap-1 mb-2 text-teal-500/70 text-[11px] font-medium hover:text-teal-400 transition-colors"
               data-testid="reply-context"

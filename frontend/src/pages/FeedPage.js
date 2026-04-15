@@ -157,6 +157,59 @@ export default function FeedPage({ network, follows = [] }) {
     return () => window.removeEventListener('cthulhu-post-deleted', handler);
   }, []);
 
+  // Handle scroll-to-txid events from reply navigation
+  useEffect(() => {
+    const handler = async (e) => {
+      const { txid } = e.detail || {};
+      if (!txid) return;
+
+      // Search current DOM
+      const found = document.querySelector(`[data-txid="${txid}"]`);
+      if (found) {
+        found.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        found.style.transition = 'box-shadow 0.3s';
+        found.style.boxShadow = '0 0 0 2px rgba(45, 212, 191, 0.5)';
+        setTimeout(() => { found.style.boxShadow = ''; }, 2000);
+        return;
+      }
+
+      // Not in DOM — load pages until found (max 10 pages = 200 posts)
+      let attempts = 0;
+      const maxAttempts = 10;
+      while (attempts < maxAttempts && hasMoreRef.current) {
+        attempts++;
+        await new Promise((resolve) => {
+          const prevSkip = skipRef.current;
+          fetchPageRef.current(prevSkip);
+          // Wait for the fetch to complete
+          const check = setInterval(() => {
+            if (!loadingRef.current || skipRef.current !== prevSkip) {
+              clearInterval(check);
+              resolve();
+            }
+          }, 200);
+          // Timeout after 5s
+          setTimeout(() => { clearInterval(check); resolve(); }, 5000);
+        });
+
+        // Check DOM again
+        const match = document.querySelector(`[data-txid="${txid}"]`);
+        if (match) {
+          match.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          match.style.transition = 'box-shadow 0.3s';
+          match.style.boxShadow = '0 0 0 2px rgba(45, 212, 191, 0.5)';
+          setTimeout(() => { match.style.boxShadow = ''; }, 2000);
+          return;
+        }
+      }
+      // Not found after loading — show toast
+      const { toast } = await import('sonner');
+      toast.info('Original message not in current feed range');
+    };
+    window.addEventListener('cthulhu-scroll-to-txid', handler);
+    return () => window.removeEventListener('cthulhu-scroll-to-txid', handler);
+  }, []);
+
   // IntersectionObserver for loading older posts
   const observerRef = useRef(null);
   const sentinelRef = useCallback((node) => {
