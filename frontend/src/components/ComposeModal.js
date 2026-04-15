@@ -92,24 +92,25 @@ export const ComposeModal = ({ onClose, network, replyTo }) => {
             // If already uploaded via background queue, use the CID directly
             if (f.cid) {
               contentParts.push(`<<IPFS:${f.cid}>>`);
+              if (f.preview_cid) contentParts.push(`<<preview:${f.preview_cid}>>`);
               continue;
             }
 
             // If still uploading in background, wait for it
             if (f.uploading && f.uploadId && uploadQueue) {
               setSendingStatus(`Waiting for ${f.name} to finish uploading...`);
-              // Poll the queue for completion
-              const cid = await new Promise((resolve, reject) => {
+              const result = await new Promise((resolve, reject) => {
                 const check = () => {
                   const entry = uploadQueue.uploads.find(u => u.id === f.uploadId);
                   if (!entry) { reject(new Error('Upload lost')); return; }
-                  if (entry.status === 'done') { resolve(entry.cid); return; }
+                  if (entry.status === 'done') { resolve({ cid: entry.cid, preview_cid: entry.preview_cid || null }); return; }
                   if (entry.status === 'error') { reject(new Error(entry.error)); return; }
                   setTimeout(check, 500);
                 };
                 check();
               });
-              contentParts.push(`<<IPFS:${cid}>>`);
+              contentParts.push(`<<IPFS:${result.cid}>>`);
+              if (result.preview_cid) contentParts.push(`<<preview:${result.preview_cid}>>`);
               continue;
             }
 
