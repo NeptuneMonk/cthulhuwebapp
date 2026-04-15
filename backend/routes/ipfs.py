@@ -365,6 +365,57 @@ async def ipfs_status():
         return {"online": False, "error": "Daemon not reachable"}
 
 
+async def _generate_and_upload_thumbnail(filepath: str, filename: str, filesize: int) -> str | None:
+    """Generate a small JPEG thumbnail and upload to IPFS. Returns preview CID or None."""
+    import tempfile
+    import os
+    try:
+        from PIL import Image
+        # Skip if file is already tiny (< 50KB)
+        if filesize < 50 * 1024:
+            return None
+
+        img = Image.open(filepath)
+        img.thumbnail((90, 90), Image.Resampling.LANCZOS)
+        # Convert to RGB for JPEG (handles RGBA/palette images)
+        if img.mode not in ('RGB',):
+            img = img.convert('RGB')
+
+        thumb_path = tempfile.NamedTemporaryFile(delete=False, suffix='_thumb.jpg').name
+        img.save(thumb_path, 'JPEG', quality=60, optimize=True)
+        img.close()
+
+        # Upload thumbnail to IPFS
+        thumb_size = os.path.getsize(thumb_path)
+        if thumb_size > 0:
+            client = get_client()
+            with open(thumb_path, 'rb') as f:
+                resp = await client.post(
+                    f"{KUBO_API}/add?wrap-with-directory=false",
+                    files={"file": (f"thumb_{filename}.jpg", f, "image/jpeg")},
+                    timeout=30.0,
+                )
+                if resp.status_code == 200:
+                    import json as _json
+                    entry = _json.loads(resp.text.strip().split('\n')[-1])
+                    preview_cid = entry.get("Hash", "")
+                    if preview_cid:
+                        _uploaded_cids.add(preview_cid)
+                        _cid_access_log[preview_cid] = time.time()
+                        await _persist_uploaded_cid(preview_cid)
+                        logger.info(f"Thumbnail uploaded: {preview_cid[:20]}... ({thumb_size}B)")
+                        return preview_cid
+        return None
+    except Exception as e:
+        logger.debug(f"Thumbnail generation skipped: {e}")
+        return None
+    finally:
+        try:
+            os.unlink(thumb_path)
+        except Exception:
+            pass
+
+
 @router.post("/ipfs/upload")
 async def upload_to_ipfs(file: UploadFile = File(...), bg: BackgroundTasks = None):
     """Upload a file to the local Kubo IPFS daemon. No size limit — IPFS handles any file size."""
@@ -443,6 +494,12 @@ async def upload_to_ipfs(file: UploadFile = File(...), bg: BackgroundTasks = Non
                         if bg:
                             bg.add_task(_propagate_background, cid)
 
+                    # Generate and upload thumbnail for images
+                    preview_cid = None
+                    content_type = (file.content_type or '').lower()
+                    if cid and content_type.startswith('image/') and content_type not in ('image/svg+xml',):
+                        preview_cid = await _generate_and_upload_thumbnail(tmp.name, filename, total_size)
+
                     return {
                         "success": True,
                         "cid": cid,
@@ -451,6 +508,7 @@ async def upload_to_ipfs(file: UploadFile = File(...), bg: BackgroundTasks = Non
                         "ipfs_ref": f"IPFS:{cid}",
                         "gateway_url": f"https://ipfs.io/ipfs/{cid}",
                         "size": total_size,
+                        "preview_cid": preview_cid,
                     }
                 else:
                     logger.error(f"IPFS daemon error: {resp.status_code} {resp.text}")

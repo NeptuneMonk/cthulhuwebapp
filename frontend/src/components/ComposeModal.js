@@ -122,7 +122,7 @@ export const ComposeModal = ({ onClose, network, replyTo }) => {
               : `Uploading to IPFS (${sizeMB}MB)...`);
 
             // Use XMLHttpRequest for upload progress on large files
-            const cid = await new Promise((resolve, reject) => {
+            const { cid, preview_cid } = await new Promise((resolve, reject) => {
               const xhr = new XMLHttpRequest();
               xhr.open('POST', `${API}/ipfs/upload`);
               xhr.upload.onprogress = (e) => {
@@ -136,7 +136,7 @@ export const ComposeModal = ({ onClose, network, replyTo }) => {
                 if (xhr.status >= 200 && xhr.status < 300) {
                   try {
                     const data = JSON.parse(xhr.responseText);
-                    if (data.cid) resolve(data.cid);
+                    if (data.cid) resolve({ cid: data.cid, preview_cid: data.preview_cid || null });
                     else reject(new Error('No CID returned'));
                   } catch { reject(new Error('Invalid response')); }
                 } else {
@@ -154,6 +154,7 @@ export const ComposeModal = ({ onClose, network, replyTo }) => {
             });
 
             contentParts.push(`<<IPFS:${cid}>>`);
+            if (preview_cid) contentParts.push(`<<preview:${preview_cid}>>`);
           } catch (err) {
             setError(`Failed to upload ${f.name}: ${err.message}`);
             setSending(false);

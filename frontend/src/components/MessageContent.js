@@ -17,20 +17,24 @@ import { resolveUrnOfficial } from '@/hooks/useUrnVerify';
 const IPFS_GATEWAY = 'https://ipfs.io/ipfs/';
 const API = process.env.REACT_APP_BACKEND_URL + '/api';
 
-function parseMessageParts(content) {
+function parseMessageParts(content, previewCid) {
   if (!content) return [];
   const parts = [];
-  // Match IPFS refs, on-chain txid refs, or any other <<...>> block
-  const regex = /<<(IPFS:([A-Za-z0-9]+)[\\/]?([^>]*))>>|<<([0-9a-f]{64}[\\/][^>]*)>>|<<[^>]*>>/g;
+  // Match IPFS refs, on-chain txid refs, preview tags, or any other <<...>> block
+  const regex = /<<(IPFS:([A-Za-z0-9]+)[\\/]?([^>]*))>>|<<([0-9a-f]{64}[\\/][^>]*)>>|<<preview:([A-Za-z0-9]+)>>|<<[^>]*>>/g;
   let lastIdx = 0;
   let match;
+  let foundPreviewTag = null;
 
   while ((match = regex.exec(content)) !== null) {
     if (match.index > lastIdx) {
       parts.push({ type: 'text', value: content.slice(lastIdx, match.index) });
     }
 
-    if (match[1]) {
+    if (match[5]) {
+      // <<preview:CID>> tag — store for later use, don't render
+      foundPreviewTag = match[5];
+    } else if (match[1]) {
       // IPFS reference: <<IPFS:CID/filename>>
       const cid = match[2];
       const filename = match[3] || '';
@@ -39,15 +43,20 @@ function parseMessageParts(content) {
         ? `${IPFS_GATEWAY}${cid}/${filename}`
         : `${IPFS_GATEWAY}${cid}`;
 
+      // Attach preview CID (from tag or prop) to image parts
+      const thumbCid = foundPreviewTag || previewCid;
+      const thumbUrl = thumbCid ? `${IPFS_GATEWAY}${thumbCid}` : null;
+
       if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg'].includes(ext)) {
-        parts.push({ type: 'image', url, filename, cid });
+        parts.push({ type: 'image', url, filename, cid, thumbUrl });
       } else if (['mp3', 'wav', 'ogg', 'aac', 'flac'].includes(ext) || (ext === 'webm' && /voice|audio|record/i.test(filename))) {
         parts.push({ type: 'audio', url, filename, cid });
       } else if (['mp4', 'webm', 'mov'].includes(ext)) {
-        parts.push({ type: 'video', url, filename, cid });
+        parts.push({ type: 'video', url, filename, cid, thumbUrl });
       } else {
-        parts.push({ type: 'image', url, filename: filename || cid, cid });
+        parts.push({ type: 'image', url, filename: filename || cid, cid, thumbUrl });
       }
+      foundPreviewTag = null; // consume it
     } else if (match[4]) {
       // On-chain txid reference: <<txid/filename>>
       const raw = match[4];
@@ -67,11 +76,12 @@ function parseMessageParts(content) {
   return parts;
 }
 
-const InlineImage = ({ url, alt }) => {
+const InlineImage = ({ url, alt, thumbUrl }) => {
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState(false);
   const [expanded, setExpanded] = useState(false);
-  const { url: cachedUrl, fromCache } = useCachedIPFS(url);
+  const [showFull, setShowFull] = useState(!thumbUrl); // Start with thumb if available
+  const { url: cachedUrl, fromCache } = useCachedIPFS(showFull ? url : (thumbUrl || url));
 
   if (error) return null;
 
@@ -79,7 +89,14 @@ const InlineImage = ({ url, alt }) => {
     <>
       <div
         className="group relative my-2 rounded-lg overflow-hidden cursor-pointer inline-block max-w-full"
-        onClick={() => loaded && setExpanded(true)}
+        onClick={() => {
+          if (!showFull && thumbUrl) {
+            setShowFull(true); // Upgrade to full image
+            setLoaded(false);
+          } else if (loaded) {
+            setExpanded(true);
+          }
+        }}
         data-testid="inline-ipfs-image"
       >
         {!loaded && (
@@ -88,7 +105,8 @@ const InlineImage = ({ url, alt }) => {
         <img
           src={cachedUrl}
           alt={alt}
-          className={`max-w-full max-h-64 rounded-lg object-contain transition-opacity ${loaded ? 'opacity-100' : 'opacity-0 absolute'}`}
+          loading="lazy"
+          className={`max-w-full max-h-64 rounded-lg object-contain transition-opacity ${loaded ? 'opacity-100' : 'opacity-0 absolute'} ${!showFull && thumbUrl ? 'blur-[1px]' : ''}`}
           onLoad={() => setLoaded(true)}
           onError={() => setError(true)}
         />
@@ -97,24 +115,55 @@ const InlineImage = ({ url, alt }) => {
             cached
           </div>
         )}
+        {!showFull && thumbUrl && loaded && (
+          <div className="absolute inset-0 flex items-center justify-center bg-black/20">
+            <div className="px-2 py-1 rounded bg-gray-950/70 text-[10px] text-gray-300">tap to load full</div>
+          </div>
+        )}
       </div>
       {expanded && (
         <div
           className="fixed inset-0 bg-black/90 flex items-center justify-center z-50 cursor-pointer"
           onClick={() => setExpanded(false)}
         >
-          <img src={cachedUrl} alt={alt} className="max-w-[95vw] max-h-[95vh] object-contain" />
+          <img src={url} alt={alt} className="max-w-[95vw] max-h-[95vh] object-contain" />
         </div>
       )}
     </>
   );
 };
 
-const InlineVideo = ({ url }) => {
+const InlineVideo = ({ url, thumbUrl }) => {
+  const [activated, setActivated] = useState(false);
   const { url: cachedUrl, fromCache } = useCachedIPFS(url);
+
+  if (!activated) {
+    // Show placeholder card until tapped
+    return (
+      <div
+        className="group relative my-2 rounded-lg overflow-hidden cursor-pointer inline-block bg-gray-900 border border-gray-700/50"
+        onClick={() => setActivated(true)}
+        data-testid="inline-ipfs-video"
+      >
+        {thumbUrl ? (
+          <img src={thumbUrl} alt="Video preview" className="max-w-full max-h-48 rounded-lg object-contain blur-[0.5px]" loading="lazy" />
+        ) : (
+          <div className="w-64 h-36 flex items-center justify-center">
+            <FiFile size={24} className="text-gray-500" />
+          </div>
+        )}
+        <div className="absolute inset-0 flex items-center justify-center bg-black/40">
+          <div className="w-12 h-12 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center">
+            <div className="w-0 h-0 border-l-[14px] border-y-[8px] border-y-transparent ml-1 border-l-white" />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="group relative inline-block my-2">
-      <video src={cachedUrl} controls className="max-w-full max-h-64 rounded-lg" data-testid="inline-ipfs-video" />
+      <video src={cachedUrl} controls autoPlay className="max-w-full max-h-64 rounded-lg" data-testid="inline-ipfs-video" />
       {fromCache && (
         <div className="pointer-events-none absolute bottom-1 right-1 px-1.5 py-0.5 rounded bg-gray-950/80 text-[8px] text-gray-500 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
           cached
@@ -470,8 +519,8 @@ const TextSegment = ({ text }) => {
   );
 };
 
-export const MessageContent = ({ content, files, txid }) => {
-  const parts = parseMessageParts(content);
+export const MessageContent = ({ content, files, txid, previewCid }) => {
+  const parts = parseMessageParts(content, previewCid);
 
   if (parts.length === 0 && !files) return null;
 
@@ -505,10 +554,10 @@ export const MessageContent = ({ content, files, txid }) => {
           );
         }
         if (part.type === 'image') {
-          return <InlineImage key={i} url={part.url} alt={part.filename} />;
+          return <InlineImage key={i} url={part.url} alt={part.filename} thumbUrl={part.thumbUrl} />;
         }
         if (part.type === 'video') {
-          return <InlineVideo key={i} url={part.url} />;
+          return <InlineVideo key={i} url={part.url} thumbUrl={part.thumbUrl} />;
         }
         if (part.type === 'audio') {
           return <InlineAudio key={i} url={part.url} />;

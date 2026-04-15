@@ -514,7 +514,7 @@ const FeedCardInner = React.forwardRef(({ item, network, currentUserAddress, cur
                 {isINQ && parsedPoll ? (
                   <PollCard poll={parsedPoll} network={network} onVoted={() => { /* optimistic update handles local state */ }} />
                 ) : (
-                  <MessageContent content={content} files={message.files} txid={txid} />
+                  <MessageContent content={content} files={message.files} txid={txid} previewCid={message.preview_cid} />
                 )}
               </div>
             </div>

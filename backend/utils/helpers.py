@@ -1052,8 +1052,13 @@ async def format_message(msg, sender_profile, network: str, is_mainnet: bool):
         reply_context_type = 'global' if old_match else None
         reply_context_id = ''
 
-    # Strip P2FK protocol noise: salt <<number>>, <<re:...>>, and trailing keyword/address bytes
-    content = re.sub(r'<<re:[a-fA-F0-9]+>>', '', content)
+    # Extract preview CID from <<preview:CID>> tag (Cthulhu thumbnail)
+    preview_match = re.search(r'<<preview:([A-Za-z0-9]{46,})>>', content)
+    preview_cid = preview_match.group(1) if preview_match else None
+
+    # Strip P2FK protocol noise: salt <<number>>, <<re:...>>, <<preview:...>>, and trailing keyword/address bytes
+    content = re.sub(r'<<re:[a-fA-F0-9:]+>>', '', content)
+    content = re.sub(r'<<preview:[A-Za-z0-9]+>>', '', content)
     content = re.sub(r'<<-?\d+>>.*', '', content, flags=re.DOTALL).strip()
     # Strip non-printable / surrogate characters left from address decoding
     content = ''.join(c for c in content if c.isprintable() or c in '\n\t').strip()
@@ -1109,6 +1114,7 @@ async def format_message(msg, sender_profile, network: str, is_mainnet: bool):
         'parent_txid': parent_txid,
         'reply_context_type': reply_context_type,
         'reply_context_id': reply_context_id,
+        'preview_cid': preview_cid,
         'files': files if files else None,
     }
 
