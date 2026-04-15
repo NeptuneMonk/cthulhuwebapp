@@ -1036,7 +1036,7 @@ def format_profile(raw, network: str):
 async def format_message(msg, sender_profile, network: str, is_mainnet: bool):
     from_addr = msg.get('FromAddress', '')
     to_addr = msg.get('ToAddress', '')
-    is_reply = from_addr != to_addr and to_addr
+    is_reply = bool(from_addr and to_addr and from_addr != to_addr)
     raw_content = msg.get('Message', '')
     content = ' '.join(raw_content) if isinstance(raw_content, list) else str(raw_content)
 
