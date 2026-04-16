@@ -44,7 +44,7 @@ export function UploadQueueProvider({ children }) {
           const data = JSON.parse(xhr.responseText);
           if (data.cid) {
             setUploads(prev => prev.map(u => u.id === id ? { ...u, status: 'done', progress: 100, cid: data.cid, preview_cid: data.preview_cid || null } : u));
-            if (onComplete) onComplete({ cid: data.cid, filename: file.name, ipfsRef: data.ipfs_ref });
+            if (onComplete) onComplete({ cid: data.cid, preview_cid: data.preview_cid || null, filename: file.name, ipfsRef: data.ipfs_ref });
           } else {
             setUploads(prev => prev.map(u => u.id === id ? { ...u, status: 'error', error: 'No CID returned' } : u));
           }

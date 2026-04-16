@@ -270,9 +270,9 @@ export const ComposeModal = ({ onClose, network, replyTo }) => {
       if (f.size >= LARGE_FILE_THRESHOLD && uploadQueue) {
         entry.uploading = true;
         const uploadId = uploadQueue.addUpload(f, (result) => {
-          // When upload finishes, store the CID in the file entry
+          // When upload finishes, store the CID + preview CID in the file entry
           setAttachedFiles(prev => prev.map(af =>
-            af._file === f ? { ...af, cid: result.cid, uploading: false } : af
+            af._file === f ? { ...af, cid: result.cid, preview_cid: result.preview_cid || null, uploading: false } : af
           ));
           toast.success(`${f.name} uploaded to IPFS`);
         });
@@ -309,7 +309,7 @@ export const ComposeModal = ({ onClose, network, replyTo }) => {
         entry.uploading = true;
         const uploadId = uploadQueue.addUpload(f, (result) => {
           setAttachedFiles(prev => prev.map(af =>
-            af._file === f ? { ...af, cid: result.cid, uploading: false } : af
+            af._file === f ? { ...af, cid: result.cid, preview_cid: result.preview_cid || null, uploading: false } : af
           ));
           toast.success(`${f.name} uploaded to IPFS`);
         });
