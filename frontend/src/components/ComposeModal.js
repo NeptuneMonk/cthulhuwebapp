@@ -92,6 +92,7 @@ export const ComposeModal = ({ onClose, network, replyTo }) => {
             // If already uploaded via background queue, use the CID directly
             if (f.cid) {
               contentParts.push(`<<IPFS:${f.cid}>>`);
+              if (f.preview_cid) contentParts.push(`<<preview:${f.preview_cid}>>`);
               continue;
             }
 
@@ -109,6 +110,7 @@ export const ComposeModal = ({ onClose, network, replyTo }) => {
                 check();
               });
               contentParts.push(`<<IPFS:${result.cid}>>`);
+              if (result.preview_cid) contentParts.push(`<<preview:${result.preview_cid}>>`);
               continue;
             }
 
@@ -153,7 +155,7 @@ export const ComposeModal = ({ onClose, network, replyTo }) => {
             });
 
             contentParts.push(`<<IPFS:${cid}>>`);
-            // Preview CID stored locally only — not on-chain to save TX size
+            if (preview_cid) contentParts.push(`<<preview:${preview_cid}>>`);
           } catch (err) {
             setError(`Failed to upload ${f.name}: ${err.message}`);
             setSending(false);
