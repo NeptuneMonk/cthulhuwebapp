@@ -91,6 +91,7 @@ export const ComposeModal = ({ onClose, network, replyTo }) => {
           try {
             // If already uploaded via background queue, use the CID directly
             if (f.cid) {
+              console.log('[ComposeModal] File from queue:', f.name, 'cid:', f.cid, 'preview_cid:', f.preview_cid);
               contentParts.push(`<<IPFS:${f.cid}>>`);
               if (f.preview_cid) contentParts.push(`<<preview:${f.preview_cid}>>`);
               continue;
@@ -167,6 +168,8 @@ export const ComposeModal = ({ onClose, network, replyTo }) => {
 
       setSendingStatus('Broadcasting...');
       const postContent = contentParts.join('\n');
+      console.log('[ComposeModal] FINAL contentParts:', JSON.stringify(contentParts));
+      console.log('[ComposeModal] FINAL postContent:', JSON.stringify(postContent));
       if (!postContent.trim()) { setError('Nothing to post'); setSending(false); setSendingStatus(''); return; }
 
       const [{ buildPostTransaction }, { buildAndBroadcast }] = await Promise.all([
