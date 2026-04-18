@@ -14,6 +14,7 @@ import { useTheme } from '@/hooks/useTheme';
 import { getPendingPosts, checkConfirmations, cleanupOldPosts } from '@/utils/pendingPosts';
 import { cachedFetch } from '@/utils/apiCache';
 import { meshFirstFetch } from '@/utils/meshFirstFetch';
+import { prefetchThumbs } from '@/utils/thumbPrefetch';
 import { FeedSkeleton } from '@/components/SkeletonLoaders';
 import { FiAtSign, FiArrowDown, FiUsers, FiGlobe } from 'react-icons/fi';
 
@@ -119,6 +120,7 @@ export default function FeedPage({ network, follows = [] }) {
     // Serve from cache if available (prevents redundant fetches on scroll-back)
     const cached = getCachedPage(cacheKey);
     if (cached && !isReset) {
+      prefetchThumbs(cached);
       setFeed(prev => {
         const combined = [...prev, ...cached];
         const seen = new Set();
@@ -151,6 +153,7 @@ export default function FeedPage({ network, follows = [] }) {
 
       // Cache this page
       setCachedPage(cacheKey, newPosts);
+      prefetchThumbs(newPosts);
 
       setFeed(prev => {
         if (isReset) return newPosts;
@@ -174,7 +177,10 @@ export default function FeedPage({ network, follows = [] }) {
         if (!getCachedPage(nextKey)) {
           const nextParams = { ...params, skip: skip + PAGE_SIZE };
           meshFirstFetch(`/feed/${network}`, nextParams).then(({ data: nextRes }) => {
-            if (nextRes?.feed) setCachedPage(nextKey, nextRes.feed);
+            if (nextRes?.feed) {
+              setCachedPage(nextKey, nextRes.feed);
+              prefetchThumbs(nextRes.feed);
+            }
           }).catch(() => {});
         }
       }
