@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useCachedIPFS } from '@/hooks/useCachedIPFS';
-import { FiFile, FiLoader, FiDownload, FiMaximize2, FiX } from 'react-icons/fi';
+import { FiFile, FiLoader, FiDownload, FiMaximize2, FiX, FiCheckCircle } from 'react-icons/fi';
 import { LinkPreview } from '@/components/LinkPreview';
 import { MediaEmbed, getEmbedInfo } from '@/components/MediaEmbed';
 import { resolveUrnOfficial } from '@/hooks/useUrnVerify';
@@ -270,8 +270,12 @@ const OnChainMedia = ({ fileRef, filename }) => {
           data-testid="onchain-image"
         >
           <img src={blobUrl} alt={fname} className="max-w-full max-h-64 rounded-lg object-contain" />
-          <div className="pointer-events-none absolute bottom-1 right-1 px-1.5 py-0.5 rounded bg-gray-950/80 text-[8px] text-amber-500/70 opacity-0 group-hover:opacity-100 transition-opacity">
-            on-chain
+          <div
+            className="pointer-events-none absolute bottom-1.5 right-1.5 flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-gray-950/80 text-[9px] font-medium text-emerald-400 shadow-sm"
+            title="Verified on-chain"
+          >
+            <FiCheckCircle size={9} className="shrink-0" />
+            <span>on-chain</span>
           </div>
         </div>
         {expanded && (
@@ -287,8 +291,12 @@ const OnChainMedia = ({ fileRef, filename }) => {
     return (
       <div className="group relative inline-block my-2">
         <video src={blobUrl} controls className="max-w-full max-h-64 rounded-lg" data-testid="onchain-video" />
-        <div className="pointer-events-none absolute bottom-1 right-1 px-1.5 py-0.5 rounded bg-gray-950/80 text-[8px] text-amber-500/70 opacity-0 group-hover:opacity-100 transition-opacity">
-          on-chain
+        <div
+          className="pointer-events-none absolute bottom-1.5 right-1.5 flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-gray-950/80 text-[9px] font-medium text-emerald-400 shadow-sm"
+          title="Verified on-chain"
+        >
+          <FiCheckCircle size={9} className="shrink-0" />
+          <span>on-chain</span>
         </div>
       </div>
     );
@@ -303,7 +311,10 @@ const OnChainMedia = ({ fileRef, filename }) => {
     <div className="flex items-center gap-2 my-1 px-3 py-1.5 bg-gray-800/50 rounded-lg border border-gray-700/50 text-xs text-gray-400" data-testid="onchain-file-ref">
       <FiFile size={14} className="text-amber-500 shrink-0" />
       <a href={blobUrl} download={fname} className="truncate hover:text-amber-400 underline">{fname}</a>
-      <span className="text-gray-600 text-[10px]">on-chain</span>
+      <span className="flex items-center gap-0.5 text-emerald-400 text-[10px] font-medium shrink-0" title="Verified on-chain">
+        <FiCheckCircle size={10} />
+        on-chain
+      </span>
     </div>
   );
 };

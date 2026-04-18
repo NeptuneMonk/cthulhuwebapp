@@ -50,6 +50,14 @@ Build a modern, responsive frontend for a blockchain-based decentralized social 
 - None active
 
 ## Recently Completed
+- **On-chain media prefetch + verified badge (Apr 18, 2026)**
+  - Extended `utils/thumbPrefetch.js` to also scan feed posts for `<<txid/filename>>` refs (64-hex txid) and background-prewarm `/api/onchain/file/{txid}/{filename}?chain=...&mainnet=...` — so on-chain images/PDFs/video appear instantly instead of spinning "resolving on-chain..."
+  - `OnChainMedia` badges upgraded from hidden-by-default amber hover text to a persistent subtle green `✓ on-chain` indicator once content resolves (image/video/generic file variants)
+  - Backend already filters burned objects from all list endpoints (owned/created/storefront/by-chain) — burned-object clutter is handled without a frontend cache layer
+- **Thumbnail prefetch — feed scroll smoothing (Apr 18, 2026)**
+  - New `utils/thumbPrefetch.js` wired into FeedPage at fresh-fetch, cached-replay, and next-page-preload paths
+  - Concurrency-6 low-priority fetches of `/api/ipfs/thumb?cid=...` for every image CID in an incoming page of posts
+  - Dedupes across the session so nothing is ever fetched twice
 - **Thumbnail endpoint + notification URL fixes (Apr 18, 2026)**
   - Verified `/api/ipfs/thumb?cid=...` end-to-end: 1.5MB JPEG upload → 612-byte 90x68 thumb served (HTTP 200, image/jpeg, Cache-Control 24h)
   - `InlineImage` in `MessageContent.js` already wired to use `${API}/ipfs/thumb?cid=${cid}` as initial src; falls back to full IPFS gateway URL on 404
