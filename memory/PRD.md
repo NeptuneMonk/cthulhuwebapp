@@ -50,6 +50,11 @@ Build a modern, responsive frontend for a blockchain-based decentralized social 
 - None active
 
 ## Recently Completed
+- **Thumbnail endpoint + notification URL fixes (Apr 18, 2026)**
+  - Verified `/api/ipfs/thumb?cid=...` end-to-end: 1.5MB JPEG upload → 612-byte 90x68 thumb served (HTTP 200, image/jpeg, Cache-Control 24h)
+  - `InlineImage` in `MessageContent.js` already wired to use `${API}/ipfs/thumb?cid=${cid}` as initial src; falls back to full IPFS gateway URL on 404
+  - Fixed double `/api/api/chat/unread/...` prefix in `useDMNotifications.js` line 72 → now correctly hits `/api/chat/unread/`
+  - Added `&& p.txid` guard in `pendingPosts.js::checkConfirmations` to prevent undefined-txid fetches
 - **Walkie-Talkie Simplification (Apr 14, 2026)**
   - Removed all encrypted walkie (SEC) features: "To:" field, encrypted TX path, secData in message log, intruder alarms, digital rain effects, nuclear warning SFX
   - Walkie-talkie is now strictly global broadcast: record -> IPFS -> P2FK to WALKIE address -> mempool monitoring

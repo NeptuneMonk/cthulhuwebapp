@@ -69,7 +69,7 @@ export function useDMNotifications(network) {
 
       // Also merge server-side unread counts from chat relay (P2P instant msgs missed while offline)
       try {
-        const inboxRes = await fetch(`${API}/api/chat/unread/${myAddress}`);
+        const inboxRes = await fetch(`${API}/chat/unread/${myAddress}`);
         if (inboxRes.ok) {
           const inboxData = await inboxRes.json();
           for (const room of (inboxData.rooms || [])) {

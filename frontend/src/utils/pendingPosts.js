@@ -54,7 +54,7 @@ export function removePendingPost(txid) {
  * Returns list of newly confirmed txids.
  */
 export async function checkConfirmations(network) {
-  const pending = getPendingPosts(network).filter(p => p.status === 'mempool');
+  const pending = getPendingPosts(network).filter(p => p.status === 'mempool' && p.txid);
   if (pending.length === 0) return [];
 
   const isMainnet = network.includes('mainnet');
