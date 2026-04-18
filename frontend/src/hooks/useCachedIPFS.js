@@ -7,7 +7,6 @@ import { autoPinFromMesh } from '@/components/PinningManager';
 const GATEWAYS = [
   'https://ipfs.io/ipfs/',
   'https://dweb.link/ipfs/',
-  'https://cloudflare-ipfs.com/ipfs/',
   'https://gateway.pinata.cloud/ipfs/',
 ];
 

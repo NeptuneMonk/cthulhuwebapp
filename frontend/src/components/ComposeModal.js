@@ -91,9 +91,7 @@ export const ComposeModal = ({ onClose, network, replyTo }) => {
           try {
             // If already uploaded via background queue, use the CID directly
             if (f.cid) {
-              console.log('[ComposeModal] File from queue:', f.name, 'cid:', f.cid, 'preview_cid:', f.preview_cid);
               contentParts.push(`<<IPFS:${f.cid}>>`);
-              if (f.preview_cid) contentParts.push(`<<preview:${f.preview_cid}>>`);
               continue;
             }
 
@@ -104,14 +102,13 @@ export const ComposeModal = ({ onClose, network, replyTo }) => {
                 const check = () => {
                   const entry = uploadQueue.uploads.find(u => u.id === f.uploadId);
                   if (!entry) { reject(new Error('Upload lost')); return; }
-                  if (entry.status === 'done') { resolve({ cid: entry.cid, preview_cid: entry.preview_cid || null }); return; }
+                  if (entry.status === 'done') { resolve(entry.cid); return; }
                   if (entry.status === 'error') { reject(new Error(entry.error)); return; }
                   setTimeout(check, 500);
                 };
                 check();
               });
-              contentParts.push(`<<IPFS:${result.cid}>>`);
-              if (result.preview_cid) contentParts.push(`<<preview:${result.preview_cid}>>`);
+              contentParts.push(`<<IPFS:${result}>>`);
               continue;
             }
 
@@ -124,7 +121,7 @@ export const ComposeModal = ({ onClose, network, replyTo }) => {
               : `Uploading to IPFS (${sizeMB}MB)...`);
 
             // Use XMLHttpRequest for upload progress on large files
-            const { cid, preview_cid } = await new Promise((resolve, reject) => {
+            const cid = await new Promise((resolve, reject) => {
               const xhr = new XMLHttpRequest();
               xhr.open('POST', `${API}/ipfs/upload`);
               xhr.upload.onprogress = (e) => {
@@ -138,7 +135,7 @@ export const ComposeModal = ({ onClose, network, replyTo }) => {
                 if (xhr.status >= 200 && xhr.status < 300) {
                   try {
                     const data = JSON.parse(xhr.responseText);
-                    if (data.cid) resolve({ cid: data.cid, preview_cid: data.preview_cid || null });
+                    if (data.cid) resolve(data.cid);
                     else reject(new Error('No CID returned'));
                   } catch { reject(new Error('Invalid response')); }
                 } else {
@@ -156,7 +153,6 @@ export const ComposeModal = ({ onClose, network, replyTo }) => {
             });
 
             contentParts.push(`<<IPFS:${cid}>>`);
-            if (preview_cid) contentParts.push(`<<preview:${preview_cid}>>`);
           } catch (err) {
             setError(`Failed to upload ${f.name}: ${err.message}`);
             setSending(false);
@@ -168,8 +164,6 @@ export const ComposeModal = ({ onClose, network, replyTo }) => {
 
       setSendingStatus('Broadcasting...');
       const postContent = contentParts.join('\n');
-      console.log('[ComposeModal] FINAL contentParts:', JSON.stringify(contentParts));
-      console.log('[ComposeModal] FINAL postContent:', JSON.stringify(postContent));
       if (!postContent.trim()) { setError('Nothing to post'); setSending(false); setSendingStatus(''); return; }
 
       const [{ buildPostTransaction }, { buildAndBroadcast }] = await Promise.all([

@@ -46,6 +46,7 @@ export function usePendingTxMonitor(onConfirmed) {
     if (!txs.length) return;
 
     for (const tx of txs) {
+      if (!tx.txid) continue;
       const url = getTxStatusUrl(tx.txid, tx.network || 'btc-testnet');
       if (!url) continue;
 

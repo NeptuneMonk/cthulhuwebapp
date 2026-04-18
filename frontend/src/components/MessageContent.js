@@ -76,12 +76,15 @@ function parseMessageParts(content, previewCid) {
   return parts;
 }
 
-const InlineImage = ({ url, alt, thumbUrl }) => {
+const InlineImage = ({ url, alt, thumbUrl, cid }) => {
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState(false);
   const [expanded, setExpanded] = useState(false);
-  const [showFull, setShowFull] = useState(!thumbUrl); // Start with thumb if available
-  const { url: cachedUrl, fromCache } = useCachedIPFS(showFull ? url : (thumbUrl || url));
+  const [showFull, setShowFull] = useState(false);
+  // Use backend thumb endpoint as fast initial source, fall back to full URL
+  const thumbSrc = cid ? `${API}/ipfs/thumb?cid=${cid}` : null;
+  const initialSrc = thumbUrl || thumbSrc;
+  const { url: cachedUrl, fromCache } = useCachedIPFS(showFull ? url : (initialSrc || url));
 
   if (error) return null;
 
@@ -90,8 +93,8 @@ const InlineImage = ({ url, alt, thumbUrl }) => {
       <div
         className="group relative my-2 rounded-lg overflow-hidden cursor-pointer inline-block max-w-full"
         onClick={() => {
-          if (!showFull && thumbUrl) {
-            setShowFull(true); // Upgrade to full image
+          if (!showFull && initialSrc) {
+            setShowFull(true);
             setLoaded(false);
           } else if (loaded) {
             setExpanded(true);
@@ -106,18 +109,16 @@ const InlineImage = ({ url, alt, thumbUrl }) => {
           src={cachedUrl}
           alt={alt}
           loading="lazy"
-          className={`max-w-full max-h-64 rounded-lg object-contain transition-opacity ${loaded ? 'opacity-100' : 'opacity-0 absolute'} ${!showFull && thumbUrl ? 'blur-[1px]' : ''}`}
+          className={`max-w-full max-h-64 rounded-lg object-contain transition-opacity ${loaded ? 'opacity-100' : 'opacity-0 absolute'}`}
           onLoad={() => setLoaded(true)}
-          onError={() => setError(true)}
+          onError={() => {
+            if (!showFull && initialSrc) { setShowFull(true); setLoaded(false); }
+            else setError(true);
+          }}
         />
         {fromCache && loaded && (
           <div className="pointer-events-none absolute bottom-1 right-1 px-1.5 py-0.5 rounded bg-gray-950/80 text-[8px] text-gray-500 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
             cached
-          </div>
-        )}
-        {!showFull && thumbUrl && loaded && (
-          <div className="absolute inset-0 flex items-center justify-center bg-black/20">
-            <div className="px-2 py-1 rounded bg-gray-950/70 text-[10px] text-gray-300">tap to load full</div>
           </div>
         )}
       </div>
@@ -554,7 +555,7 @@ export const MessageContent = ({ content, files, txid, previewCid }) => {
           );
         }
         if (part.type === 'image') {
-          return <InlineImage key={i} url={part.url} alt={part.filename} thumbUrl={part.thumbUrl} />;
+          return <InlineImage key={i} url={part.url} alt={part.filename} thumbUrl={part.thumbUrl} cid={part.cid} />;
         }
         if (part.type === 'video') {
           return <InlineVideo key={i} url={part.url} thumbUrl={part.thumbUrl} />;

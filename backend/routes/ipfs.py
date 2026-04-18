@@ -1,6 +1,6 @@
 """IPFS routes: upload, cat, pin, file serving, daemon management, and garbage collection."""
 from fastapi import APIRouter, HTTPException, UploadFile, File, BackgroundTasks
-from fastapi.responses import Response, FileResponse
+from fastapi.responses import Response, FileResponse, RedirectResponse
 from pathlib import Path
 import logging
 import subprocess
@@ -369,15 +369,14 @@ async def _generate_and_upload_thumbnail(filepath: str, filename: str, filesize:
     """Generate a small JPEG thumbnail and upload to IPFS. Returns preview CID or None."""
     import tempfile
     import os
+    thumb_path = None
     try:
         from PIL import Image
-        # Skip if file is already tiny (< 50KB)
         if filesize < 50 * 1024:
             return None
 
         img = Image.open(filepath)
         img.thumbnail((90, 90), Image.Resampling.LANCZOS)
-        # Convert to RGB for JPEG (handles RGBA/palette images)
         if img.mode not in ('RGB',):
             img = img.convert('RGB')
 
@@ -385,7 +384,6 @@ async def _generate_and_upload_thumbnail(filepath: str, filename: str, filesize:
         img.save(thumb_path, 'JPEG', quality=60, optimize=True)
         img.close()
 
-        # Upload thumbnail to IPFS
         thumb_size = os.path.getsize(thumb_path)
         if thumb_size > 0:
             client = get_client()
@@ -411,9 +409,106 @@ async def _generate_and_upload_thumbnail(filepath: str, filename: str, filesize:
         return None
     finally:
         try:
-            os.unlink(thumb_path)
+            if thumb_path:
+                os.unlink(thumb_path)
         except Exception:
             pass
+
+
+# ─── Thumbnail Cache (SQLite-backed) ───────────────────────────────────
+# Maps original IPFS CID → thumbnail CID. Generated on-demand when feed
+# renders an image. Pinned to local Kubo for fast serving.
+
+async def _get_thumb_cache_table():
+    """Ensure thumb_cache table exists in SQLite."""
+    from db_sqlite import get_conn
+    conn = await get_conn()
+    await conn.execute("""
+        CREATE TABLE IF NOT EXISTS thumb_cache (
+            cid TEXT PRIMARY KEY,
+            thumb_cid TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        )
+    """)
+    await conn.commit()
+    return conn
+
+
+async def _get_cached_thumb(cid: str) -> str | None:
+    """Look up cached thumbnail CID for a given original CID."""
+    conn = await _get_thumb_cache_table()
+    async with conn.execute("SELECT thumb_cid FROM thumb_cache WHERE cid = ?", (cid,)) as cursor:
+        row = await cursor.fetchone()
+        return row[0] if row else None
+
+
+async def _store_thumb_cache(cid: str, thumb_cid: str):
+    """Store a CID → thumb_cid mapping."""
+    conn = await _get_thumb_cache_table()
+    await conn.execute(
+        "INSERT OR REPLACE INTO thumb_cache (cid, thumb_cid, created_at) VALUES (?, ?, ?)",
+        (cid, thumb_cid, datetime.now(timezone.utc).isoformat())
+    )
+    await conn.commit()
+
+
+@router.get("/ipfs/thumb")
+async def get_thumbnail(cid: str):
+    """Return a cached thumbnail for an IPFS CID.
+    If no thumb exists, generates one on-demand from the original, pins it, caches it."""
+    import tempfile, os
+
+    # Check cache first
+    cached = await _get_cached_thumb(cid)
+    if cached:
+        # Serve thumbnail bytes directly from Kubo
+        client = get_client()
+        resp = await client.post(f"{KUBO_API}/cat?arg={cached}", timeout=10.0)
+        if resp.status_code == 200:
+            return Response(content=resp.content, media_type="image/jpeg",
+                          headers={"Cache-Control": "public, max-age=86400"})
+
+    # Generate on-demand: fetch original from Kubo, generate thumb, upload, cache
+    try:
+        client = get_client()
+        resp = await client.post(f"{KUBO_API}/cat?arg={cid}", timeout=15.0)
+        if resp.status_code != 200:
+            raise HTTPException(status_code=404, detail="Original not available")
+
+        content_bytes = resp.content
+        if len(content_bytes) < 1000:
+            raise HTTPException(status_code=404, detail="File too small for thumbnail")
+
+        # Write to temp file
+        tmp = tempfile.NamedTemporaryFile(delete=False, suffix='.img')
+        tmp.write(content_bytes)
+        tmp.close()
+
+        thumb_cid = await _generate_and_upload_thumbnail(tmp.name, cid[:12], len(content_bytes))
+        os.unlink(tmp.name)
+
+        if not thumb_cid:
+            raise HTTPException(status_code=404, detail="Not an image or thumb generation failed")
+
+        # Cache the mapping
+        await _store_thumb_cache(cid, thumb_cid)
+
+        # Serve the new thumbnail
+        resp2 = await client.post(f"{KUBO_API}/cat?arg={thumb_cid}", timeout=10.0)
+        if resp2.status_code == 200:
+            return Response(content=resp2.content, media_type="image/jpeg",
+                          headers={"Cache-Control": "public, max-age=86400"})
+
+        raise HTTPException(status_code=500, detail="Failed to serve generated thumbnail")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.debug(f"Thumb generation for {cid[:16]} failed: {e}")
+        raise HTTPException(status_code=404, detail="Thumbnail unavailable")
+
+
+from datetime import datetime, timezone
 
 
 @router.post("/ipfs/upload")
