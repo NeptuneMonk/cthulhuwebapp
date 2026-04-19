@@ -165,24 +165,26 @@ async def get_poll_by_address(address: str, network: str = 'btc-testnet'):
     data = await p2fk_get(f"GetInquiryByAddress/{address}", mainnet)
     if not data or not isinstance(data, dict):
         return {"error": "Poll not found or API unavailable"}
-    return _format_poll(data)
+    tip = await _get_chain_tip(mainnet)
+    return _format_poll(data, tip)
 
 
 @router.get("/polls/by-txid/{txid}")
 async def get_poll_by_txid(txid: str, network: str = 'btc-testnet', fresh: bool = False):
     """Get a poll/inquiry by transaction ID.
-    
+
     Source of truth: on-chain data via GetInquiryByTransactionID.
     Local registry is ONLY used as a fallback for unconfirmed (mempool) polls
     before the indexer has seen them. Vote counts from the local registry are
     NOT authoritative — only on-chain counts are.
-    
+
     Pass fresh=true to bypass the API cache (used after voting to get updated counts).
     """
     mainnet = _is_mainnet(network)
+    tip = await _get_chain_tip(mainnet)
     data = await p2fk_get(f"GetInquiryByTransactionID/{txid}", mainnet, skip_cache=fresh)
     if data and isinstance(data, dict) and data.get("Question"):
-        formatted = _format_poll(data)
+        formatted = _format_poll(data, tip)
         # Merge local "already voted" info for the current user
         local = await poll_registry_col.find_one({'txid': txid}, {'_id': 0, 'votes': 1})
         if local and local.get('votes'):
@@ -386,11 +388,43 @@ async def search_polls(q: str = Query(..., min_length=1), network: str = 'btc-te
     return {"polls": [_format_poll(p) for p in data if isinstance(p, dict) and p.get("URN")]}
 
 
-def _format_poll(data: dict) -> dict:
+# ─── Lightweight chain-tip cache (used to compute closed status) ───
+_TIP_CACHE = {"btc-testnet": {"h": 0, "ts": 0}, "btc-mainnet": {"h": 0, "ts": 0}}
+_TIP_TTL = 60.0  # seconds
+
+
+async def _get_chain_tip(mainnet: bool) -> int:
+    """Return current BTC block height, cached 60s."""
+    import time
+    key = "btc-mainnet" if mainnet else "btc-testnet"
+    now = time.monotonic()
+    cached = _TIP_CACHE.get(key) or {}
+    if cached.get("h") and (now - cached.get("ts", 0)) < _TIP_TTL:
+        return cached["h"]
+    try:
+        base = "https://mempool.space/api" if mainnet else "https://mempool.space/testnet/api"
+        client = get_client()
+        resp = await client.get(f"{base}/blocks/tip/height", timeout=5.0)
+        if resp.status_code == 200:
+            h = int(resp.text.strip())
+            _TIP_CACHE[key] = {"h": h, "ts": now}
+            return h
+    except Exception:
+        pass
+    return cached.get("h", 0) or 0
+
+
+def _format_poll(data: dict, current_tip: int = 0) -> dict:
     """Normalize P2FK INQState into a clean JSON response.
-    
+
     Vote counts here come directly from the on-chain indexer — these are
     the authoritative counts (not local DB tallies).
+
+    When current_tip > 0 and MaxBlockHeight > 0, we also compute a boolean
+    `closed` flag and normalize `status` to "closed"/"active" so the
+    frontend's disabled-voting UI can light up properly. p2fk.io's `status`
+    field is sometimes an integer offset, sometimes a string — we map it to
+    our canonical active/closed/mempool states.
     """
     answers = []
     for a in (data.get("AnswerData") or []):
@@ -402,6 +436,15 @@ def _format_poll(data: dict) -> dict:
             "gated_votes": a.get("TotalGatedVotes", 0),
             "gated_value": a.get("TotalGatedValue", 0),
         })
+
+    max_block = int(data.get("MaxBlockHeight") or 0)
+    raw_status = data.get("status", "unknown")
+    if max_block > 0 and current_tip > 0:
+        closed = current_tip >= max_block
+        status = "closed" if closed else "active"
+    else:
+        closed = (isinstance(raw_status, str) and raw_status.lower() == "closed")
+        status = "closed" if closed else ("active" if max_block > 0 else str(raw_status))
 
     return {
         "txid": data.get("TransactionId"),
@@ -415,8 +458,11 @@ def _format_poll(data: dict) -> dict:
         "total_value": data.get("TotalValue", 0),
         "total_gated_votes": data.get("TotalGatedVotes", 0),
         "total_gated_value": data.get("TotalGatedValue", 0),
-        "status": data.get("status", "unknown"),
-        "max_block_height": data.get("MaxBlockHeight", 0),
+        "status": status,
+        "closed": closed,
+        "raw_status": raw_status,
+        "max_block_height": max_block,
+        "current_block_height": current_tip or None,
         "require_signature": data.get("RequireSignature", True),
         "created_by": data.get("CreatedBy"),
         "created_date": data.get("CreatedDate"),

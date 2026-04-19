@@ -556,8 +556,11 @@ async def _merge_polls_into_feed(formatted: list, network: str, is_mainnet: bool
     Deduped against existing feed txids. Sorted newest-first into the feed stream.
     """
     from db import poll_registry_col
+    from routes.polls import _get_chain_tip
     existing_txids = {m.get('transaction_id') for m in formatted if m.get('transaction_id')}
     new_polls = []
+    # Chain tip (cached 60s) — used to compute closed state from MaxBlockHeight
+    chain_tip = await _get_chain_tip(is_mainnet)
 
     # (0) Enrich existing feed items flagged is_poll=true that arrived via the Root
     # search without any poll_data attached. This happens when p2fk.io's Root feed
@@ -601,6 +604,14 @@ async def _merge_polls_into_feed(formatted: list, network: str, is_mainnet: bool
                     'total_votes': a.get('TotalVotes', 0),
                     'total_value': a.get('TotalValue', 0),
                 } for a in answers_raw if isinstance(a, dict)]
+                _enrich_max_block = int(data.get('MaxBlockHeight') or 0)
+                if _enrich_max_block > 0 and chain_tip > 0:
+                    _enrich_closed = chain_tip >= _enrich_max_block
+                    _enrich_status = 'closed' if _enrich_closed else 'active'
+                else:
+                    _raw = data.get('status', '')
+                    _enrich_closed = isinstance(_raw, str) and _raw.lower() == 'closed'
+                    _enrich_status = 'closed' if _enrich_closed else 'active'
                 msg['poll_data'] = {
                     'txid': data.get('TransactionId'),
                     'question': data.get('Question', 'Poll'),
@@ -609,8 +620,10 @@ async def _merge_polls_into_feed(formatted: list, network: str, is_mainnet: bool
                     'cre_gate': data.get('OwnsCreatedByGate') or [],
                     'total_votes': data.get('TotalVotes', 0),
                     'total_gated_votes': data.get('TotalGatedVotes', 0),
-                    'status': data.get('status', 'active'),
-                    'max_block_height': data.get('MaxBlockHeight', 0),
+                    'status': _enrich_status,
+                    'closed': _enrich_closed,
+                    'max_block_height': _enrich_max_block,
+                    'current_block_height': chain_tip or None,
                     'require_signature': data.get('RequireSignature', True),
                     'source': 'on_chain',
                 }
@@ -671,13 +684,50 @@ async def _merge_polls_into_feed(formatted: list, network: str, is_mainnet: bool
     except Exception as e:
         logger.warning(f"Registry poll merge failed: {e}")
 
-    # (2) On-chain polls from known authors (capped to avoid hammering p2fk.io)
-    if senders:
-        capped_senders = list(senders)[:25]
+    # (2) On-chain polls from known authors. Surfaces polls from SUP/other Cthulhu
+    # instances that p2fk.io has indexed but the Root feed doesn't return.
+    #
+    # IMPORTANT: `GetInquiriesCreatedByAddress` returns TotalVotes=0 for every
+    # answer — it's a light list endpoint that skips the expensive tally pass.
+    # We must fetch `GetInquiryByTransactionID` per-poll to get real vote counts.
+    # To keep the feed fast and un-cluttered we:
+    #   - Pool authors from current-page senders ∪ recently-updated known users
+    #   - Keep only polls created in the last 30 days (fresh polls only)
+    #   - Cap total added polls per feed page at 8
+    #   - Fetch per-poll tallies in parallel (the p2fk_get cache absorbs repeats)
+    from datetime import datetime as _dt, timezone as _tz, timedelta as _td
+    MAX_AUTHORS = 30
+    MAX_POLLS_PER_PAGE = 8
+    FRESHNESS_DAYS = 30
+    now_utc = _dt.now(_tz.utc)
+    freshness_cutoff = now_utc - _td(days=FRESHNESS_DAYS)
+
+    try:
+        from db import known_users_col
+        recent_cursor = known_users_col.find(
+            {'network': {'$regex': network, '$options': 'i'}},
+            {'_id': 0, 'address': 1, 'updated_at': 1},
+        ).sort('updated_at', -1).limit(MAX_AUTHORS)
+        recent_docs = await recent_cursor.to_list(length=MAX_AUTHORS)
+        recent_addrs = {d.get('address') for d in recent_docs if d.get('address')}
+    except Exception:
+        recent_addrs = set()
+
+    pool = (senders or set()) | recent_addrs
+    if pool:
+        capped_authors = list(pool)[:MAX_AUTHORS]
 
         async def _fetch_author_polls(addr):
             try:
-                data = await p2fk_get(f"GetInquiriesCreatedByAddress/{addr}", is_mainnet)
+                # qty=100 overrides p2fk.io's default 10-item cap so recent polls
+                # aren't hidden behind the oldest ones. Without this, authors with
+                # 10+ polls return only their OLDEST 10 — their newest polls vanish.
+                # verbose=false trims the payload to the fields we need.
+                data = await p2fk_get(
+                    f"GetInquiriesCreatedByAddress/{addr}",
+                    is_mainnet,
+                    extra_params={'skip': '0', 'qty': '100', 'verbose': 'false'},
+                )
                 if isinstance(data, list):
                     return addr, [p for p in data if isinstance(p, dict) and p.get('TransactionId') and p.get('Question')]
             except Exception:
@@ -685,66 +735,124 @@ async def _merge_polls_into_feed(formatted: list, network: str, is_mainnet: bool
             return addr, []
 
         author_results = await asyncio.gather(
-            *[_fetch_author_polls(a) for a in capped_senders],
+            *[_fetch_author_polls(a) for a in capped_authors],
             return_exceptions=True,
         )
+
+        # Step A: flatten + filter to fresh polls + dedupe
+        candidates = []  # list of (created_dt, addr, poll_shell)
         for res in author_results:
             if isinstance(res, Exception) or not res:
                 continue
             addr, polls = res
-            if not polls:
-                continue
-            profile = None
-            try:
-                profile = await get_cached_profile(addr, is_mainnet)
-            except Exception:
-                pass
             for poll in polls:
                 txid = poll.get('TransactionId')
                 if not txid or txid in existing_txids:
                     continue
-                existing_txids.add(txid)
-                answers_raw = poll.get('AnswerData') or []
-                answers = [{
-                    'address': a.get('Address', ''),
-                    'answer': a.get('Answer', ''),
-                    'total_votes': a.get('TotalVotes', 0),
-                    'total_value': a.get('TotalValue', 0),
-                } for a in answers_raw if isinstance(a, dict)]
-                created_at = poll.get('CreatedDate') or ''
-                # INQ.cs stamps ChangedDate with the newest vote BlockDate (line 338-341),
-                # so it's the authoritative "last activity" signal for ranking.
-                last_activity = poll.get('ChangedDate') or created_at
-                new_polls.append({
-                    'id': txid,
-                    'from_address': addr,
-                    'to_address': '',
-                    'content': f"INQ|{poll.get('Question', 'Poll')}",
-                    'transaction_id': txid,
-                    'network': network,
-                    'created_at': created_at,
-                    'block_time': created_at,
-                    'last_activity_at': last_activity,
-                    'is_reply': False,
-                    'is_poll': True,
-                    'poll_data': {
-                        'txid': txid,
-                        'question': poll.get('Question', 'Poll'),
-                        'answers': answers,
-                        'own_gate': poll.get('OwnsObjectGate') or [],
-                        'cre_gate': poll.get('OwnsCreatedByGate') or [],
-                        'total_votes': poll.get('TotalVotes', 0),
-                        'total_gated_votes': poll.get('TotalGatedVotes', 0),
-                        'status': poll.get('status', 'active'),
-                        'max_block_height': poll.get('MaxBlockHeight', 0),
-                        'require_signature': poll.get('RequireSignature', True),
-                        'source': 'on_chain',
-                    },
-                    'sender_urn': profile.get('URN') if profile else None,
-                    'sender_display_name': profile.get('DisplayName') if profile else None,
-                    'sender_image': profile.get('Image') if profile else None,
-                    'recipient_urn': None, 'recipient_image': None, 'files': None,
-                })
+                created_raw = poll.get('CreatedDate') or ''
+                try:
+                    created_dt = _dt.fromisoformat(created_raw.replace('Z', '+00:00'))
+                    if created_dt.tzinfo is None:
+                        created_dt = created_dt.replace(tzinfo=_tz.utc)
+                except Exception:
+                    continue
+                if created_dt < freshness_cutoff:
+                    continue
+                candidates.append((created_dt, addr, poll))
+
+        # Step B: newest-first, cap to MAX_POLLS_PER_PAGE
+        candidates.sort(key=lambda t: t[0], reverse=True)
+        candidates = candidates[:MAX_POLLS_PER_PAGE]
+
+        # Step C: fetch per-poll tallies in parallel (real vote counts)
+        async def _fetch_tally(txid):
+            try:
+                full = await p2fk_get(f"GetInquiryByTransactionID/{txid}", is_mainnet)
+                if isinstance(full, dict) and full.get('Question'):
+                    return txid, full
+            except Exception:
+                pass
+            return txid, None
+
+        tally_results = await asyncio.gather(
+            *[_fetch_tally(p[2]['TransactionId']) for p in candidates],
+            return_exceptions=True,
+        )
+        tally_map = {}
+        for r in tally_results:
+            if isinstance(r, Exception) or not r:
+                continue
+            tid, full = r
+            if full:
+                tally_map[tid] = full
+
+        # Step D: build final entries using the tallied data (fallback to shell)
+        author_profiles = {}
+        for created_dt, addr, poll_shell in candidates:
+            txid = poll_shell['TransactionId']
+            if txid in existing_txids:
+                continue
+            existing_txids.add(txid)
+            full = tally_map.get(txid, poll_shell)  # tallied > shell
+
+            profile = author_profiles.get(addr)
+            if profile is None:
+                try:
+                    profile = await get_cached_profile(addr, is_mainnet)
+                except Exception:
+                    profile = None
+                author_profiles[addr] = profile
+
+            answers = [{
+                'address': a.get('Address', ''),
+                'answer': a.get('Answer', ''),
+                'total_votes': a.get('TotalVotes', 0),
+                'total_value': a.get('TotalValue', 0),
+            } for a in (full.get('AnswerData') or []) if isinstance(a, dict)]
+            created_at = full.get('CreatedDate') or poll_shell.get('CreatedDate', '')
+            last_activity = full.get('ChangedDate') or created_at
+            # Compute closed status from MaxBlockHeight vs chain tip (p2fk.io's `status`
+            # field is sometimes a string, sometimes a block-offset integer — normalize).
+            max_block = int(full.get('MaxBlockHeight') or 0)
+            if max_block > 0 and chain_tip > 0:
+                is_closed = chain_tip >= max_block
+                norm_status = 'closed' if is_closed else 'active'
+            else:
+                raw_s = full.get('status', '')
+                is_closed = isinstance(raw_s, str) and raw_s.lower() == 'closed'
+                norm_status = 'closed' if is_closed else 'active'
+            new_polls.append({
+                'id': txid,
+                'from_address': addr,
+                'to_address': '',
+                'content': f"INQ|{full.get('Question', 'Poll')}",
+                'transaction_id': txid,
+                'network': network,
+                'created_at': created_at,
+                'block_time': created_at,
+                'last_activity_at': last_activity,
+                'is_reply': False,
+                'is_poll': True,
+                'poll_data': {
+                    'txid': txid,
+                    'question': full.get('Question', 'Poll'),
+                    'answers': answers,
+                    'own_gate': full.get('OwnsObjectGate') or [],
+                    'cre_gate': full.get('OwnsCreatedByGate') or [],
+                    'total_votes': full.get('TotalVotes', 0),
+                    'total_gated_votes': full.get('TotalGatedVotes', 0),
+                    'status': norm_status,
+                    'closed': is_closed,
+                    'max_block_height': max_block,
+                    'current_block_height': chain_tip or None,
+                    'require_signature': full.get('RequireSignature', True),
+                    'source': 'on_chain',
+                },
+                'sender_urn': profile.get('URN') if profile else None,
+                'sender_display_name': profile.get('DisplayName') if profile else None,
+                'sender_image': profile.get('Image') if profile else None,
+                'recipient_urn': None, 'recipient_image': None, 'files': None,
+            })
 
     if not new_polls:
         # Still re-rank existing in-place enriched polls

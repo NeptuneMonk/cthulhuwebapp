@@ -50,6 +50,12 @@ Build a modern, responsive frontend for a blockchain-based decentralized social 
 - None active
 
 ## Recently Completed
+- **Poll vote tallies + closed-state detection + indexer caveat (Apr 18, 2026)**
+  - **Real vote counts**: `GetInquiriesCreatedByAddress` returns `TotalVotes=0` for every answer (it's a lightweight list endpoint that skips the expensive tally pass). Backend now does per-poll `GetInquiryByTransactionID` fetches in parallel to get the authoritative counts. Verified against p2fk.io: `1aec9fc5` Red:1/Yellow:1/Blue:1, `6c390b8c` Red:1/Yellow:1/Blue:1, `3f572ef7` Rad:0/RAD:0/RAD!:2.
+  - **p2fk.io qty cap workaround**: `GetInquiriesCreatedByAddress` default returns only the OLDEST 10 polls per author. Now pass `skip=0&qty=100&verbose=false` so newer polls surface for long-time poll creators like embii4u (was returning only 2023 polls, hiding 2026-04 ones).
+  - **Closed status computation**: new `_get_chain_tip()` in polls.py (cached 60s) queries mempool.space for current block height. `_format_poll()` now derives `closed: true` + normalized `status: "closed"` when `current_tip ≥ MaxBlockHeight`. Same computation applied in the feed merge for inline enrichment and author-poll merge paths. Makes the "Closed" badge in PollCard accurate instead of relying on p2fk.io's inconsistent `status` field (sometimes a string, sometimes a block-offset integer).
+  - **Feed clutter fix**: author pool decoupled from current-page senders → now `senders ∪ top-30 known_users_col by updated_at desc`. Capped at 8 polls added per feed page, 30-day freshness filter on CreatedDate. Result: 7-9 polls per page (down from 15+) and all recent polls surface on page 1.
+  - **Recovery path** for corrupted local registry entries (`answers: {"0": {...}}`): reconstructs answer addresses from the `votes` map so `polls.py` can still tally via on-chain reconstruction.
 - **Vote filtering + activity-based poll ranking (Apr 18, 2026)**
   - Vote transactions (empty-message `<<-salt>>` + `File:{SIG only}`) are now filtered from the global feed — no more clutter from active polls. Salt-tag stripping regex `<<-?\d+>>` ensures posts with real content in `<<IPFS:...>>`, `<<re:...>>`, or hashtag tags still pass through. Verified: 8 vote entries dropped from the testnet feed (10 → 2, remaining 2 are non-vote LST marketplace listings).
   - Poll creations (File has `INQ`), profile mints (`PRO`), marketplace events (`OBJ/GIV/BUY/LST/BRN`), and SEC backups continue working as before — the filter is narrowly scoped to "SIG-only" tombstone roots.
