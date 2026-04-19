@@ -372,9 +372,21 @@ def _is_system_or_encrypted_msg(msg: dict) -> bool:
         readable_tail = tail.replace('#', '').replace('<', '').replace('>', '').strip()
         if len(readable_tail) < 20:
             return True
-    # Completely empty content with no file — blank post
-    stripped = content_str.strip().replace('#', '').strip()
-    if not stripped and not file_data:
+    # Completely empty content with no user-facing file — blank post or vote.
+    # Vote roots have only a salt tag `<<-N>>` as their Message and `File={"SIG": N}`
+    # (signature artifact, not a real attachment). We strip salt tags before the
+    # emptiness check so votes disappear from the feed, but posts with real
+    # content in `<<IPFS:...>>`, `<<re:...>>` or `<< #tag >>` blocks are preserved.
+    # Poll creations (File has INQ) and other protocol events (OBJ, PRO, GIV, BUY, LST)
+    # are passed through so downstream enrichment (e.g. poll merge) can surface them.
+    import re as _re_local
+    stripped_salts = _re_local.sub(r'<<-?\d+>>', '', content_str)
+    stripped = stripped_salts.strip().replace('#', '').strip()
+    # "Real" content = message has text after salt stripping, OR File has any key
+    # beyond the signature. `{"SIG": N}` alone is a vote/ack tombstone.
+    file_keys = set(file_data.keys()) if isinstance(file_data, dict) else set()
+    has_meaningful_file = bool(file_keys - {"SIG"})
+    if not stripped and not has_meaningful_file:
         return True
     return False
 
@@ -602,6 +614,8 @@ async def _merge_polls_into_feed(formatted: list, network: str, is_mainnet: bool
                     'require_signature': data.get('RequireSignature', True),
                     'source': 'on_chain',
                 }
+                # Promote changed_date to feed-level activity timestamp
+                msg['last_activity_at'] = data.get('ChangedDate') or data.get('CreatedDate') or msg.get('created_at', '')
                 # Also surface the question as content so the feed preview isn't empty
                 if not msg.get('content'):
                     msg['content'] = f"INQ|{data.get('Question', 'Poll')}"
@@ -634,6 +648,7 @@ async def _merge_polls_into_feed(formatted: list, network: str, is_mainnet: bool
                 'network': network,
                 'created_at': poll.get('created_at', ''),
                 'block_time': poll.get('created_at', ''),
+                'last_activity_at': poll.get('last_vote_at') or poll.get('created_at', ''),
                 'is_reply': False,
                 'is_poll': True,
                 'poll_data': {
@@ -697,6 +712,9 @@ async def _merge_polls_into_feed(formatted: list, network: str, is_mainnet: bool
                     'total_value': a.get('TotalValue', 0),
                 } for a in answers_raw if isinstance(a, dict)]
                 created_at = poll.get('CreatedDate') or ''
+                # INQ.cs stamps ChangedDate with the newest vote BlockDate (line 338-341),
+                # so it's the authoritative "last activity" signal for ranking.
+                last_activity = poll.get('ChangedDate') or created_at
                 new_polls.append({
                     'id': txid,
                     'from_address': addr,
@@ -706,6 +724,7 @@ async def _merge_polls_into_feed(formatted: list, network: str, is_mainnet: bool
                     'network': network,
                     'created_at': created_at,
                     'block_time': created_at,
+                    'last_activity_at': last_activity,
                     'is_reply': False,
                     'is_poll': True,
                     'poll_data': {
@@ -728,10 +747,20 @@ async def _merge_polls_into_feed(formatted: list, network: str, is_mainnet: bool
                 })
 
     if not new_polls:
+        # Still re-rank existing in-place enriched polls
+        formatted.sort(
+            key=lambda m: (m.get('last_activity_at') if m.get('is_poll') else m.get('created_at')) or m.get('created_at') or '',
+            reverse=True,
+        )
         return formatted
 
     merged = formatted + new_polls
-    merged.sort(key=lambda m: m.get('created_at') or '', reverse=True)
+    # Polls rank by last_activity_at (fresh votes bubble them up); regular posts
+    # rank by their own created_at. Everything sorts into one descending stream.
+    merged.sort(
+        key=lambda m: (m.get('last_activity_at') if m.get('is_poll') else m.get('created_at')) or m.get('created_at') or '',
+        reverse=True,
+    )
     return merged
 
 

@@ -50,6 +50,11 @@ Build a modern, responsive frontend for a blockchain-based decentralized social 
 - None active
 
 ## Recently Completed
+- **Vote filtering + activity-based poll ranking (Apr 18, 2026)**
+  - Vote transactions (empty-message `<<-salt>>` + `File:{SIG only}`) are now filtered from the global feed — no more clutter from active polls. Salt-tag stripping regex `<<-?\d+>>` ensures posts with real content in `<<IPFS:...>>`, `<<re:...>>`, or hashtag tags still pass through. Verified: 8 vote entries dropped from the testnet feed (10 → 2, remaining 2 are non-vote LST marketplace listings).
+  - Poll creations (File has `INQ`), profile mints (`PRO`), marketplace events (`OBJ/GIV/BUY/LST/BRN`), and SEC backups continue working as before — the filter is narrowly scoped to "SIG-only" tombstone roots.
+  - **Activity-based poll ranking**: feed now sorts polls by `last_activity_at` (on-chain `ChangedDate`, which INQ.cs line 338-341 stamps with the newest vote BlockDate) while regular posts still sort by `created_at`. Fresh votes bubble their poll back to the top of the feed organically.
+  - `last_vote_at` now stamped in `poll_registry_col` on every vote via `POST /api/polls/vote` so locally-tracked polls participate in activity ranking.
 - **Poll feed + vote reconstruction fixes (Apr 18, 2026)**
   - Global feed now merges polls from **three sources**: (a) raw feed items flagged `is_poll` (from `GetKnownRootsBySearchString`) enriched in-line via `GetInquiryByTransactionID`, (b) local `poll_registry_col` (instant visibility for polls created through Cthulhu), (c) `GetInquiriesCreatedByAddress` for every author already in the current feed page (surfaces polls from SUP / other Cthulhu instances)
   - Previously the dead code path `_build_feed_from_scratch` held the merge logic but was never called — polls weren't appearing in `get_feed` at all

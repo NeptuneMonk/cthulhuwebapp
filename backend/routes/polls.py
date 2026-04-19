@@ -124,9 +124,13 @@ async def record_vote(req: PollVoteRequest):
     GetInquiryByTransactionID, not from this registry.
     """
     # Store only which answer the voter chose (for dedup / "you already voted" UI)
+    # and stamp last_vote_at so the feed can rank this poll by most-recent activity.
     await poll_registry_col.update_one(
         {'txid': req.txid},
-        {'$set': {f'votes.{req.voter_address}': req.answer_address}},
+        {'$set': {
+            f'votes.{req.voter_address}': req.answer_address,
+            'last_vote_at': datetime.now(timezone.utc).isoformat(),
+        }},
         upsert=True,
     )
     return {"ok": True}
