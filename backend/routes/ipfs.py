@@ -366,7 +366,12 @@ async def ipfs_status():
 
 
 async def _generate_and_upload_thumbnail(filepath: str, filename: str, filesize: int) -> str | None:
-    """Generate a small JPEG thumbnail and upload to IPFS. Returns preview CID or None."""
+    """Generate a JPEG thumbnail sized for feed display and upload to IPFS.
+
+    400px long-edge @ quality 75 keeps thumbs ~10-25KB — tiny compared to the
+    multi-MB originals, but sharp enough to fill a feed card (~400px wide)
+    without the pixelated "black bar" look that 90px thumbs produce.
+    """
     import tempfile
     import os
     thumb_path = None
@@ -376,12 +381,12 @@ async def _generate_and_upload_thumbnail(filepath: str, filename: str, filesize:
             return None
 
         img = Image.open(filepath)
-        img.thumbnail((90, 90), Image.Resampling.LANCZOS)
+        img.thumbnail((400, 400), Image.Resampling.LANCZOS)
         if img.mode not in ('RGB',):
             img = img.convert('RGB')
 
         thumb_path = tempfile.NamedTemporaryFile(delete=False, suffix='_thumb.jpg').name
-        img.save(thumb_path, 'JPEG', quality=60, optimize=True)
+        img.save(thumb_path, 'JPEG', quality=75, optimize=True)
         img.close()
 
         thumb_size = os.path.getsize(thumb_path)

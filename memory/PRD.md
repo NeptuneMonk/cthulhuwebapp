@@ -50,6 +50,10 @@ Build a modern, responsive frontend for a blockchain-based decentralized social 
 - None active
 
 ## Recently Completed
+- **Profile vote-bubble filter + thumbnail resolution bump (Apr 19, 2026)**
+  - **Vote filter applied to profile endpoints**: `/profile/{address}/posts`, `/profile/{address}/replies`, and `/profile/{address}/mentions` now all run `_is_system_or_encrypted_msg()` so vote transactions stop appearing as empty bubbles on profile feeds. Verified: Emergent2's 2 vote txs for poll `b559823d` (`65f26ed3...` and `ea02bce6...`) no longer show on his profile; 20 posts returned, 0 blank.
+  - **Thumbnail size bumped 90px → 400px**: the 90-px thumbs were getting stretched into ~400px feed cards, producing the blurry "black bar" look. New size is 400px long-edge @ JPEG quality 75 (~25-40KB per thumb — still 40× smaller than the multi-MB originals). Purged existing stale cache entries in `thumb_cache`. Verified regeneration: 2KB → 38KB, pixel dimensions 90×68 → 400×300.
+  - **Mempool votes caveat**: Emergent2's 2 Turquoise votes at `miQ9TaHx...` are `Signed=True` but `BlockHeight=0` (still in mempool). p2fk.io's indexer only counts confirmed votes — this is expected on-chain behavior, not a Cthulhu bug. Votes will tally automatically once the next block confirms them.
 - **Poll vote tallies + closed-state detection + indexer caveat (Apr 18, 2026)**
   - **Real vote counts**: `GetInquiriesCreatedByAddress` returns `TotalVotes=0` for every answer (it's a lightweight list endpoint that skips the expensive tally pass). Backend now does per-poll `GetInquiryByTransactionID` fetches in parallel to get the authoritative counts. Verified against p2fk.io: `1aec9fc5` Red:1/Yellow:1/Blue:1, `6c390b8c` Red:1/Yellow:1/Blue:1, `3f572ef7` Rad:0/RAD:0/RAD!:2.
   - **p2fk.io qty cap workaround**: `GetInquiriesCreatedByAddress` default returns only the OLDEST 10 polls per author. Now pass `skip=0&qty=100&verbose=false` so newer polls surface for long-time poll creators like embii4u (was returning only 2023 polls, hiding 2026-04 ones).

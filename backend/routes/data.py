@@ -1338,6 +1338,10 @@ async def get_profile_posts(address: str, network: str = 'btc-testnet', skip: in
             if txid and txid in seen_txids:
                 continue
             seen_txids.add(txid)
+            # Skip votes (SIG-only tombstones with salt-tag messages) and system
+            # roots so Emergent2's profile doesn't show votes as empty bubbles.
+            if _is_system_or_encrypted_msg(msg):
+                continue
             to_addr = msg.get('ToAddress', '')
             # If ToAddress is a known user, this is a reply — skip it
             if to_addr and to_addr != address and to_addr in known_addrs:
@@ -1410,6 +1414,9 @@ async def get_profile_replies(address: str, network: str = 'btc-testnet', skip: 
             if txid and txid in seen_txids:
                 continue
             seen_txids.add(txid)
+            # Filter votes/system roots out of replies too
+            if _is_system_or_encrypted_msg(msg):
+                continue
             to_addr = msg.get('ToAddress', '')
             # Only include if ToAddress is a known user (not self, not a keyword)
             if not to_addr or to_addr == address or to_addr not in known_addrs:
@@ -1446,6 +1453,9 @@ async def get_profile_mentions(address: str, network: str = 'btc-testnet', skip:
             if txid and txid in seen_txids:
                 continue
             seen_txids.add(txid)
+            # Filter votes/system roots out of mentions
+            if _is_system_or_encrypted_msg(msg):
+                continue
             sender = await get_cached_profile(from_addr, is_mainnet)
             mentions.append(await format_message(msg, sender, network, is_mainnet))
 
