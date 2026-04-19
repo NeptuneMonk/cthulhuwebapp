@@ -212,12 +212,12 @@ async def get_poll_by_txid(txid: str, network: str = 'btc-testnet', fresh: bool 
         if isinstance(raw_answers, list):
             for a in raw_answers:
                 if isinstance(a, dict):
-                    addr = a.get('address', '')
+                    addr = a.get('address', '') or a.get('Address', '')
                     enriched_answers.append({
                         'address': addr,
-                        'answer': a.get('answer', ''),
-                        'total_votes': vote_counts.get(addr, a.get('total_votes', 0)),
-                        'total_value': a.get('total_value', 0),
+                        'answer': a.get('answer', a.get('Answer', '')),
+                        'total_votes': vote_counts.get(addr, a.get('total_votes', a.get('TotalVotes', 0))),
+                        'total_value': a.get('total_value', a.get('TotalValue', 0)),
                     })
                 elif isinstance(a, str):
                     enriched_answers.append({
@@ -227,18 +227,26 @@ async def get_poll_by_txid(txid: str, network: str = 'btc-testnet', fresh: bool 
                         'total_value': 0,
                     })
         elif isinstance(raw_answers, dict):
-            # Legacy format: {"0": {"total_votes": 1}, "1": {...}} or {"addr": "text"}
+            # Legacy format: key may be the answer address with a dict value {answer, total_votes},
+            # or numeric index ("0","1") with just tally data. Preserve the address only when it
+            # looks like a real P2FK address (Base58 ≥ 26 chars). Never use a numeric index as
+            # the displayed answer text — that's what caused the `[{address:"0",answer:"0"}]` bug.
             for key, val in raw_answers.items():
+                is_addr_key = isinstance(key, str) and len(key) >= 26 and key.isalnum()
                 if isinstance(val, dict):
+                    answer_text = val.get('answer', val.get('Answer', ''))
+                    if not answer_text and not is_addr_key:
+                        # Malformed legacy entry with only counts — skip rather than show "0"
+                        continue
                     enriched_answers.append({
-                        'address': key,
-                        'answer': val.get('answer', val.get('Answer', key)),
+                        'address': key if is_addr_key else '',
+                        'answer': answer_text or '(unnamed)',
                         'total_votes': vote_counts.get(key, val.get('total_votes', val.get('TotalVotes', 0))),
                         'total_value': val.get('total_value', val.get('TotalValue', 0)),
                     })
                 elif isinstance(val, str):
                     enriched_answers.append({
-                        'address': key,
+                        'address': key if is_addr_key else '',
                         'answer': val,
                         'total_votes': vote_counts.get(key, 0),
                         'total_value': 0,
@@ -246,6 +254,75 @@ async def get_poll_by_txid(txid: str, network: str = 'btc-testnet', fresh: bool 
             # Use max of computed or embedded counts
             if not total_votes:
                 total_votes = sum(a.get('total_votes', 0) for a in enriched_answers)
+
+        # ── Recovery: if answers are unrecoverable (legacy corruption with only
+        # numeric index keys) but the votes map contains real answer addresses,
+        # synthesize answer entries from those addresses. Gives on-chain
+        # reconstruction something to work with below.
+        if not any(a.get('address') for a in enriched_answers) and votes_map:
+            recovered_addrs = set()
+            for _, ans_addr in votes_map.items():
+                if isinstance(ans_addr, str) and len(ans_addr) >= 26:
+                    recovered_addrs.add(ans_addr)
+            if recovered_addrs:
+                enriched_answers = [{
+                    'address': addr,
+                    'answer': '(recovered)',
+                    'total_votes': 0,
+                    'total_value': 0,
+                } for addr in recovered_addrs]
+
+        # ── On-chain vote reconstruction (INQ.cs parity) ──
+        # When p2fk.io's INQState endpoint is empty but we know the answer addresses
+        # locally, tally votes ourselves by walking GetRootsByAddress for each answer.
+        # Dedup SignedBy, filter signed when RequireSignature, enforce MaxBlockHeight.
+        require_sig = bool(local.get('require_signature', True))
+        max_block = int(local.get('max_block_height', 0) or 0)
+        reconstructed = False
+        addr_tallies = {a['address']: {'votes': 0, 'value': 0.0} for a in enriched_answers if a.get('address')}
+        if addr_tallies:
+            has_voted = set()
+            for answer in enriched_answers:
+                addr = answer.get('address')
+                if not addr:
+                    continue
+                try:
+                    roots = await p2fk_get(f"GetRootsByAddress/{addr}", mainnet)
+                except Exception:
+                    roots = None
+                if not isinstance(roots, list):
+                    continue
+                reconstructed = True
+                for r in roots:
+                    if not isinstance(r, dict):
+                        continue
+                    signed_by = r.get('SignedBy') or ''
+                    if not signed_by or signed_by in has_voted:
+                        continue
+                    if require_sig and not r.get('Signed'):
+                        continue
+                    if max_block > 0 and (r.get('BlockHeight') or 0) > max_block:
+                        continue
+                    has_voted.add(signed_by)
+                    addr_tallies[addr]['votes'] += 1
+                    # Sum output value sent to this answer address (in BTC as string)
+                    output = r.get('Output') or {}
+                    raw_val = output.get(addr, 0)
+                    try:
+                        addr_tallies[addr]['value'] += float(raw_val or 0)
+                    except (ValueError, TypeError):
+                        pass
+
+            if reconstructed:
+                # Overlay reconstructed counts (authoritative) onto enriched_answers
+                new_total = 0
+                for ans in enriched_answers:
+                    addr = ans.get('address')
+                    if addr and addr in addr_tallies:
+                        ans['total_votes'] = addr_tallies[addr]['votes']
+                        ans['total_value'] = addr_tallies[addr]['value']
+                        new_total += addr_tallies[addr]['votes']
+                total_votes = new_total
 
         return {
             "txid": local['txid'],
@@ -257,10 +334,11 @@ async def get_poll_by_txid(txid: str, network: str = 'btc-testnet', fresh: bool 
             "total_gated_votes": 0,
             "votes": votes_map,
             "status": poll_status,
-            "require_signature": True,
+            "require_signature": require_sig,
+            "max_block_height": max_block,
             "created_by": local.get('creator_address'),
             "created_date": local.get('created_at'),
-            "source": "local_cache",
+            "source": "local_decode" if reconstructed else "local_cache",
         }
 
     # Nothing found

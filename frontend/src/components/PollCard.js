@@ -158,6 +158,16 @@ export default function PollCard({ poll, network, onVoted }) {
             <FiClock size={8} /> Closed
           </span>
         )}
+        {(activePoll.source === 'local_cache' || activePoll.source === 'local_decode') && (
+          <span
+            className="flex items-center gap-1 text-[9px] text-yellow-400/80 bg-yellow-500/10 px-1.5 py-0.5 rounded"
+            title="Indexer catching up — this poll is served from local state with on-chain votes reconstructed directly from the blockchain"
+            data-testid="poll-local-decode-badge"
+          >
+            <span className="w-1 h-1 rounded-full bg-yellow-400 animate-pulse" />
+            {activePoll.source === 'local_decode' ? 'local decode' : 'indexing'}
+          </span>
+        )}
       </div>
 
       {/* Question */}

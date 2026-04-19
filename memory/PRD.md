@@ -50,6 +50,13 @@ Build a modern, responsive frontend for a blockchain-based decentralized social 
 - None active
 
 ## Recently Completed
+- **Poll feed + vote reconstruction fixes (Apr 18, 2026)**
+  - Global feed now merges polls from **three sources**: (a) raw feed items flagged `is_poll` (from `GetKnownRootsBySearchString`) enriched in-line via `GetInquiryByTransactionID`, (b) local `poll_registry_col` (instant visibility for polls created through Cthulhu), (c) `GetInquiriesCreatedByAddress` for every author already in the current feed page (surfaces polls from SUP / other Cthulhu instances)
+  - Previously the dead code path `_build_feed_from_scratch` held the merge logic but was never called — polls weren't appearing in `get_feed` at all
+  - `polls.py::_format_poll` fallback: rewrote legacy-format normalizer. Numeric dict keys ("0","1") are no longer used as answer addresses/text; malformed entries are dropped rather than rendered as `[{address:"0",answer:"0"}]`
+  - **INQ.cs-parity on-chain vote reconstruction**: when p2fk.io's `GetInquiryByTransactionID` returns empty but the poll has known answer addresses (from local cache or recovery), the backend walks `GetRootsByAddress/{answer_addr}` for each answer, dedupes by SignedBy, filters by `Signed` when `RequireSignature=true`, and enforces `MaxBlockHeight` — tallies match SUP's `INQ.cs` lines 302–394 exactly. Result returns with `source: "local_decode"`
+  - **Recovery path**: polls with fully corrupted legacy `answers:{"0":{...}}` but valid voter→answer_addr mapping reconstruct answer entries from the `votes` map
+  - **PollCard UI**: new subtle pulsing yellow dot badge (`indexing` / `local decode`) when `poll_data.source` is `local_cache` or `local_decode`, so the indexer-lag state is visible at a glance
 - **On-chain media prefetch + verified badge (Apr 18, 2026)**
   - Extended `utils/thumbPrefetch.js` to also scan feed posts for `<<txid/filename>>` refs (64-hex txid) and background-prewarm `/api/onchain/file/{txid}/{filename}?chain=...&mainnet=...` — so on-chain images/PDFs/video appear instantly instead of spinning "resolving on-chain..."
   - `OnChainMedia` badges upgraded from hidden-by-default amber hover text to a persistent subtle green `✓ on-chain` indicator once content resolves (image/video/generic file variants)

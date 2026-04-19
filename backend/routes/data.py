@@ -530,6 +530,212 @@ async def _build_feed_from_scratch(network: str, is_mainnet: bool) -> list:
     return all_messages
 
 
+async def _merge_polls_into_feed(formatted: list, network: str, is_mainnet: bool, senders: set) -> list:
+    """Merge polls into a feed page.
+
+    Two sources, in order:
+      1. Local poll_registry_col — polls created via Cthulhu (instant visibility before
+         the indexer catches up).
+      2. On-chain p2fk.io `GetInquiriesCreatedByAddress/{addr}` for each author already
+         appearing in this feed page. Surfaces polls created by these users in SUP or
+         other Cthulhu instances that p2fk.io has indexed but the Root feed call didn't
+         return (INQ transactions aren't always in GetKnownRootsBySearchString).
+
+    Deduped against existing feed txids. Sorted newest-first into the feed stream.
+    """
+    from db import poll_registry_col
+    existing_txids = {m.get('transaction_id') for m in formatted if m.get('transaction_id')}
+    new_polls = []
+
+    # (0) Enrich existing feed items flagged is_poll=true that arrived via the Root
+    # search without any poll_data attached. This happens when p2fk.io's Root feed
+    # returns an INQ transaction — we know it's a poll (File.INQ) but the Root call
+    # doesn't carry INQState. Fill it in from GetInquiryByTransactionID.
+    missing_poll_data = [
+        m for m in formatted
+        if m.get('is_poll') and not m.get('poll_data') and m.get('transaction_id')
+    ]
+    if missing_poll_data:
+        async def _fetch_inq(txid):
+            try:
+                data = await p2fk_get(f"GetInquiryByTransactionID/{txid}", is_mainnet)
+                if isinstance(data, dict) and data.get('Question'):
+                    return txid, data
+            except Exception:
+                pass
+            return txid, None
+
+        inq_results = await asyncio.gather(
+            *[_fetch_inq(m['transaction_id']) for m in missing_poll_data[:15]],
+            return_exceptions=True,
+        )
+        inq_map = {}
+        for res in inq_results:
+            if isinstance(res, Exception) or not res:
+                continue
+            txid, data = res
+            if data:
+                inq_map[txid] = data
+
+        for msg in formatted:
+            if msg.get('is_poll') and not msg.get('poll_data'):
+                data = inq_map.get(msg.get('transaction_id'))
+                if not data:
+                    continue
+                answers_raw = data.get('AnswerData') or []
+                answers = [{
+                    'address': a.get('Address', ''),
+                    'answer': a.get('Answer', ''),
+                    'total_votes': a.get('TotalVotes', 0),
+                    'total_value': a.get('TotalValue', 0),
+                } for a in answers_raw if isinstance(a, dict)]
+                msg['poll_data'] = {
+                    'txid': data.get('TransactionId'),
+                    'question': data.get('Question', 'Poll'),
+                    'answers': answers,
+                    'own_gate': data.get('OwnsObjectGate') or [],
+                    'cre_gate': data.get('OwnsCreatedByGate') or [],
+                    'total_votes': data.get('TotalVotes', 0),
+                    'total_gated_votes': data.get('TotalGatedVotes', 0),
+                    'status': data.get('status', 'active'),
+                    'max_block_height': data.get('MaxBlockHeight', 0),
+                    'require_signature': data.get('RequireSignature', True),
+                    'source': 'on_chain',
+                }
+                # Also surface the question as content so the feed preview isn't empty
+                if not msg.get('content'):
+                    msg['content'] = f"INQ|{data.get('Question', 'Poll')}"
+
+    # (1) Local registry
+    try:
+        poll_cursor = poll_registry_col.find(
+            {'network': {'$regex': network, '$options': 'i'}},
+            {'_id': 0}
+        )
+        registered = await poll_cursor.to_list(length=200)
+        for poll in registered:
+            txid = poll.get('txid')
+            if not txid or txid in existing_txids:
+                continue
+            existing_txids.add(txid)
+            creator = poll.get('creator_address', '')
+            profile = None
+            if creator and len(creator) > 10:
+                try:
+                    profile = await get_cached_profile(creator, is_mainnet)
+                except Exception:
+                    profile = None
+            new_polls.append({
+                'id': txid,
+                'from_address': creator,
+                'to_address': '',
+                'content': f"INQ|{poll.get('question', 'Poll')}",
+                'transaction_id': txid,
+                'network': network,
+                'created_at': poll.get('created_at', ''),
+                'block_time': poll.get('created_at', ''),
+                'is_reply': False,
+                'is_poll': True,
+                'poll_data': {
+                    'txid': txid,
+                    'question': poll.get('question', 'Poll'),
+                    'answers': poll.get('answers', []),
+                    'own_gate': poll.get('own_gate', []),
+                    'cre_gate': poll.get('cre_gate', []),
+                    'total_votes': poll.get('total_votes', 0),
+                    'total_gated_votes': 0,
+                    'status': 'active',
+                    'votes': poll.get('votes', {}),
+                    'source': 'local_cache',
+                },
+                'sender_urn': profile.get('URN') if profile else None,
+                'sender_display_name': profile.get('DisplayName') if profile else None,
+                'sender_image': profile.get('Image') if profile else None,
+                'recipient_urn': None, 'recipient_image': None, 'files': None,
+            })
+    except Exception as e:
+        logger.warning(f"Registry poll merge failed: {e}")
+
+    # (2) On-chain polls from known authors (capped to avoid hammering p2fk.io)
+    if senders:
+        capped_senders = list(senders)[:25]
+
+        async def _fetch_author_polls(addr):
+            try:
+                data = await p2fk_get(f"GetInquiriesCreatedByAddress/{addr}", is_mainnet)
+                if isinstance(data, list):
+                    return addr, [p for p in data if isinstance(p, dict) and p.get('TransactionId') and p.get('Question')]
+            except Exception:
+                pass
+            return addr, []
+
+        author_results = await asyncio.gather(
+            *[_fetch_author_polls(a) for a in capped_senders],
+            return_exceptions=True,
+        )
+        for res in author_results:
+            if isinstance(res, Exception) or not res:
+                continue
+            addr, polls = res
+            if not polls:
+                continue
+            profile = None
+            try:
+                profile = await get_cached_profile(addr, is_mainnet)
+            except Exception:
+                pass
+            for poll in polls:
+                txid = poll.get('TransactionId')
+                if not txid or txid in existing_txids:
+                    continue
+                existing_txids.add(txid)
+                answers_raw = poll.get('AnswerData') or []
+                answers = [{
+                    'address': a.get('Address', ''),
+                    'answer': a.get('Answer', ''),
+                    'total_votes': a.get('TotalVotes', 0),
+                    'total_value': a.get('TotalValue', 0),
+                } for a in answers_raw if isinstance(a, dict)]
+                created_at = poll.get('CreatedDate') or ''
+                new_polls.append({
+                    'id': txid,
+                    'from_address': addr,
+                    'to_address': '',
+                    'content': f"INQ|{poll.get('Question', 'Poll')}",
+                    'transaction_id': txid,
+                    'network': network,
+                    'created_at': created_at,
+                    'block_time': created_at,
+                    'is_reply': False,
+                    'is_poll': True,
+                    'poll_data': {
+                        'txid': txid,
+                        'question': poll.get('Question', 'Poll'),
+                        'answers': answers,
+                        'own_gate': poll.get('OwnsObjectGate') or [],
+                        'cre_gate': poll.get('OwnsCreatedByGate') or [],
+                        'total_votes': poll.get('TotalVotes', 0),
+                        'total_gated_votes': poll.get('TotalGatedVotes', 0),
+                        'status': poll.get('status', 'active'),
+                        'max_block_height': poll.get('MaxBlockHeight', 0),
+                        'require_signature': poll.get('RequireSignature', True),
+                        'source': 'on_chain',
+                    },
+                    'sender_urn': profile.get('URN') if profile else None,
+                    'sender_display_name': profile.get('DisplayName') if profile else None,
+                    'sender_image': profile.get('Image') if profile else None,
+                    'recipient_urn': None, 'recipient_image': None, 'files': None,
+                })
+
+    if not new_polls:
+        return formatted
+
+    merged = formatted + new_polls
+    merged.sort(key=lambda m: m.get('created_at') or '', reverse=True)
+    return merged
+
+
+
 @router.get("/feed/{network}")
 async def get_feed(network: str, skip: int = 0, limit: int = 20, mode: str = 'global', followed: str = ''):
     """Feed served directly from p2fk.io's global cache via GetKnownRootsBySearchString.
@@ -612,6 +818,18 @@ async def get_feed(network: str, skip: int = 0, limit: int = 20, mode: str = 'gl
             announcements = await _get_system_announcements(network)
             if announcements:
                 formatted = announcements + formatted
+
+        # ── Merge polls into the feed ──
+        # (a) Local registry polls (instantly-visible polls created through Cthulhu)
+        # (b) On-chain polls from known active authors (surfaces polls created via SUP
+        #     or other Cthulhu instances that p2fk.io has indexed)
+        if skip == 0:
+            try:
+                formatted = await _merge_polls_into_feed(
+                    formatted, network, is_mainnet, unique_senders
+                )
+            except Exception as e:
+                logger.warning(f"Poll merge failed: {e}")
 
         # Proactive IPFS pin
         asyncio.create_task(_proactive_pin_feed_cids(formatted))
