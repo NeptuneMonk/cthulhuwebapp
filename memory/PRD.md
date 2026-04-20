@@ -50,6 +50,10 @@ Build a modern, responsive frontend for a blockchain-based decentralized social 
 - None active
 
 ## Recently Completed
+- **Global feed fix + massive perf win (Apr 19, 2026)**
+  - **Global feed was silently broken** when not following anyone. Root cause: `GetKnownRootsBySearchString?search=*` — p2fk.io's actual query param is `searchString`. The wrong param returned `[]` instead of the global stream. Fix: use `searchString=*`. Also added `showSystemFiles=false` so p2fk.io drops SIG-only vote tombstones server-side (bandwidth & CPU win).
+  - **60s full-response feed cache** (`_FEED_CACHE` keyed by network|mode|skip|limit): repeat loads within the window bypass the expensive merge entirely. Hot path **53× faster** (0.21s vs 11.1s cold). Cache auto-prunes at >200 entries.
+  - **Halved poll-merge author fan-out** (30 → 15 parallel `GetInquiriesCreatedByAddress` calls). Cold-path feed load now **~4s** (was 11s). All reference polls still surface (`1aec9fc5` Red:1/Yellow:1/Blue:1, `6c390b8c` 3 votes, `3f572ef7` 2 votes).
 - **Profile vote-bubble filter + thumbnail resolution bump (Apr 19, 2026)**
   - **Vote filter applied to profile endpoints**: `/profile/{address}/posts`, `/profile/{address}/replies`, and `/profile/{address}/mentions` now all run `_is_system_or_encrypted_msg()` so vote transactions stop appearing as empty bubbles on profile feeds. Verified: Emergent2's 2 vote txs for poll `b559823d` (`65f26ed3...` and `ea02bce6...`) no longer show on his profile; 20 posts returned, 0 blank.
   - **Thumbnail size bumped 90px → 400px**: the 90-px thumbs were getting stretched into ~400px feed cards, producing the blurry "black bar" look. New size is 400px long-edge @ JPEG quality 75 (~25-40KB per thumb — still 40× smaller than the multi-MB originals). Purged existing stale cache entries in `thumb_cache`. Verified regeneration: 2KB → 38KB, pixel dimensions 90×68 → 400×300.

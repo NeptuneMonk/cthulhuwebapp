@@ -20,12 +20,20 @@ from utils.p2fk import txid_to_reply_address, derive_address_from_pkxy
 
 logger = logging.getLogger(__name__)
 import re as _re
+import time as _time_mod
 
 # ─── Proactive IPFS Pinning ───
 # When feed posts are loaded, extract all IPFS CIDs and pin them
 # so this node acts as a pinning node for viewed content.
 
 _pinning_in_progress = set()  # Avoid duplicate pin requests
+
+# ─── Feed response cache ───
+# Memoizes fully-merged feed pages (base feed + polls + announcements + profiles)
+# so repeated loads within the TTL return in milliseconds. Keyed by
+# network|mode|skip|limit. TTL intentionally short so new posts surface quickly.
+_FEED_CACHE = {}
+_FEED_CACHE_TTL = 60.0  # seconds
 
 # ─── System Announcements ───
 _ANNOUNCEMENT_TTL_MINUTES = 60
@@ -696,7 +704,7 @@ async def _merge_polls_into_feed(formatted: list, network: str, is_mainnet: bool
     #   - Cap total added polls per feed page at 8
     #   - Fetch per-poll tallies in parallel (the p2fk_get cache absorbs repeats)
     from datetime import datetime as _dt, timezone as _tz, timedelta as _td
-    MAX_AUTHORS = 30
+    MAX_AUTHORS = 15
     MAX_POLLS_PER_PAGE = 8
     FRESHNESS_DAYS = 30
     now_utc = _dt.now(_tz.utc)
@@ -877,12 +885,29 @@ async def _merge_polls_into_feed(formatted: list, network: str, is_mainnet: bool
 async def get_feed(network: str, skip: int = 0, limit: int = 20, mode: str = 'global', followed: str = ''):
     """Feed served directly from p2fk.io's global cache via GetKnownRootsBySearchString.
     P2FK.io handles aggregation, sorting, and pagination. We just format for display."""
+    # ── Hot-path cache ── avoids re-running the poll merge + profile fan-out for
+    # rapid repeated loads (e.g. user tab refreshes, pull-to-refresh). 30s TTL
+    # means new posts surface within half a minute.
+    cache_key = f"{network}|{mode}|{skip}|{limit}|{followed}"
+    now = _time_mod.monotonic()
+    cached_resp = _FEED_CACHE.get(cache_key)
+    if cached_resp and (now - cached_resp['ts']) < _FEED_CACHE_TTL:
+        out = dict(cached_resp['resp'])
+        out['cached'] = True
+        return out
     try:
         is_mainnet = 'mainnet' in network.lower()
 
-        # Use p2fk.io's global search — returns all roots sorted by time, paginated
+        # Use p2fk.io's global search — returns all roots sorted by time, paginated.
+        # IMPORTANT: param is `searchString` (not `search`). With wildcard `*` and
+        # showSystemFiles=false, p2fk.io's server strips SIG-only vote tombstones
+        # for us — massive bandwidth & processing win.
         mainnet_param = 'true' if is_mainnet else 'false'
-        url = f"https://p2fk.io/GetKnownRootsBySearchString?search=*&skip={skip}&qty={limit}&mainnet={mainnet_param}"
+        url = (
+            f"https://p2fk.io/GetKnownRootsBySearchString"
+            f"?searchString=*&skip={skip}&qty={limit}"
+            f"&mainnet={mainnet_param}&showSystemFiles=false"
+        )
 
         from utils.http_pool import get_client
         client = get_client()
@@ -974,13 +999,20 @@ async def get_feed(network: str, skip: int = 0, limit: int = 20, mode: str = 'gl
         # p2fk.io returns exactly `qty` items if more exist, fewer if at end
         has_more = len(raw_results) >= limit
 
-        return {
+        resp = {
             "feed": formatted, "network": network, "count": len(formatted),
             "total": skip + len(formatted) + (1 if has_more else 0),
             "skip": skip, "limit": limit,
             "has_more": has_more,
             "cached": False, "mode": mode,
         }
+        _FEED_CACHE[cache_key] = {'resp': resp, 'ts': now}
+        # Prune the cache if it's growing unbounded (rare — keyed by skip/limit)
+        if len(_FEED_CACHE) > 200:
+            oldest = sorted(_FEED_CACHE.items(), key=lambda kv: kv[1]['ts'])[:50]
+            for k, _ in oldest:
+                _FEED_CACHE.pop(k, None)
+        return resp
 
     except Exception as e:
         logger.error(f"Feed error: {e}")
